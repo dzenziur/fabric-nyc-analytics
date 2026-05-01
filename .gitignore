@@ -1,0 +1,41 @@
+# Environment & secrets
+.env
+*.env.local
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Jupyter Notebooks (checkpoints)
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Raw data (large files — never commit)
+data/
+docs/learning_brief.md
+
+# Fabric workspace exports (can be large)
+*.pbix
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# Logs
+*.log
+
+# Claude Code local settings
+.claude/
+CLAUDE.local.md
