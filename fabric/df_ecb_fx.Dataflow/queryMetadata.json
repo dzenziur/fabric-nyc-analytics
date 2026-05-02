@@ -1,0 +1,34 @@
+{
+  "formatVersion": "202502",
+  "computeEngineSettings": {
+    "allowModernEvaluationEngine": true
+  },
+  "name": "df_ecb_fx",
+  "queryGroups": [],
+  "documentLocale": "en-US",
+  "queriesMetadata": {
+    "ecb_fx_rates": {
+      "queryId": "753356d4-d8d4-4d8d-8ef9-0f30317d6b87",
+      "queryName": "ecb_fx_rates",
+      "loadEnabled": false
+    },
+    "Query_DataDestination": {
+      "queryId": "08c9a6fd-a991-498e-babf-50ac86e6d0a7",
+      "queryName": "Query_DataDestination",
+      "isHidden": true,
+      "loadEnabled": false
+    }
+  },
+  "connections": [
+    {
+      "path": "https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?format=csvdata",
+      "kind": "Web",
+      "connectionId": "{\"ClusterId\":\"2d829544-f29e-4d37-8827-fe6de4d834e9\",\"DatasourceId\":\"eabc99ec-dcc0-4999-aaaf-e0668f761fb0\"}"
+    },
+    {
+      "path": "Lakehouse",
+      "kind": "Lakehouse",
+      "connectionId": "{\"ClusterId\":\"2d829544-f29e-4d37-8827-fe6de4d834e9\",\"DatasourceId\":\"f02b02bd-dc25-4178-80e4-7020e21bb3c0\"}"
+    }
+  ]
+}

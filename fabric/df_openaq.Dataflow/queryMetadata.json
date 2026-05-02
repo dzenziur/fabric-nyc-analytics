@@ -1,0 +1,39 @@
+{
+  "formatVersion": "202502",
+  "computeEngineSettings": {
+    "allowModernEvaluationEngine": true
+  },
+  "name": "df_openaq",
+  "queryGroups": [],
+  "documentLocale": "en-US",
+  "queriesMetadata": {
+    "fn_GetPage": {
+      "queryId": "d4b0bdf5-e44e-49fc-8ac1-33627e58d540",
+      "queryName": "fn_GetPage",
+      "loadEnabled": false
+    },
+    "openaq_locations": {
+      "queryId": "6fbcab46-ac89-48b5-aa78-4f2859807d72",
+      "queryName": "openaq_locations",
+      "loadEnabled": false
+    },
+    "openaq_locations_DataDestination": {
+      "queryId": "2e5c17cc-1bdb-4127-82f1-499f8df80ce3",
+      "queryName": "openaq_locations_DataDestination",
+      "isHidden": true,
+      "loadEnabled": false
+    }
+  },
+  "connections": [
+    {
+      "path": "https://api.openaq.org/v3/locations?limit=1000&page=1&country_id=US&api_key=e0cd56a66db9820576ca150ccbdd9462cdb6f41c6d69cc08880a63185b63a709",
+      "kind": "Web",
+      "connectionId": "{\"ClusterId\":\"2d829544-f29e-4d37-8827-fe6de4d834e9\",\"DatasourceId\":\"d5aede91-f64b-4111-a56f-94acdd7939aa\"}"
+    },
+    {
+      "path": "Lakehouse",
+      "kind": "Lakehouse",
+      "connectionId": "{\"ClusterId\":\"2d829544-f29e-4d37-8827-fe6de4d834e9\",\"DatasourceId\":\"f02b02bd-dc25-4178-80e4-7020e21bb3c0\"}"
+    }
+  ]
+}
