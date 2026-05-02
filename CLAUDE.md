@@ -13,8 +13,8 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 ## Project structure
 
 ```
+fabric/       Fabric workspace items synced via Git integration (dataflows, pipelines, notebooks)
 notebooks/    PySpark notebooks: silver_etl, gold_etl, analytics
-pipelines/    Data Factory pipeline definitions (JSON exports from Fabric)
 warehouse/    SQL scripts: star schema DDL, stored procedures
 jobs/         External Python jobs (added in Phase 5)
 terraform/    IaC: workspace, lakehouses, warehouse (run `make help`)

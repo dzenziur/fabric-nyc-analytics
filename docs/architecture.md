@@ -60,6 +60,7 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 - **Auth mode (local dev):** Azure CLI (`az login` as workspace admin user)
 - **Auth mode (production):** Service Principal — code is in place but commented; see "Why two auth modes" below
 - **Run:** `make -C terraform plan|apply|output`
+- **Note:** `fabric/bronze_lakehouse.Lakehouse/`, `fabric/silver_lakehouse.Lakehouse/`, `fabric/gold_warehouse.Warehouse/` are auto-exported by Fabric Git for all workspace items — the actual resources are managed by Terraform, not these files.
 
 ### Lakehouse: Bronze
 - **Purpose:** Raw landing zone — data is never modified after ingestion
