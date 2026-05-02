@@ -5,7 +5,7 @@ let
     Source = Json.Document(
         Web.Contents(
             "https://api.openaq.org/v3/locations?limit=1000&page=" & Number.ToText(page),
-            [Headers = [#"X-API-Key" = "e0cd56a66db9820576ca150ccbdd9462cdb6f41c6d69cc08880a63185b63a709"]]
+            [Headers = [#"X-API-Key" = "OPENAQ_API_KEY"]]
         )
     ),
   Navigation = Source[results],
