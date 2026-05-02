@@ -9,19 +9,38 @@
 
 ---
 
-## Step 1 — Set Up Fabric Workspace
+## Step 0 — Provision Infrastructure (Terraform)
 
-1. Go to https://app.fabric.microsoft.com
-2. Create a new **Workspace** → name it `fabric-analytics-project`
-3. Assign to Fabric capacity (Trial or F64)
-4. Inside the workspace, create these items:
-   - **Lakehouse** → name: `bronze_lakehouse`
-   - **Lakehouse** → name: `silver_lakehouse`
-   - **Warehouse** → name: `gold_warehouse`
+All Fabric resources (workspace, lakehouses, warehouse) are managed via Terraform. Never create them manually through the UI.
+
+1. Install prerequisites: **Terraform >= 1.5**, **Azure CLI**
+2. Create a Service Principal in Azure Entra ID and add it as **Admin** on the Fabric workspace
+   (Manage Access → Add people or groups → paste SP application ID → Admin)
+3. Fill in variables:
+   ```bash
+   cd terraform/
+   cp terraform.tfvars.example terraform.tfvars
+   # Edit terraform.tfvars: tenant_id, client_id, client_secret, capacity_id
+   ```
+4. Authenticate and apply:
+   ```bash
+   make login   # verify SP credentials
+   make init    # download provider
+   make apply   # create workspace + bronze_lakehouse + silver_lakehouse + gold_warehouse
+   ```
+5. Confirm outputs:
+   ```bash
+   make output  # shows workspace_id, lakehouse IDs, warehouse ID
+   ```
+
+Resources created:
+- Workspace `Fabric NYC Analytics`
+- `bronze_lakehouse`, `silver_lakehouse`
+- `gold_warehouse`
 
 ---
 
-## Step 2 — Connect Git (optional but recommended)
+## Step 1 — Connect Git (optional but recommended)
 
 1. Workspace Settings → Git integration
 2. Connect to this GitHub/Azure DevOps repo
@@ -29,9 +48,9 @@
 
 ---
 
-## Step 3 — Configure Data Ingestion (Bronze)
+## Step 2 — Configure Data Ingestion (Bronze)
 
-### 3a. NYC Taxi Pipeline
+### 2a. NYC Taxi Pipeline
 
 1. In workspace → New → **Data Pipeline** → name: `pl_ingest_nyc_taxi`
 2. Add **Copy Data** activity:
@@ -41,21 +60,21 @@
 3. Parameterize year/month for reuse
 4. Test with one file (e.g., `2024-01`) before scheduling
 
-### 3b. OpenAQ Dataflow Gen2
+### 2b. OpenAQ Dataflow Gen2
 
 1. New → **Dataflow Gen2** → name: `df_openaq`
 2. New source → REST API → URL: `https://api.openaq.org/v3/measurements`
 3. Add pagination: Query param `page`, increment until empty response
 4. Flatten JSON → select columns → Destination: `bronze_lakehouse` → Table: `bronze_air_quality`
 
-### 3c. World Bank GDP Dataflow Gen2
+### 2c. World Bank GDP Dataflow Gen2
 
 1. New → **Dataflow Gen2** → name: `df_worldbank_gdp`
 2. Source: Web API → `https://api.worldbank.org/v2/country/USA/indicator/NY.GDP.MKTP.CD?format=json&per_page=100`
 3. Navigate to second element of JSON array (index 1 contains data)
 4. Destination: `bronze_lakehouse` → Table: `bronze_gdp`
 
-### 3d. ECB FX Dataflow Gen2
+### 2d. ECB FX Dataflow Gen2
 
 1. New → **Dataflow Gen2** → name: `df_ecb_fx`
 2. Source: Web → `https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?format=csvdata`
@@ -64,7 +83,7 @@
 
 ---
 
-## Step 4 — Run Silver ETL Notebook
+## Step 3 — Run Silver ETL Notebook
 
 1. Upload `notebooks/silver_etl.ipynb` to workspace (or create via Git sync)
 2. Attach to **silver_lakehouse**
@@ -81,7 +100,7 @@ Expected output tables:
 
 ---
 
-## Step 5 — Run Gold ETL Notebook
+## Step 4 — Run Gold ETL Notebook
 
 1. Upload/open `notebooks/gold_etl.ipynb`
 2. Attach to **gold_warehouse** (or silver_lakehouse with cross-workspace write)
@@ -99,7 +118,7 @@ Expected tables in gold_warehouse:
 
 ---
 
-## Step 6 — Build Visualizations
+## Step 5 — Build Visualizations
 
 **Option A — Notebooks (faster):**
 - Open `notebooks/analytics.ipynb`
@@ -112,7 +131,7 @@ Expected tables in gold_warehouse:
 
 ---
 
-## Step 6b — Weather External Job + InfluxDB
+## Step 5b — Weather External Job + InfluxDB
 
 ### InfluxDB Cloud setup
 1. Register at https://cloud2.influxdata.com (free tier)
@@ -147,7 +166,7 @@ export INFLUXDB_BUCKET="nyc_analytics"
 
 ---
 
-## Step 6c — Great Expectations + Telegram Bot
+## Step 5c — Great Expectations + Telegram Bot
 
 ### Great Expectations setup
 ```bash
@@ -183,7 +202,7 @@ great_expectations checkpoint run silver_taxi_checkpoint
 
 ---
 
-## Step 7 — Set Up Automation (Master Orchestrator)
+## Step 6 — Set Up Automation (Master Orchestrator)
 
 1. New → **Data Pipeline** → name: `pl_master_orchestrator`
 2. Add activities in order:
