@@ -62,17 +62,23 @@ Resources created:
 
 ### 2b. OpenAQ Dataflow Gen2
 
+> Requires `OPENAQ_API_KEY` — register at https://openaq.org (free)
+
 1. New → **Dataflow Gen2** → name: `df_openaq`
-2. New source → REST API → URL: `https://api.openaq.org/v3/measurements`
-3. Add pagination: Query param `page`, increment until empty response
-4. Flatten JSON → select columns → Destination: `bronze_lakehouse` → Table: `bronze_air_quality`
+2. Use **Blank query** → Advanced Editor → paste M code with `Web.Contents` + `Headers = [#"X-API-Key" = "..."]`
+3. URL: `https://api.openaq.org/v3/locations?limit=1000&page=1`
+4. Implement pagination via `fn_GetPage` function + `List.Transform({1..5}, each fn_GetPage(_))`
+5. Expand `results` list → keep: `id`, `name`, `timezone`, `country`, `coordinates`
+6. Destination: `bronze_lakehouse` → Table: `bronze_air_quality`
 
 ### 2c. World Bank GDP Dataflow Gen2
 
 1. New → **Dataflow Gen2** → name: `df_worldbank_gdp`
-2. Source: Web API → `https://api.worldbank.org/v2/country/USA/indicator/NY.GDP.MKTP.CD?format=json&per_page=100`
-3. Navigate to second element of JSON array (index 1 contains data)
-4. Destination: `bronze_lakehouse` → Table: `bronze_gdp`
+2. Source: Web API → `https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000&date=2000:2023`
+3. Navigate to second element of JSON array (index 1 contains data), convert to table
+4. Expand records → keep: `country` (id, name), `date`, `value`
+5. Rename: `country_code`, `country_name`, `year`, `gdp_usd`
+6. Destination: `bronze_lakehouse` → Table: `bronze_gdp`
 
 ### 2d. ECB FX Dataflow Gen2
 

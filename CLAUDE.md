@@ -13,8 +13,8 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 ## Project structure
 
 ```
+fabric/       Fabric workspace items synced via Git integration (dataflows, pipelines, notebooks)
 notebooks/    PySpark notebooks: silver_etl, gold_etl, analytics
-pipelines/    Data Factory pipeline definitions (JSON exports from Fabric)
 warehouse/    SQL scripts: star schema DDL, stored procedures
 jobs/         External Python jobs (added in Phase 5)
 terraform/    IaC: workspace, lakehouses, warehouse (run `make help`)
@@ -55,7 +55,12 @@ Architecture decisions: see [docs/architecture.md](docs/architecture.md)
 ## Environment
 
 Required env vars are documented in `.env.example`.
-Phase 1–3 require no env vars. InfluxDB + Telegram tokens are needed from Phase 5 only.
+
+| Variable | Phase | Purpose |
+|----------|-------|---------|
+| `OPENAQ_API_KEY` | Phase 1 | OpenAQ v3 API — required for `df_openaq` Dataflow |
+| `INFLUXDB_URL/TOKEN/ORG/BUCKET` | Phase 5 | InfluxDB Cloud — weather time-series (add when starting Phase 5) |
+| `TELEGRAM_BOT_TOKEN/CHAT_ID` | Phase 5 | Telegram bot — DQ alerts (add when starting Phase 5) |
 
 ## Key principles
 

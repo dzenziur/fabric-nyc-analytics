@@ -1,0 +1,34 @@
+{
+  "formatVersion": "202502",
+  "computeEngineSettings": {
+    "allowModernEvaluationEngine": true
+  },
+  "name": "df_worldbank_gdp",
+  "queryGroups": [],
+  "documentLocale": "en-US",
+  "queriesMetadata": {
+    "worldbank_gdp": {
+      "queryId": "3546c1e3-2143-4f6e-87a6-b5943c36c9f5",
+      "queryName": "worldbank_gdp",
+      "loadEnabled": false
+    },
+    "Query_DataDestination": {
+      "queryId": "1aaa82fd-10e8-406e-acf2-3af3e51514f2",
+      "queryName": "Query_DataDestination",
+      "isHidden": true,
+      "loadEnabled": false
+    }
+  },
+  "connections": [
+    {
+      "path": "https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000&date=2000:2023",
+      "kind": "Web",
+      "connectionId": "{\"ClusterId\":\"2d829544-f29e-4d37-8827-fe6de4d834e9\",\"DatasourceId\":\"16ddc7fb-7081-48ee-8b8e-09c8b9b710f4\"}"
+    },
+    {
+      "path": "Lakehouse",
+      "kind": "Lakehouse",
+      "connectionId": "{\"ClusterId\":\"2d829544-f29e-4d37-8827-fe6de4d834e9\",\"DatasourceId\":\"f02b02bd-dc25-4178-80e4-7020e21bb3c0\"}"
+    }
+  ]
+}
