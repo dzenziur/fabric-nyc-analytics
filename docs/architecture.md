@@ -48,9 +48,18 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 ## Components
 
 ### Microsoft Fabric Workspace
-- **Name:** `[YOUR_WORKSPACE_NAME]`
-- **Capacity:** F64 / Trial
-- **Region:** `[REGION]`
+- **Name:** `Fabric NYC Analytics`
+- **Capacity:** Fabric Trial (F64-equivalent, 60 days)
+- **Region:** Poland Central
+- **Provisioned via:** Terraform (`terraform/workspace.tf`)
+
+### Terraform Infrastructure
+- **Provider:** `microsoft/fabric` (~> 1.0)
+- **Manages:** workspace, lakehouses (bronze, silver), warehouse (gold)
+- **Does NOT manage:** Dataflow Gen2 definitions, Pipeline definitions, Notebook content (provider does not support these — synced via Fabric Git integration instead)
+- **Auth mode (local dev):** Azure CLI (`az login` as workspace admin user)
+- **Auth mode (production):** Service Principal — code is in place but commented; see "Why two auth modes" below
+- **Run:** `make -C terraform plan|apply|output`
 
 ### Lakehouse: Bronze
 - **Purpose:** Raw landing zone — data is never modified after ingestion
@@ -121,6 +130,13 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 ---
 
 ## Architectural Decisions
+
+### Why Terraform for infrastructure
+- **Reproducibility:** workspace + all 3 storage layers can be destroyed and recreated in <2 minutes
+- **Audit trail:** all infra changes go through Git, not click-ops
+- **Auth:** Service Principal is the default (`tenant_id`/`client_id`/`client_secret` in `terraform.tfvars`). Works on Fabric Trial and paid F-SKU alike. Azure CLI auth (`use_cli = true`) is available as a fallback for quick local tests without an SP.
+- **Limitation accepted:** the provider does not yet cover Dataflow Gen2, Pipelines, or Notebook content — these are managed via Fabric Git integration (workspace ↔ repo sync of JSON definitions)
+- **Alternative considered:** Pulumi — has a Fabric provider too, but smaller community and ecosystem. Terraform is the industry default for IaC.
 
 ### Why Open-Meteo for Weather?
 - Completely free, no API key, no rate limits for historical + forecast

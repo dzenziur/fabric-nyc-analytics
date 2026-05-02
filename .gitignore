@@ -39,3 +39,15 @@ Thumbs.db
 # Claude Code local settings
 .claude/
 CLAUDE.local.md
+
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+.terraformrc
+terraform.rc

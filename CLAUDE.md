@@ -6,6 +6,8 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 **Core technology:** Microsoft Fabric (Lakehouse, Data Factory Pipelines, Dataflow Gen2, PySpark Notebooks, Warehouse), Delta Lake, Python, T-SQL.
 
+**Infrastructure as Code:** Terraform with `microsoft/fabric` provider — manages workspace + lakehouses + warehouse declaratively. See `terraform/`.
+
 **External stack** (introduced later phases): InfluxDB Cloud (weather time-series), Grafana (weather dashboard), Great Expectations (data quality), Telegram Bot (DQ alerts).
 
 ## Project structure
@@ -15,6 +17,7 @@ notebooks/    PySpark notebooks: silver_etl, gold_etl, analytics
 pipelines/    Data Factory pipeline definitions (JSON exports from Fabric)
 warehouse/    SQL scripts: star schema DDL, stored procedures
 jobs/         External Python jobs (added in Phase 5)
+terraform/    IaC: workspace, lakehouses, warehouse (run `make help`)
 docs/         Architecture, data dictionary, how-to-run
 spec/         Original project specification (PDF)
 ```
@@ -23,11 +26,12 @@ spec/         Original project specification (PDF)
 
 | Branch | Phase |
 |--------|-------|
-| `phase/1-bronze-ingestion` | Data ingestion into Bronze Lakehouse |
-| `phase/2-silver-transformation` | PySpark ETL into Silver Lakehouse |
-| `phase/3-gold-modeling` | Star schema in Fabric Warehouse |
-| `phase/4-visualization` | Power BI / Notebook dashboards |
-| `phase/5-governance` | Scheduling, data quality, monitoring |
+| `feature/terraform-iac` | Phase 0 — Infrastructure as Code (workspace, lakehouses, warehouse) |
+| `feature/data-ingestion` | Phase 1 — Data ingestion into Bronze Lakehouse |
+| `feature/data-transformation` | Phase 2 — PySpark ETL into Silver Lakehouse |
+| `feature/data-modeling` | Phase 3 — Star schema in Fabric Warehouse |
+| `feature/data-visualization` | Phase 4 — Power BI / Notebook dashboards |
+| `feature/data-governance` | Phase 5 — Scheduling, data quality, monitoring |
 
 ## Data sources
 
@@ -60,3 +64,4 @@ Phase 1–3 require no env vars. InfluxDB + Telegram tokens are needed from Phas
 - **Fail loudly** — pipelines should raise errors, not silently skip bad records; data quality failures are surfaced to the user.
 - **Parameterize everything** — pipelines use parameters for dates/sources so backfills are trivial.
 - **Document decisions** — every non-obvious architectural choice has a "Why" entry in `docs/architecture.md`.
+- **Infrastructure is code** — if a Fabric resource can be managed via Terraform, it must be. Never create workspace, lakehouses, or warehouse through the UI. Run `make -C terraform apply`.
