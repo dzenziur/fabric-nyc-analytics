@@ -35,10 +35,8 @@
 # MARKDOWN ********************
 
 # # Silver ETL — Bronze → Silver Transformations
-#
 # Reads raw data from `bronze_lakehouse`, applies type casting, deduplication, and null filtering,
 # writes clean Delta tables to `silver_lakehouse`.
-#
 # **Input:** `bronze_fx_rates`, `bronze_gdp`, `bronze_air_quality`, `Files/raw/taxi/`
 # **Output:** `silver_fx_rates`, `silver_gdp`, `silver_air_quality`, `silver_taxi_trips`
 
@@ -67,9 +65,29 @@ SILVER_TAXI_TRIPS  = f"{SILVER}.silver_taxi_trips"
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# ## Imports
+# PySpark functions used across all ETL cells.
+
 # CELL ********************
 
 from pyspark.sql.functions import col, to_date, year, month
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Helper Functions
+# `write_silver` — writes a cleaned DataFrame to Silver Lakehouse as a Delta table.
+# Accepts optional `partition_by` for partitioned writes.
+
+# CELL ********************
 
 def write_silver(df, table_name: str, partition_by: list = None) -> None:
     """Write DataFrame to Silver Lakehouse as Delta table."""
