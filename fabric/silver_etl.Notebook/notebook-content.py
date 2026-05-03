@@ -32,20 +32,23 @@
 # META   }
 # META }
 
+# MARKDOWN ********************
+
+# # Silver ETL — Bronze → Silver Transformations
+#
+# Reads raw data from `bronze_lakehouse`, applies type casting, deduplication, and null filtering,
+# writes clean Delta tables to `silver_lakehouse`.
+#
+# **Input:** `bronze_fx_rates`, `bronze_gdp`, `bronze_air_quality`, `Files/raw/taxi/`
+# **Output:** `silver_fx_rates`, `silver_gdp`, `silver_air_quality`, `silver_taxi_trips`
+
 # CELL ********************
 
 BRONZE = "bronze_lakehouse"
 SILVER = "silver_lakehouse"
 
 _b = notebookutils.lakehouse.get(BRONZE)
-_s = notebookutils.lakehouse.get(SILVER)
-
-_b_base = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.id}"
-_s_base = f"abfss://{_s.workspaceId}@onelake.dfs.fabric.microsoft.com/{_s.id}"
-
-BRONZE_TABLES = f"{_b_base}/Tables"
-BRONZE_FILES  = f"{_b_base}/Files"
-SILVER_TABLES = f"{_s_base}/Tables"
+BRONZE_FILES = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.id}/Files"
 
 BRONZE_FX_RATES    = f"{BRONZE}.bronze_fx_rates"
 BRONZE_GDP         = f"{BRONZE}.bronze_gdp"
@@ -68,15 +71,6 @@ SILVER_TAXI_TRIPS  = f"{SILVER}.silver_taxi_trips"
 
 from pyspark.sql.functions import col, to_date, year, month
 
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# CELL ********************
-
 def write_silver(df, table_name: str, partition_by: list = None) -> None:
     """Write DataFrame to Silver Lakehouse as Delta table."""
     print(f"[{table_name}] rows before write: {df.count()}")
@@ -94,6 +88,11 @@ def write_silver(df, table_name: str, partition_by: list = None) -> None:
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark"
 # META }
+
+# MARKDOWN ********************
+
+# ## ECB FX Rates
+# Cast date and rate to correct types, deduplicate by date, drop null rates.
 
 # CELL ********************
 
@@ -119,6 +118,11 @@ display(df_silver.limit(5))
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# ## World Bank GDP
+# Cast year and GDP value to correct types, deduplicate by (country_code, year), drop nulls.
+
 # CELL ********************
 
 df = spark.read.table(BRONZE_GDP)
@@ -143,6 +147,11 @@ display(df_silver.limit(5))
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# ## OpenAQ Air Quality
+# Deduplicate by location_id, drop records missing location or country.
+
 # CELL ********************
 
 df = spark.read.table(BRONZE_AIR_QUALITY)
@@ -165,21 +174,15 @@ display(df_silver.limit(5))
 # META   "language_group": "synapse_pyspark"
 # META }
 
-# CELL ********************
+# MARKDOWN ********************
 
-spark.read.parquet(BRONZE_TAXI_FILES).printSchema()
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
+# ## NYC Taxi Trips
+# Rename columns to snake_case, add year/month for partitioning, filter out invalid trips.
 
 # CELL ********************
 
 df = spark.read.parquet(BRONZE_TAXI_FILES)
-print(f"[BRONZE_TAXI_FILES] rows read: {df.count()}")
+print(f"[{BRONZE}.taxi_files] rows read: {df.count()}")
 
 df_silver = (
     df
@@ -211,9 +214,14 @@ display(df_silver.limit(5))
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# ## Verification
+# Confirm all four Silver tables were created successfully.
+
 # CELL ********************
 
-spark.sql("SHOW TABLES IN silver_lakehouse").show(truncate=False)
+spark.sql(f"SHOW TABLES IN {SILVER}").show(truncate=False)
 
 # METADATA ********************
 

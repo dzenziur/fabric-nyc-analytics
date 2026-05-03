@@ -57,8 +57,8 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 - **Provider:** `microsoft/fabric` (~> 1.0)
 - **Manages:** workspace, lakehouses (bronze, silver), warehouse (gold)
 - **Does NOT manage:** Dataflow Gen2 definitions, Pipeline definitions, Notebook content (provider does not support these — synced via Fabric Git integration instead)
-- **Auth mode (local dev):** Azure CLI (`az login` as workspace admin user)
-- **Auth mode (production):** Service Principal — code is in place but commented; see "Why two auth modes" below
+- **Auth mode (default):** Service Principal (`tenant_id`/`client_id`/`client_secret` in `terraform.tfvars`) — works on Fabric Trial and paid F-SKU
+- **Auth mode (fallback):** Azure CLI (`use_cli = true`) — for quick local tests without an SP
 - **Run:** `make -C terraform plan|apply|output`
 - **Note:** `fabric/bronze_lakehouse.Lakehouse/`, `fabric/silver_lakehouse.Lakehouse/`, `fabric/gold_warehouse.Warehouse/` are auto-exported by Fabric Git for all workspace items — the actual resources are managed by Terraform, not these files.
 
@@ -73,10 +73,10 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 
 ### Lakehouse: Silver
 - **Purpose:** Cleaned, deduplicated, schema-standardized data
-- **Transformations applied:** see [notebooks/silver_etl.ipynb](../notebooks/silver_etl.ipynb)
+- **Transformations applied:** see [fabric/silver_etl.Notebook/notebook-content.py](../fabric/silver_etl.Notebook/notebook-content.py)
 - **Tables:**
-  - `silver_taxi_trips` — parsed timestamps, dropped nulls, deduped by trip_id
-  - `silver_air_quality` — flattened measurements, standardized location fields
+  - `silver_taxi_trips` — renamed columns to snake_case, dropped nulls, deduped by (pickup_datetime, dropoff_datetime, pu_location_id, do_location_id, fare_amount), partitioned by year/month
+  - `silver_air_quality` — standardized location fields, deduped by location_id
   - `silver_gdp` — yearly GDP per country, normalized
   - `silver_fx_rates` — daily USD/EUR, clean date index
 
@@ -93,9 +93,10 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 - **Orchestration Pipeline:** `pl_master_orchestrator` — runs all ingestion + triggers notebooks
 
 ### Notebooks
-- `silver_etl.ipynb` — Bronze → Silver transformations (PySpark)
-- `gold_etl.ipynb` — Silver → Gold / Warehouse load (PySpark + SQL)
-- `analytics.ipynb` — Correlation analysis and visualizations
+All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
+- `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark)
+- `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + SQL) *(Phase 3)*
+- `fabric/analytics.Notebook/` — Correlation analysis and visualizations *(Phase 4)*
 
 ### Weather External Job (Python)
 - **Source:** Open-Meteo API (free, no key) — hourly weather for NYC (lat 40.71, lon -74.01)
@@ -190,7 +191,9 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 
 ### Partitioning Strategy
 - `silver_taxi_trips` — partitioned by `year`, `month` (aligns with source file cadence)
-- `silver_air_quality` — partitioned by `year`, `month`
+- `silver_air_quality` — not partitioned (static locations table, no date dimension)
+- `silver_gdp` — not partitioned (small table, ~6k rows)
+- `silver_fx_rates` — not partitioned (small table, ~7k rows)
 - Gold/Warehouse — no partitioning (managed by Fabric Warehouse engine)
 
 ---
@@ -209,14 +212,18 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 
 ## Key Numbers (fill in after first run)
 
-| Table | Row count | Size | Refresh cadence |
-|-------|-----------|------|-----------------|
-| bronze_taxi_trips | ___ | ___ | Monthly |
-| silver_taxi_trips | ___ | ___ | Monthly |
-| bronze_air_quality | ___ | ___ | Daily |
-| silver_air_quality | ___ | ___ | Daily |
-| FactTaxiDaily | ___ | ___ | Monthly |
-| FactAirQualityDaily | ___ | ___ | Daily |
+| Table | Row count | Refresh cadence |
+|-------|-----------|-----------------|
+| bronze_taxi_trips (Files) | 2,964,624 | Monthly |
+| silver_taxi_trips | 2,869,710 | Monthly |
+| bronze_air_quality | 5,000 | Daily |
+| silver_air_quality | 5,000 | Daily |
+| bronze_gdp | 6,384 | Yearly |
+| silver_gdp | 6,193 | Yearly |
+| bronze_fx_rates | 7,058 | Daily |
+| silver_fx_rates | 6,996 | Daily |
+| FactTaxiDaily | ___ | Monthly |
+| FactAirQualityDaily | ___ | Daily |
 
 ---
 

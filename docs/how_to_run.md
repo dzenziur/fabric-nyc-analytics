@@ -5,7 +5,7 @@
 1. **Microsoft Fabric trial or paid capacity** (F64 minimum for full features)
    - Activate at: https://app.fabric.microsoft.com → Start trial
 2. **Microsoft account** with Fabric access (M365 or Azure AD)
-3. **This git repository** — for storing notebooks, SQL scripts, and documentation
+3. **This git repository** — for storing Fabric workspace items, IaC, and documentation
 
 ---
 
@@ -91,25 +91,26 @@ Resources created:
 
 ## Step 3 — Run Silver ETL Notebook
 
-1. Upload `notebooks/silver_etl.ipynb` to workspace (or create via Git sync)
-2. Attach to **silver_lakehouse**
-3. Run all cells top to bottom
-4. Verify tables exist in silver_lakehouse → Tables section
+1. Sync `feature/data-transformation` branch via Fabric Git integration — `silver_etl` notebook appears in workspace automatically
+2. Open `silver_etl` notebook → attach `bronze_lakehouse` as additional data item (read source)
+3. Default attached lakehouse must be **silver_lakehouse** (write target)
+4. Run all cells top to bottom
+5. Verify tables exist: `spark.sql("SHOW TABLES IN silver_lakehouse").show()`
 
 ```
 Expected output tables:
-  silver_lakehouse/Tables/silver_taxi_trips
-  silver_lakehouse/Tables/silver_air_quality
-  silver_lakehouse/Tables/silver_gdp
-  silver_lakehouse/Tables/silver_fx_rates
+  silver_lakehouse/Tables/silver_taxi_trips   (~2.87M rows, partitioned by year/month)
+  silver_lakehouse/Tables/silver_air_quality  (~5k rows)
+  silver_lakehouse/Tables/silver_gdp          (~6.2k rows)
+  silver_lakehouse/Tables/silver_fx_rates     (~7k rows)
 ```
 
 ---
 
 ## Step 4 — Run Gold ETL Notebook
 
-1. Upload/open `notebooks/gold_etl.ipynb`
-2. Attach to **gold_warehouse** (or silver_lakehouse with cross-workspace write)
+1. Sync branch → `gold_etl` notebook appears in workspace automatically
+2. Attach **silver_lakehouse** as data item (read source) and **gold_warehouse** as default (write target)
 3. Run all cells — creates Fact and Dim tables in Warehouse
 
 ```
@@ -127,7 +128,7 @@ Expected tables in gold_warehouse:
 ## Step 5 — Build Visualizations
 
 **Option A — Notebooks (faster):**
-- Open `notebooks/analytics.ipynb`
+- Open `analytics` notebook in workspace (synced from `fabric/analytics.Notebook/`)
 - Run cells to generate matplotlib/plotly charts
 
 **Option B — Power BI:**
@@ -236,12 +237,12 @@ great_expectations checkpoint run silver_taxi_checkpoint
 2. Run df_worldbank_gdp      → bronze_gdp
 3. Run df_openaq             → bronze_air_quality
 4. Run pl_ingest_nyc_taxi    → Files/raw/taxi/
-5. Run silver_etl.ipynb      → silver_* tables
-6. Run gold_etl.ipynb        → Fact/Dim tables in Warehouse
+5. Run silver_etl notebook   → silver_* tables
+6. Run gold_etl notebook     → Fact/Dim tables in Warehouse
 7. Refresh Power BI          → Reports update
 --- Phase 5 additions ---
 8. python jobs/weather_ingest.py → bronze_weather + InfluxDB
-9. Run silver_etl.ipynb (weather) → silver_weather (+ GE validation)
+9. Run silver_etl notebook (weather) → silver_weather (+ GE validation)
 10. Open Grafana             → Weather dashboard live
 11. Send /report to bot      → DQ report in Telegram
 ```
@@ -292,6 +293,6 @@ dt.history().show()
 |-------|-----|
 | Dataflow Gen2 fails on OpenAQ pagination | Reduce `limit` to 500; check API key if using authenticated endpoint |
 | Taxi Parquet file not found | URL uses 2-month lag — use files from 2+ months ago |
-| Notebook can't write to silver_lakehouse | Check notebook is attached to correct lakehouse; use `spark.conf.set` for cross-lakehouse writes |
+| Notebook can't write to silver_lakehouse | Ensure silver_lakehouse is the default attached lakehouse; use `notebookutils.lakehouse.get("bronze_lakehouse")` to build correct ABFS paths for cross-lakehouse reads |
 | Warehouse table not visible in Power BI | Wait ~2 min after creation; refresh dataset connection |
 | Delta Time Travel fails | Delta log may be expired (default 30 days retention); increase with `delta.logRetentionDuration` |
