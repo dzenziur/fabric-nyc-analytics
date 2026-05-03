@@ -1,0 +1,223 @@
+# Fabric notebook source
+
+# METADATA ********************
+
+# META {
+# META   "kernel_info": {
+# META     "name": "synapse_pyspark"
+# META   },
+# META   "dependencies": {
+# META     "lakehouse": {
+# META       "default_lakehouse": "cc456ca8-0bdb-48e0-b22e-523d9267e9c6",
+# META       "default_lakehouse_name": "silver_lakehouse",
+# META       "default_lakehouse_workspace_id": "d5f75821-ae8f-4a0a-b235-74982716aa0b",
+# META       "known_lakehouses": [
+# META         {
+# META           "id": "cc456ca8-0bdb-48e0-b22e-523d9267e9c6"
+# META         },
+# META         {
+# META           "id": "c9741aec-56ed-41b9-9025-c45ee072256d"
+# META         }
+# META       ]
+# META     },
+# META     "warehouse": {
+# META       "default_warehouse": "649dd1b2-d040-4523-9b1a-9cb45a00c0c9",
+# META       "known_warehouses": [
+# META         {
+# META           "id": "649dd1b2-d040-4523-9b1a-9cb45a00c0c9",
+# META           "type": "Lakewarehouse"
+# META         }
+# META       ]
+# META     }
+# META   }
+# META }
+
+# CELL ********************
+
+BRONZE = "bronze_lakehouse"
+SILVER = "silver_lakehouse"
+
+_b = notebookutils.lakehouse.get(BRONZE)
+_s = notebookutils.lakehouse.get(SILVER)
+
+_b_base = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.id}"
+_s_base = f"abfss://{_s.workspaceId}@onelake.dfs.fabric.microsoft.com/{_s.id}"
+
+BRONZE_TABLES = f"{_b_base}/Tables"
+BRONZE_FILES  = f"{_b_base}/Files"
+SILVER_TABLES = f"{_s_base}/Tables"
+
+BRONZE_FX_RATES    = f"{BRONZE}.bronze_fx_rates"
+BRONZE_GDP         = f"{BRONZE}.bronze_gdp"
+BRONZE_AIR_QUALITY = f"{BRONZE}.bronze_air_quality"
+BRONZE_TAXI_FILES  = f"{BRONZE_FILES}/raw/taxi/"
+
+SILVER_FX_RATES    = f"{SILVER}.silver_fx_rates"
+SILVER_GDP         = f"{SILVER}.silver_gdp"
+SILVER_AIR_QUALITY = f"{SILVER}.silver_air_quality"
+SILVER_TAXI_TRIPS  = f"{SILVER}.silver_taxi_trips"
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+from pyspark.sql.functions import col, to_date, year, month
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+def write_silver(df, table_name: str, partition_by: list = None) -> None:
+    """Write DataFrame to Silver Lakehouse as Delta table."""
+    print(f"[{table_name}] rows before write: {df.count()}")
+
+    writer = df.write.format("delta").mode("overwrite")
+    if partition_by:
+        writer = writer.partitionBy(*partition_by)
+
+    writer.saveAsTable(table_name)
+    print(f"[{table_name}] write done")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df = spark.read.table(BRONZE_FX_RATES)
+print(f"[{BRONZE_FX_RATES}] rows read: {df.count()}")
+
+df_silver = (
+    df
+    .withColumn("date", to_date(col("date"), "yyyy-MM-dd"))
+    .withColumn("usd_eur_rate", col("usd_eur_rate").cast("double"))
+    .dropDuplicates(["date"])
+    .filter(col("usd_eur_rate").isNotNull())
+    .orderBy("date")
+)
+
+write_silver(df_silver, SILVER_FX_RATES)
+display(df_silver.limit(5))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df = spark.read.table(BRONZE_GDP)
+print(f"[{BRONZE_GDP}] rows read: {df.count()}")
+
+df_silver = (
+    df
+    .withColumn("year", col("year").cast("int"))
+    .withColumn("gdp_usd", col("gdp_usd").cast("double"))
+    .dropDuplicates(["country_code", "year"])
+    .filter(col("country_code").isNotNull() & col("gdp_usd").isNotNull())
+    .orderBy("country_code", "year")
+)
+
+write_silver(df_silver, SILVER_GDP)
+display(df_silver.limit(5))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df = spark.read.table(BRONZE_AIR_QUALITY)
+print(f"[{BRONZE_AIR_QUALITY}] rows read: {df.count()}")
+
+df_silver = (
+    df
+    .dropDuplicates(["location_id"])
+    .filter(col("location_id").isNotNull() & col("country_id").isNotNull())
+    .orderBy("country_id", "location_id")
+)
+
+write_silver(df_silver, SILVER_AIR_QUALITY)
+display(df_silver.limit(5))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+spark.read.parquet(BRONZE_TAXI_FILES).printSchema()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df = spark.read.parquet(BRONZE_TAXI_FILES)
+print(f"[BRONZE_TAXI_FILES] rows read: {df.count()}")
+
+df_silver = (
+    df
+    .withColumnRenamed("VendorID", "vendor_id")
+    .withColumnRenamed("tpep_pickup_datetime", "pickup_datetime")
+    .withColumnRenamed("tpep_dropoff_datetime", "dropoff_datetime")
+    .withColumnRenamed("RatecodeID", "ratecode_id")
+    .withColumnRenamed("PULocationID", "pu_location_id")
+    .withColumnRenamed("DOLocationID", "do_location_id")
+    .withColumn("year", year(col("pickup_datetime")))
+    .withColumn("month", month(col("pickup_datetime")))
+    .dropDuplicates(["pickup_datetime", "dropoff_datetime", "pu_location_id", "do_location_id", "fare_amount"])
+    .filter(
+        col("pickup_datetime").isNotNull()
+        & col("pu_location_id").isNotNull()
+        & col("do_location_id").isNotNull()
+        & (col("trip_distance") > 0)
+        & (col("fare_amount") > 0)
+    )
+)
+
+write_silver(df_silver, SILVER_TAXI_TRIPS, partition_by=["year", "month"])
+display(df_silver.limit(5))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+spark.sql("SHOW TABLES IN silver_lakehouse").show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
