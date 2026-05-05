@@ -50,12 +50,12 @@ BRONZE_FILES = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.i
 
 BRONZE_FX_RATES    = f"{BRONZE}.bronze_fx_rates"
 BRONZE_GDP         = f"{BRONZE}.bronze_gdp"
-BRONZE_AIR_QUALITY = f"{BRONZE}.bronze_air_quality"
+BRONZE_AIR_QUALITY = f"{BRONZE}.bronze_openaq_locations"
 BRONZE_TAXI_FILES  = f"{BRONZE_FILES}/raw/taxi/"
 
 SILVER_FX_RATES    = f"{SILVER}.silver_fx_rates"
 SILVER_GDP         = f"{SILVER}.silver_gdp"
-SILVER_AIR_QUALITY = f"{SILVER}.silver_air_quality"
+SILVER_AIR_QUALITY = f"{SILVER}.silver_openaq_locations"
 SILVER_TAXI_TRIPS  = f"{SILVER}.silver_taxi_trips"
 
 # METADATA ********************
