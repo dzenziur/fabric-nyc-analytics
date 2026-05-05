@@ -30,47 +30,62 @@ Source: NYC TLC — https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
 ---
 
 ### `bronze_air_quality`
-Source: OpenAQ API — https://docs.openaq.org
+Source: OpenAQ API v3 `/v3/locations` — https://docs.openaq.org
+Ingested by: Dataflow Gen2 `df_openaq`
+Note: contains **location metadata only** (sensor stations), not measurements.
 
 | Column | Type | Description |
 |--------|------|-------------|
 | location_id | int | OpenAQ sensor location ID |
-| location | string | Human-readable location name |
-| city | string | City name |
-| country | string | ISO-2 country code |
+| location_name | string | Human-readable location name |
+| timezone | string | IANA timezone string (e.g., America/New_York) |
+| country_id | string | ISO-2 country code (e.g., US) |
+| country_name | string | Full country name |
 | latitude | float | Sensor latitude |
 | longitude | float | Sensor longitude |
-| parameter | string | Pollutant name (pm25, no2, o3, co, so2, pm10) |
-| value | float | Measured value |
-| unit | string | Unit of measurement (µg/m³, ppm) |
-| date_utc | timestamp | Measurement datetime (UTC) |
-| date_local | timestamp | Measurement datetime (local timezone) |
+
+---
+
+### `bronze_air_quality_measurements`
+Source: OpenAQ public S3 archive — `s3://openaq-data-archive/records/csv.gz/`
+Ingested by: PySpark Notebook `bronze_ingest_openaq_measurements`
+Note: contains **actual pollutant measurements** for NYC stations, last 5 years.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| location_id | int | OpenAQ sensor location ID |
+| sensors_id | int | Individual sensor ID within location |
+| location | string | Location name |
+| datetime | timestamp | Measurement datetime (UTC) |
+| lat | float | Sensor latitude |
+| lon | float | Sensor longitude |
+| parameter | string | Pollutant (pm25, pm10, no2, o3, co, so2) |
+| units | string | Unit of measurement (µg/m³, ppm) |
+| value | float | Measured pollutant value |
 
 ---
 
 ### `bronze_gdp`
 Source: World Bank API
+Ingested by: Dataflow Gen2 `df_worldbank_gdp`
 
 | Column | Type | Description |
 |--------|------|-------------|
 | country_code | string | ISO-3 country code (e.g., USA) |
 | country_name | string | Full country name |
-| indicator_id | string | World Bank indicator (NY.GDP.MKTP.CD) |
-| indicator_name | string | "GDP (current US$)" |
 | year | int | Calendar year |
-| value | float | GDP in current USD |
+| gdp_usd | float | GDP in current USD |
 
 ---
 
 ### `bronze_fx_rates`
 Source: ECB Data Portal
+Ingested by: Dataflow Gen2 `df_ecb_fx`
 
 | Column | Type | Description |
 |--------|------|-------------|
 | date | date | Trading date |
-| currency_pair | string | "USD/EUR" |
-| rate | float | Exchange rate (how many EUR per 1 USD) |
-| freq | string | Frequency (D = daily) |
+| usd_eur_rate | float | Exchange rate (EUR per 1 USD) |
 
 ---
 
@@ -93,50 +108,71 @@ Source: Open-Meteo API — https://api.open-meteo.com
 ## Silver Layer — Cleaned Tables
 
 ### `silver_taxi_trips`
-Transformations: parsed timestamps, removed nulls, deduped, added derived time fields
+Transformations: columns renamed to snake_case, year/month added for partitioning,
+invalid trips filtered (trip_distance > 0, fare_amount > 0), deduped by
+(pickup_datetime, dropoff_datetime, pu_location_id, do_location_id, fare_amount).
+Partitioned by: `year`, `month`.
 
 | Column | Type | Description | Transformation |
 |--------|------|-------------|----------------|
-| trip_id | string | Synthetic unique key | SHA hash of pickup_datetime + PULocationID + fare |
-| pickup_datetime | timestamp | Trip start | Parsed from tpep_pickup_datetime |
-| dropoff_datetime | timestamp | Trip end | Parsed from tpep_dropoff_datetime |
-| trip_duration_min | float | Duration in minutes | (dropoff - pickup) / 60 |
-| pickup_date | date | Date only | DATE(pickup_datetime) |
-| pickup_hour | int | Hour 0–23 | HOUR(pickup_datetime) |
-| day_of_week | string | Mon–Sun | DAYOFWEEK(pickup_datetime) |
-| month | int | 1–12 | MONTH(pickup_datetime) |
-| year | int | Calendar year | YEAR(pickup_datetime) |
-| pu_location_id | int | Pickup zone ID | = PULocationID |
-| do_location_id | int | Dropoff zone ID | = DOLocationID |
-| passenger_count | int | Passengers | Nulls replaced with 1 |
-| trip_distance_mi | float | Distance in miles | = trip_distance |
-| fare_amount_usd | float | Base fare | = fare_amount |
-| total_amount_usd | float | Total charge | = total_amount |
-| payment_type | int | Payment method | = payment_type |
-| vendor_id | int | Vendor | = VendorID |
+| vendor_id | int | Taxi vendor (1=Creative Mobile, 2=VeriFone) | Renamed from VendorID |
+| pickup_datetime | timestamp | Trip start | Renamed from tpep_pickup_datetime |
+| dropoff_datetime | timestamp | Trip end | Renamed from tpep_dropoff_datetime |
+| passenger_count | int | Number of passengers | Unchanged |
+| trip_distance | float | Distance in miles | Unchanged; filtered > 0 |
+| ratecode_id | int | Rate code | Renamed from RatecodeID |
+| store_and_fwd_flag | string | Trip stored in vehicle memory before send | Unchanged |
+| pu_location_id | int | Pickup TLC zone ID | Renamed from PULocationID |
+| do_location_id | int | Dropoff TLC zone ID | Renamed from DOLocationID |
+| payment_type | int | 1=Credit card, 2=Cash, 3=No charge, 4=Dispute | Unchanged |
+| fare_amount | float | Metered fare (USD); filtered > 0 | Unchanged |
+| extra | float | Extras and surcharges | Unchanged |
+| mta_tax | float | MTA tax | Unchanged |
+| tip_amount | float | Tip amount | Unchanged |
+| tolls_amount | float | Toll charges | Unchanged |
+| improvement_surcharge | float | $0.30 improvement surcharge | Unchanged |
+| total_amount | float | Total charged (USD) | Unchanged |
+| congestion_surcharge | float | NYC congestion surcharge | Unchanged |
+| airport_fee | float | JFK/LaGuardia airport fee | Unchanged |
+| year | int | Calendar year (partition key) | Derived: YEAR(pickup_datetime) |
+| month | int | Month 1–12 (partition key) | Derived: MONTH(pickup_datetime) |
 
 ---
 
 ### `silver_air_quality`
-Transformations: flattened, standardized units, removed invalid readings
+Transformations: deduped by location_id, rows with null location_id or country_id dropped,
+ordered by country_id, location_id. Schema identical to bronze — no new columns added.
 
 | Column | Type | Description | Transformation |
 |--------|------|-------------|----------------|
-| measurement_id | string | Synthetic key | SHA hash of location_id + parameter + date_utc |
-| location_id | int | Sensor ID | = location_id |
-| location_name | string | Location label | = location |
-| city | string | City | = city |
-| country | string | ISO-2 code | = country |
-| latitude | float | Latitude | = latitude |
-| longitude | float | Longitude | = longitude |
-| parameter | string | Pollutant | = parameter (lowercased) |
-| value | float | Measurement | Negatives removed |
-| unit | string | Unit | Standardized to µg/m³ where possible |
-| measured_at_utc | timestamp | UTC datetime | = date_utc |
-| measured_date | date | Date only | DATE(date_utc) |
-| hour | int | Hour 0–23 | HOUR(date_utc) |
-| year | int | Calendar year | YEAR(date_utc) |
-| month | int | 1–12 | MONTH(date_utc) |
+| location_id | int | OpenAQ sensor location ID | Dedup key; nulls dropped |
+| location_name | string | Human-readable location name | Unchanged |
+| timezone | string | IANA timezone string | Unchanged |
+| country_id | string | ISO-2 country code | Nulls dropped |
+| country_name | string | Full country name | Unchanged |
+| latitude | float | Sensor latitude | Unchanged |
+| longitude | float | Sensor longitude | Unchanged |
+
+---
+
+### `silver_air_quality_measurements`
+Transformations: cast datetime to timestamp, filter value > 0 and value not null,
+deduped by (location_id, parameter, datetime), ordered by location_id, datetime.
+Partitioned by: `year`, `month`.
+
+| Column | Type | Description | Transformation |
+|--------|------|-------------|----------------|
+| location_id | int | OpenAQ sensor location ID | Unchanged |
+| sensors_id | int | Individual sensor ID | Unchanged |
+| location | string | Location name | Unchanged |
+| datetime | timestamp | Measurement datetime (UTC) | Cast to timestamp |
+| lat | float | Sensor latitude | Unchanged |
+| lon | float | Sensor longitude | Unchanged |
+| parameter | string | Pollutant (pm25, pm10, no2, o3, co, so2) | Unchanged |
+| units | string | Unit of measurement | Unchanged |
+| value | float | Measured pollutant value; filtered > 0 | Unchanged |
+| year | int | Calendar year (partition key) | Derived: YEAR(datetime) |
+| month | int | Month 1–12 (partition key) | Derived: MONTH(datetime) |
 
 ---
 
@@ -161,22 +197,27 @@ Transformations: validated ranges, added derived time fields
 ---
 
 ### `silver_gdp`
+Transformations: year cast to int, gdp_usd cast to double,
+deduped by (country_code, year), rows with null country_code or gdp_usd dropped,
+ordered by country_code, year.
+
 | Column | Type | Description |
 |--------|------|-------------|
 | country_code | string | ISO-3 code |
 | country_name | string | Full name |
 | year | int | Calendar year |
-| gdp_usd | float | GDP in USD |
+| gdp_usd | float | GDP in current USD |
 
 ---
 
 ### `silver_fx_rates`
+Transformations: date cast to date type, usd_eur_rate cast to double,
+deduped by date, null rates dropped, ordered by date.
+
 | Column | Type | Description |
 |--------|------|-------------|
 | date | date | Trading date |
 | usd_eur_rate | float | EUR per 1 USD |
-| year | int | Year |
-| month | int | Month |
 
 ---
 
@@ -321,16 +362,16 @@ Tags: `city`, `data_source`
 ### Suite: `silver_taxi_trips`
 | Expectation | Parameters |
 |-------------|-----------|
-| expect_column_values_to_not_be_null | columns: pickup_datetime, fare_amount_usd |
-| expect_column_values_to_be_between | fare_amount_usd: min=0, max=500 |
-| expect_column_values_to_be_between | trip_distance_mi: min=0, max=200 |
+| expect_column_values_to_not_be_null | columns: pickup_datetime, fare_amount |
+| expect_column_values_to_be_between | fare_amount: min=0, max=500 |
+| expect_column_values_to_be_between | trip_distance: min=0, max=200 |
 | expect_column_values_to_be_in_set | payment_type: [1,2,3,4,5,6] |
 | expect_table_row_count_to_be_between | min=100000 (sanity check per month) |
 
-### Suite: `silver_air_quality`
+### Suite: `silver_air_quality_measurements`
 | Expectation | Parameters |
 |-------------|-----------|
-| expect_column_values_to_not_be_null | columns: measured_at_utc, parameter, value |
+| expect_column_values_to_not_be_null | columns: datetime, parameter, value |
 | expect_column_values_to_be_between | value: min=0, max=10000 |
 | expect_column_values_to_be_in_set | parameter: [pm25, pm10, no2, o3, co, so2] |
 

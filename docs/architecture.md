@@ -66,19 +66,21 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 - **Purpose:** Raw landing zone — data is never modified after ingestion
 - **Format:** Delta Lake (auto-created by Dataflow Gen2 and Pipeline)
 - **Tables:**
-  - `bronze_taxi_trips` — raw Parquet loaded from TLC
-  - `bronze_air_quality` — raw JSON from OpenAQ API
-  - `bronze_gdp` — raw JSON from World Bank
-  - `bronze_fx_rates` — raw CSV from ECB
+  - `bronze_taxi_trips` — raw Parquet loaded from TLC (via Pipeline)
+  - `bronze_air_quality` — OpenAQ location metadata (station list, ~5k rows) via Dataflow Gen2
+  - `bronze_air_quality_measurements` — OpenAQ pollutant readings for 22 NYC stations, last 5 years, via PySpark Notebook reading public S3 archive
+  - `bronze_gdp` — World Bank yearly GDP per country via Dataflow Gen2
+  - `bronze_fx_rates` — ECB daily USD/EUR rates via Dataflow Gen2
 
 ### Lakehouse: Silver
 - **Purpose:** Cleaned, deduplicated, schema-standardized data
 - **Transformations applied:** see [fabric/silver_etl.Notebook/notebook-content.py](../fabric/silver_etl.Notebook/notebook-content.py)
 - **Tables:**
   - `silver_taxi_trips` — renamed columns to snake_case, dropped nulls, deduped by (pickup_datetime, dropoff_datetime, pu_location_id, do_location_id, fare_amount), partitioned by year/month
-  - `silver_air_quality` — standardized location fields, deduped by location_id
-  - `silver_gdp` — yearly GDP per country, normalized
-  - `silver_fx_rates` — daily USD/EUR, clean date index
+  - `silver_air_quality` — location metadata, deduped by location_id, rows with null location_id or country_id dropped
+  - `silver_air_quality_measurements` — pollutant readings for NYC stations, value > 0, deduped by (location_id, parameter, datetime), partitioned by year/month
+  - `silver_gdp` — yearly GDP per country, nulls dropped, cast to correct types
+  - `silver_fx_rates` — daily USD/EUR, deduped by date, nulls dropped
 
 ### Fabric Warehouse (Gold)
 - **Purpose:** Analytical star schema optimized for reporting
@@ -87,14 +89,15 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 
 ### Data Factory
 - **Pipeline:** `pl_ingest_nyc_taxi` — copies monthly Parquet files to Bronze
-- **Dataflow Gen2:** `df_openaq` — OpenAQ API → Bronze Delta
-- **Dataflow Gen2:** `df_worldbank_gdp` — World Bank API → Bronze Delta
-- **Dataflow Gen2:** `df_ecb_fx` — ECB CSV → Bronze Delta
+- **Dataflow Gen2:** `df_openaq` — OpenAQ API v3 `/locations` → `bronze_air_quality` (station metadata); API key stored in Fabric Connections
+- **Dataflow Gen2:** `df_worldbank_gdp` — World Bank API → `bronze_gdp`
+- **Dataflow Gen2:** `df_ecb_fx` — ECB CSV → `bronze_fx_rates`
 - **Orchestration Pipeline:** `pl_master_orchestrator` — runs all ingestion + triggers notebooks
 
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
-- `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark)
+- `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for 22 NYC stations × last 5 years → `bronze_air_quality_measurements`
+- `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 4 data sources + air quality measurements
 - `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + SQL) *(Phase 3)*
 - `fabric/analytics.Notebook/` — Correlation analysis and visualizations *(Phase 4)*
 
