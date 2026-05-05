@@ -136,6 +136,17 @@ All notebooks live in `fabric/` as Fabric Notebook items synced via Git integrat
 
 ## Architectural Decisions
 
+### Why boto3 for OpenAQ S3 ingestion (not Spark S3A)
+
+Fabric Spark runs on Azure infrastructure with a hardcoded AWS credential provider chain
+(`TemporaryAWSCredentialsProvider → SimpleAWSCredentialsProvider → EnvironmentVariableCredentialsProvider → IAMInstanceCredentialsProvider`).
+`AnonymousAWSCredentialsProvider` cannot be injected — neither `spark.conf.set`,
+`sc._jsc.hadoopConfiguration().set()`, nor `%%configure` override the chain after Fabric
+initializes it. Therefore, native `spark.read.csv("s3a://...")` fails on public S3 buckets.
+**Solution:** `boto3` with `Config(signature_version=UNSIGNED)` runs in the Python layer,
+bypasses Spark's S3A entirely, and achieves anonymous access. Downloads are parallelized via
+`ThreadPoolExecutor`, then converted to Spark DataFrames for Delta writes.
+
 ### Why Terraform for infrastructure
 - **Reproducibility:** workspace + all 3 storage layers can be destroyed and recreated in <2 minutes
 - **Audit trail:** all infra changes go through Git, not click-ops
