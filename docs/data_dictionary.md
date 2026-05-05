@@ -29,9 +29,9 @@ Source: NYC TLC — https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
 
 ---
 
-### `bronze_air_quality`
+### `bronze_openaq_locations`
 Source: OpenAQ API v3 `/v3/locations` — https://docs.openaq.org
-Ingested by: Dataflow Gen2 `df_openaq`
+Ingested by: Dataflow Gen2 `df_openaq_locations`
 Note: contains **location metadata only** (sensor stations), not measurements.
 
 | Column | Type | Description |
@@ -46,7 +46,7 @@ Note: contains **location metadata only** (sensor stations), not measurements.
 
 ---
 
-### `bronze_air_quality_measurements`
+### `bronze_openaq_measurements`
 Source: OpenAQ public S3 archive — `s3://openaq-data-archive/records/csv.gz/`
 Ingested by: PySpark Notebook `bronze_ingest_openaq_measurements`
 Note: contains **actual pollutant measurements** for NYC stations, last 5 years.
@@ -139,7 +139,7 @@ Partitioned by: `year`, `month`.
 
 ---
 
-### `silver_air_quality`
+### `silver_openaq_locations`
 Transformations: deduped by location_id, rows with null location_id or country_id dropped,
 ordered by country_id, location_id. Schema identical to bronze — no new columns added.
 
@@ -155,7 +155,7 @@ ordered by country_id, location_id. Schema identical to bronze — no new column
 
 ---
 
-### `silver_air_quality_measurements`
+### `silver_openaq_measurements`
 Transformations: cast datetime to timestamp, filter value > 0 and value not null,
 deduped by (location_id, parameter, datetime), ordered by location_id, datetime.
 Partitioned by: `year`, `month`.
@@ -368,7 +368,7 @@ Tags: `city`, `data_source`
 | expect_column_values_to_be_in_set | payment_type: [1,2,3,4,5,6] |
 | expect_table_row_count_to_be_between | min=100000 (sanity check per month) |
 
-### Suite: `silver_air_quality_measurements`
+### Suite: `silver_openaq_measurements`
 | Expectation | Parameters |
 |-------------|-----------|
 | expect_column_values_to_not_be_null | columns: datetime, parameter, value |

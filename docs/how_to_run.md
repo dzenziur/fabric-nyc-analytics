@@ -60,16 +60,23 @@ Resources created:
 3. Parameterize year/month for reuse
 4. Test with one file (e.g., `2024-01`) before scheduling
 
-### 2b. OpenAQ Dataflow Gen2
+### 2b. OpenAQ Locations Dataflow Gen2
 
 > Requires `OPENAQ_API_KEY` — register at https://openaq.org (free)
 
-1. New → **Dataflow Gen2** → name: `df_openaq`
+1. New → **Dataflow Gen2** → name: `df_openaq_locations`
 2. Use **Blank query** → Advanced Editor → paste M code with `Web.Contents` + `Headers = [#"X-API-Key" = "..."]`
 3. URL: `https://api.openaq.org/v3/locations?limit=1000&page=1`
 4. Implement pagination via `fn_GetPage` function + `List.Transform({1..5}, each fn_GetPage(_))`
 5. Expand `results` list → keep: `id`, `name`, `timezone`, `country`, `coordinates`
-6. Destination: `bronze_lakehouse` → Table: `bronze_air_quality`
+6. Destination: `bronze_lakehouse` → Table: `bronze_openaq_locations`
+
+### 2e. OpenAQ Measurements Notebook
+
+1. Sync repo via Fabric Git integration — `bronze_ingest_openaq_measurements` notebook appears in workspace
+2. Ensure `bronze_lakehouse` is the default attached lakehouse
+3. Run all cells — reads OpenAQ public S3 archive for all NYC stations (last 5 years) → `bronze_openaq_measurements`
+4. Expected: ~1.1M rows across ~22 NYC stations
 
 ### 2c. World Bank GDP Dataflow Gen2
 
@@ -99,10 +106,11 @@ Resources created:
 
 ```
 Expected output tables:
-  silver_lakehouse/Tables/silver_taxi_trips   (~2.87M rows, partitioned by year/month)
-  silver_lakehouse/Tables/silver_air_quality  (~5k rows)
-  silver_lakehouse/Tables/silver_gdp          (~6.2k rows)
-  silver_lakehouse/Tables/silver_fx_rates     (~7k rows)
+  silver_lakehouse/Tables/silver_taxi_trips            (~2.87M rows, partitioned by year/month)
+  silver_lakehouse/Tables/silver_openaq_locations      (~5k rows)
+  silver_lakehouse/Tables/silver_openaq_measurements   (~1.1M rows, partitioned by year/month)
+  silver_lakehouse/Tables/silver_gdp                   (~6.2k rows)
+  silver_lakehouse/Tables/silver_fx_rates              (~7k rows)
 ```
 
 ---
@@ -233,11 +241,12 @@ great_expectations checkpoint run silver_taxi_checkpoint
 ## Full Run Order (Manual)
 
 ```
-1. Run df_ecb_fx             → bronze_fx_rates
-2. Run df_worldbank_gdp      → bronze_gdp
-3. Run df_openaq             → bronze_air_quality
-4. Run pl_ingest_nyc_taxi    → Files/raw/taxi/
-5. Run silver_etl notebook   → silver_* tables
+1. Run df_ecb_fx                             → bronze_fx_rates
+2. Run df_worldbank_gdp                      → bronze_gdp
+3. Run df_openaq_locations                   → bronze_openaq_locations
+4. Run bronze_ingest_openaq_measurements     → bronze_openaq_measurements
+5. Run pl_ingest_nyc_taxi                    → Files/raw/taxi/
+6. Run silver_etl notebook                   → silver_* tables
 6. Run gold_etl notebook     → Fact/Dim tables in Warehouse
 7. Refresh Power BI          → Reports update
 --- Phase 5 additions ---
@@ -256,7 +265,7 @@ After each phase, run these sanity checks:
 ```sql
 -- Bronze: check row counts
 SELECT COUNT(*) FROM bronze_lakehouse.bronze_taxi_trips;
-SELECT COUNT(*) FROM bronze_lakehouse.bronze_air_quality;
+SELECT COUNT(*) FROM bronze_lakehouse.bronze_openaq_locations;
 
 -- Silver: check no nulls in key columns
 SELECT COUNT(*) FROM silver_lakehouse.silver_taxi_trips WHERE pickup_datetime IS NULL;

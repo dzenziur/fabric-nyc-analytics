@@ -8,13 +8,19 @@ Fabric workspace items synced via Fabric Git Integration.
 |--------|-------------|
 | `df_ecb_fx.Dataflow/` | ECB CSV API → `bronze_fx_rates` |
 | `df_worldbank_gdp.Dataflow/` | World Bank JSON API → `bronze_gdp` |
-| `df_openaq.Dataflow/` | OpenAQ JSON API (paginated) → `bronze_air_quality` |
+| `df_openaq.Dataflow/` | OpenAQ JSON API (paginated) → `bronze_openaq_locations` (displayName: `df_openaq_locations`) |
 
 ## Pipelines (Phase 1 — Bronze ingestion)
 
 | Folder | What it does |
 |--------|-------------|
 | `pl_ingest_nyc_taxi.DataPipeline/` | HTTP → Parquet → `bronze_lakehouse/Files/raw/taxi/` |
+
+## Notebooks (Phase 1 — Bronze ingestion)
+
+| Folder | What it does |
+|--------|-------------|
+| `bronze_ingest_openaq_measurements.Notebook/` | OpenAQ public S3 archive → `bronze_openaq_measurements` (boto3, ThreadPoolExecutor) |
 
 ## Notebooks (Phase 2 — Silver ETL)
 
