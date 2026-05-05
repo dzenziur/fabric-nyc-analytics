@@ -26,6 +26,22 @@
 # Reads pollutant measurement history for NYC stations from the OpenAQ public S3 archive.
 # **Input:** `bronze_openaq_locations` (NYC stations filtered by bounding box) + S3 archive
 # **Output:** `bronze_openaq_measurements` (raw CSV data, no transformations)
+# **Note:** Fabric Spark S3A cannot access public S3 anonymously — boto3 is used instead.
+
+# CELL ********************
+
+%pip install boto3 -q
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Config
 
 # CELL ********************
 
@@ -33,20 +49,19 @@ from datetime import datetime
 
 BRONZE = "bronze_lakehouse"
 
-# NYC bounding box
 NYC_LAT_MIN, NYC_LAT_MAX = 40.4, 40.9
 NYC_LON_MIN, NYC_LON_MAX = -74.3, -73.7
 
-# Year range — configurable
-YEAR_END   = datetime.now().year - 1   # last fully completed year
-YEAR_START = YEAR_END - 4              # 5 years back
+YEAR_END   = datetime.now().year - 1
+YEAR_START = YEAR_END - 4
 
-# S3 source
-OPENAQ_S3_BASE = "s3a://openaq-data-archive/records/csv.gz"
+S3_BUCKET = "openaq-data-archive"
+S3_BASE   = "records/csv.gz"
 
-# Tables
 BRONZE_OPENAQ_LOCATIONS    = f"{BRONZE}.bronze_openaq_locations"
 BRONZE_OPENAQ_MEASUREMENTS = f"{BRONZE}.bronze_openaq_measurements"
+
+MAX_WORKERS = 50
 
 print(f"Year range: {YEAR_START} – {YEAR_END}")
 
@@ -63,6 +78,12 @@ print(f"Year range: {YEAR_START} – {YEAR_END}")
 
 # CELL ********************
 
+import io
+import boto3
+import pandas as pd
+from botocore import UNSIGNED
+from botocore.client import Config
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pyspark.sql.functions import col
 
 # METADATA ********************
@@ -76,17 +97,8 @@ from pyspark.sql.functions import col
 
 # ## S3 Client
 # Anonymous access via boto3 — `openaq-data-archive` is a public AWS Open Data Registry bucket.
-# Fabric Spark S3A does not support anonymous credentials, so we use boto3 directly.
 
 # CELL ********************
-
-import boto3
-import io
-import pandas as pd
-from botocore import UNSIGNED
-from botocore.client import Config
-
-S3_BUCKET = "openaq-data-archive"
 
 s3 = boto3.client(
     "s3",
@@ -135,21 +147,16 @@ print(f"IDs: {sorted(nyc_ids)}")
 # MARKDOWN ********************
 
 # ## Read Measurements from S3 and Write to Bronze
-# Collect all file keys for each location, download concurrently via ThreadPoolExecutor.
+# Collect all file keys per location, download concurrently via ThreadPoolExecutor.
 # First location: overwrite (idempotent re-runs). Subsequent: append.
 
 # CELL ********************
-
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
-MAX_WORKERS = 50
-
 
 def list_keys(s3_client: object, bucket: str, loc_id: int, year_start: int, year_end: int) -> list:
     """List all S3 keys for a location across all years."""
     keys = []
     for year in range(year_start, year_end + 1):
-        prefix = f"records/csv.gz/locationid={loc_id}/year={year}/"
+        prefix = f"{S3_BASE}/locationid={loc_id}/year={year}/"
         paginator = s3_client.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
             keys.extend(obj["Key"] for obj in page.get("Contents", []))
