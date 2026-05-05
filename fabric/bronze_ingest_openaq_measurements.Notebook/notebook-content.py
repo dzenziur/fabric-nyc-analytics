@@ -83,7 +83,7 @@ BRONZE_OPENAQ_MEASUREMENTS = f"{BRONZE}.bronze_openaq_measurements"
 
 MAX_WORKERS = 50
 
-print(f"Year range: {YEAR_START} – {YEAR_END}")
+print(f"Year range: {YEAR_START} - {YEAR_END}")
 
 # METADATA ********************
 
