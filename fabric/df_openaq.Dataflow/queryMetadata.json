@@ -26,9 +26,9 @@
   },
   "connections": [
     {
-      "path": "https://api.openaq.org/v3/locations?limit=1000&page=1&country_id=US&api_key=e0cd56a66db9820576ca150ccbdd9462cdb6f41c6d69cc08880a63185b63a709",
+      "path": "https://api.openaq.org/",
       "kind": "Web",
-      "connectionId": "{\"ClusterId\":\"2d829544-f29e-4d37-8827-fe6de4d834e9\",\"DatasourceId\":\"d5aede91-f64b-4111-a56f-94acdd7939aa\"}"
+      "connectionId": "{\"ClusterId\":\"2d829544-f29e-4d37-8827-fe6de4d834e9\",\"DatasourceId\":\"f63ab99e-94ec-40e1-a9fb-5ab3cee47a11\"}"
     },
     {
       "path": "Lakehouse",
