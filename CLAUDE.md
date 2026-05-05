@@ -12,33 +12,27 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 ## Current Status
 
-**Active branch:** `feature/air-quality-ingestion` (fixup before Phase 3)
-**Deadline:** May 23, 2026
+**Active branch:** `feature/data-modeling` (Phase 3)
+**Deadline:** May 15, 2026
 
 ### Phase completion
 
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Phase 0 — Terraform IaC | ✅ Done | workspace + bronze_lakehouse + silver_lakehouse + gold_warehouse |
-| Phase 1 — Bronze ingestion | ⚠️ Gap | Taxi ✅, GDP ✅, FX ✅, OpenAQ locations ✅, OpenAQ **measurements** ❌ |
-| Phase 2 — Silver ETL | ⚠️ Gap | silver_taxi_trips ✅, silver_gdp ✅, silver_fx_rates ✅, silver_air_quality ✅, silver_air_quality_measurements ❌ |
-| Phase 3 — Gold / star schema | ❌ Not started | Blocked by measurements gap |
+| Phase 1 — Bronze ingestion | ✅ Done | Taxi, GDP, FX, OpenAQ locations, OpenAQ measurements (S3 archive, boto3) |
+| Phase 2 — Silver ETL | ✅ Done | silver_taxi_trips, silver_gdp, silver_fx_rates, silver_openaq_locations, silver_openaq_measurements |
+| Phase 3 — Gold / star schema | 🔄 In progress | |
 | Phase 4 — Visualizations | ❌ Not started | |
 | Phase 5 — Governance / monitoring | ❌ Not started | Weather, InfluxDB, Grafana, GE, Telegram bot |
-
-### Current branch goal (`feature/air-quality-ingestion`)
-
-1. Fix `df_openaq` API key → Fabric Connections (no hardcoded key in mashup.pq)
-2. New notebook `bronze_ingest_openaq_measurements` — reads OpenAQ public S3 archive for all NYC stations (bounding box lat 40.4–40.9, lon −74.3 to −73.7), configurable year range → `bronze_air_quality_measurements`
-3. New Silver cell in `silver_etl` — cleans measurements → `silver_air_quality_measurements`
-4. Documentation ✅ already updated on this branch
 
 ### Key table row counts (Silver, after Phase 2)
 
 | Table | Rows |
 |-------|------|
 | silver_taxi_trips | ~2.87M |
-| silver_air_quality | ~5k |
+| silver_openaq_locations | ~5k |
+| silver_openaq_measurements | ~1.1M |
 | silver_gdp | ~6.2k |
 | silver_fx_rates | ~7k |
 
