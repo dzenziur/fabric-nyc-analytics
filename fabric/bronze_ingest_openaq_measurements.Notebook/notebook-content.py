@@ -135,46 +135,63 @@ print(f"IDs: {sorted(nyc_ids)}")
 # MARKDOWN ********************
 
 # ## Read Measurements from S3 and Write to Bronze
-# Process one location at a time via boto3.
+# Collect all file keys for each location, download concurrently via ThreadPoolExecutor.
 # First location: overwrite (idempotent re-runs). Subsequent: append.
-# Files are daily CSV.gz: `location-{id}-YYYYMMDD.csv.gz`
 
 # CELL ********************
 
-def read_location_year(s3_client: object, bucket: str, loc_id: int, year: int) -> pd.DataFrame:
-    """Download all monthly CSV.gz files for one location/year, return as pandas DataFrame."""
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+MAX_WORKERS = 50
+
+
+def list_keys(s3_client: object, bucket: str, loc_id: int, year_start: int, year_end: int) -> list:
+    """List all S3 keys for a location across all years."""
+    keys = []
+    for year in range(year_start, year_end + 1):
+        prefix = f"records/csv.gz/locationid={loc_id}/year={year}/"
+        paginator = s3_client.get_paginator("list_objects_v2")
+        for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
+            keys.extend(obj["Key"] for obj in page.get("Contents", []))
+    return keys
+
+
+def download_file(s3_client: object, bucket: str, key: str) -> pd.DataFrame:
+    """Download one CSV.gz file from S3, return as pandas DataFrame."""
+    obj = s3_client.get_object(Bucket=bucket, Key=key)
+    return pd.read_csv(io.BytesIO(obj["Body"].read()), compression="gzip")
+
+
+def read_location(s3_client: object, bucket: str, loc_id: int, year_start: int, year_end: int) -> pd.DataFrame:
+    """Download all files for a location concurrently, return combined DataFrame."""
+    keys = list_keys(s3_client, bucket, loc_id, year_start, year_end)
+    if not keys:
+        return pd.DataFrame()
     dfs = []
-    for month in range(1, 13):
-        prefix = f"records/csv.gz/locationid={loc_id}/year={year}/month={month:02d}/"
-        resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
-        for obj in resp.get("Contents", []):
-            raw = s3_client.get_object(Bucket=bucket, Key=obj["Key"])
-            df = pd.read_csv(io.BytesIO(raw["Body"].read()), compression="gzip")
-            dfs.append(df)
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = {executor.submit(download_file, s3_client, bucket, k): k for k in keys}
+        for future in as_completed(futures):
+            dfs.append(future.result())
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
 
 total_rows = 0
-years = list(range(YEAR_START, YEAR_END + 1))
 
 for i, loc_id in enumerate(nyc_ids):
-    loc_rows = 0
-    for year in years:
-        df_pd = read_location_year(s3, S3_BUCKET, loc_id, year)
-        if df_pd.empty:
-            continue
-        write_mode = "overwrite" if (i == 0 and year == years[0]) else "append"
-        overwrite_schema = write_mode == "overwrite"
-        (
-            spark.createDataFrame(df_pd)
-            .write.format("delta")
-            .mode(write_mode)
-            .option("overwriteSchema", str(overwrite_schema).lower())
-            .saveAsTable(BRONZE_OPENAQ_MEASUREMENTS)
-        )
-        loc_rows += len(df_pd)
-    print(f"[location {loc_id}] rows written: {loc_rows}")
-    total_rows += loc_rows
+    df_pd = read_location(s3, S3_BUCKET, loc_id, YEAR_START, YEAR_END)
+    if df_pd.empty:
+        print(f"[location {loc_id}] no data, skipping")
+        continue
+    write_mode = "overwrite" if i == 0 else "append"
+    (
+        spark.createDataFrame(df_pd)
+        .write.format("delta")
+        .mode(write_mode)
+        .option("overwriteSchema", "true" if i == 0 else "false")
+        .saveAsTable(BRONZE_OPENAQ_MEASUREMENTS)
+    )
+    print(f"[location {loc_id}] rows written: {len(df_pd)}")
+    total_rows += len(df_pd)
 
 print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] total rows: {total_rows}")
 
