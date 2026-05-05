@@ -74,16 +74,26 @@ from pyspark.sql.functions import col
 
 # MARKDOWN ********************
 
-# ## S3 Configuration
-# Anonymous access — `openaq-data-archive` is a public AWS Open Data Registry bucket.
+# ## S3 Client
+# Anonymous access via boto3 — `openaq-data-archive` is a public AWS Open Data Registry bucket.
+# Fabric Spark S3A does not support anonymous credentials, so we use boto3 directly.
 
 # CELL ********************
 
-spark.conf.set(
-    "spark.hadoop.fs.s3a.aws.credentials.provider",
-    "org.apache.hadoop.fs.s3a.AnonymousAWSCredentialsProvider"
+import boto3
+import io
+import pandas as pd
+from botocore import UNSIGNED
+from botocore.client import Config
+
+S3_BUCKET = "openaq-data-archive"
+
+s3 = boto3.client(
+    "s3",
+    config=Config(signature_version=UNSIGNED),
+    region_name="us-east-1"
 )
-spark.conf.set("spark.sql.files.ignoreMissingFiles", "true")
+print("S3 client ready")
 
 # METADATA ********************
 
@@ -124,46 +134,49 @@ print(f"IDs: {sorted(nyc_ids)}")
 
 # MARKDOWN ********************
 
-# ## Read Measurements from S3
-# Build paths for each station × year, read all CSV.gz files in one pass.
+# ## Read Measurements from S3 and Write to Bronze
+# Process one location at a time via boto3.
+# First location: overwrite (idempotent re-runs). Subsequent: append.
+# Files are daily CSV.gz: `location-{id}-YYYYMMDD.csv.gz`
 
 # CELL ********************
 
-paths = [
-    f"{OPENAQ_S3_BASE}/locationid={loc_id}/year={year}/"
-    for loc_id in nyc_ids
-    for year in range(YEAR_START, YEAR_END + 1)
-]
+def read_location_year(s3_client: object, bucket: str, loc_id: int, year: int) -> pd.DataFrame:
+    """Download all monthly CSV.gz files for one location/year, return as pandas DataFrame."""
+    dfs = []
+    for month in range(1, 13):
+        prefix = f"records/csv.gz/locationid={loc_id}/year={year}/month={month:02d}/"
+        resp = s3_client.list_objects_v2(Bucket=bucket, Prefix=prefix)
+        for obj in resp.get("Contents", []):
+            raw = s3_client.get_object(Bucket=bucket, Key=obj["Key"])
+            df = pd.read_csv(io.BytesIO(raw["Body"].read()), compression="gzip")
+            dfs.append(df)
+    return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
 
-print(f"S3 paths to read: {len(paths)}")
 
-df = (
-    spark.read
-    .option("header", "true")
-    .option("inferSchema", "true")
-    .option("recursiveFileLookup", "true")
-    .csv(paths)
-)
+total_rows = 0
+years = list(range(YEAR_START, YEAR_END + 1))
 
-print(f"[bronze_openaq_measurements] rows read: {df.count()}")
-display(df.limit(5))
+for i, loc_id in enumerate(nyc_ids):
+    loc_rows = 0
+    for year in years:
+        df_pd = read_location_year(s3, S3_BUCKET, loc_id, year)
+        if df_pd.empty:
+            continue
+        write_mode = "overwrite" if (i == 0 and year == years[0]) else "append"
+        overwrite_schema = write_mode == "overwrite"
+        (
+            spark.createDataFrame(df_pd)
+            .write.format("delta")
+            .mode(write_mode)
+            .option("overwriteSchema", str(overwrite_schema).lower())
+            .saveAsTable(BRONZE_OPENAQ_MEASUREMENTS)
+        )
+        loc_rows += len(df_pd)
+    print(f"[location {loc_id}] rows written: {loc_rows}")
+    total_rows += loc_rows
 
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# MARKDOWN ********************
-
-# ## Write to Bronze
-# Raw data, no transformations. Overwrite for idempotent runs.
-
-# CELL ********************
-
-df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(BRONZE_OPENAQ_MEASUREMENTS)
-print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] write done")
+print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] total rows: {total_rows}")
 
 # METADATA ********************
 
