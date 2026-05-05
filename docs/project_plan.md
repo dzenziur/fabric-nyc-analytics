@@ -22,11 +22,19 @@ External stack (Phase 5): **InfluxDB** + **Grafana** + **Great Expectations** + 
 - Task: Copy Activity in Pipeline → OneLake Bronze Lakehouse (Files section)
 - Note: test on 1–2 months first — files are large
 
-### OpenAQ (Dataflow Gen2)
-- Source: https://docs.openaq.org/about/about
+### OpenAQ — Location Metadata (Dataflow Gen2)
+- Source: OpenAQ API v3 `/v3/locations` — https://docs.openaq.org
 - Format: JSON API, pagination via `page` + `limit=1000`
-- Task: Dataflow Gen2 → flatten JSON → Delta table in Bronze Lakehouse
-- Note: free-tier rate limits apply
+- Task: Dataflow Gen2 `df_openaq_locations` → flatten location records → `bronze_openaq_locations` (station metadata only)
+- Columns: location_id, location_name, timezone, country_id, country_name, latitude, longitude
+- Note: API key stored in Fabric Connections (not hardcoded in Dataflow)
+
+### OpenAQ — Measurements (PySpark Notebook)
+- Source: OpenAQ public S3 archive — `s3://openaq-data-archive/records/csv.gz/`
+- Format: CSV.gz, Hive-partitioned by `locationid=` / `year=` / `month=`
+- Task: Notebook `bronze_ingest_openaq_measurements` → read all NYC stations (filtered by bounding box: lat 40.4–40.9, lon −74.3 to −73.7) → `bronze_openaq_measurements`
+- No credentials required (public AWS Open Data Registry bucket)
+- Year range configurable via notebook parameters (default: up to current year)
 
 ### World Bank GDP (Dataflow Gen2)
 - Source: `https://api.worldbank.org/v2/country/USA/indicator/NY.GDP.MKTP.CD?format=json`
@@ -50,10 +58,11 @@ PySpark Notebooks in Fabric:
 - Write cleaned Delta tables → Silver Lakehouse
 
 Key tables:
-- `silver_taxi_trips` — cleaned trips with parsed timestamps
-- `silver_air_quality` — flattened measurements with location/time
-- `silver_gdp` — yearly GDP per country
-- `silver_fx_rates` — daily USD/EUR rates
+- `silver_taxi_trips` — snake_case columns, year/month partition, invalid trips filtered
+- `silver_openaq_locations` — location metadata, deduped by location_id
+- `silver_openaq_measurements` — pollutant readings for NYC stations, year/month partition
+- `silver_gdp` — yearly GDP per country, nulls dropped
+- `silver_fx_rates` — daily USD/EUR rates, deduped by date
 
 ---
 

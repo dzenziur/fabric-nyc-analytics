@@ -37,26 +37,17 @@
 # # Silver ETL — Bronze → Silver Transformations
 # Reads raw data from `bronze_lakehouse`, applies type casting, deduplication, and null filtering,
 # writes clean Delta tables to `silver_lakehouse`.
-# **Input:** `bronze_fx_rates`, `bronze_gdp`, `bronze_air_quality`, `Files/raw/taxi/`
-# **Output:** `silver_fx_rates`, `silver_gdp`, `silver_air_quality`, `silver_taxi_trips`
+# **Input:** `bronze_fx_rates`, `bronze_gdp`, `bronze_openaq_locations`, `bronze_openaq_measurements`, `Files/raw/taxi/`
+# **Output:** `silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_taxi_trips`
+
+# MARKDOWN ********************
+
+# ## Imports
+# PySpark functions used across all ETL cells.
 
 # CELL ********************
 
-BRONZE = "bronze_lakehouse"
-SILVER = "silver_lakehouse"
-
-_b = notebookutils.lakehouse.get(BRONZE)
-BRONZE_FILES = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.id}/Files"
-
-BRONZE_FX_RATES    = f"{BRONZE}.bronze_fx_rates"
-BRONZE_GDP         = f"{BRONZE}.bronze_gdp"
-BRONZE_AIR_QUALITY = f"{BRONZE}.bronze_air_quality"
-BRONZE_TAXI_FILES  = f"{BRONZE_FILES}/raw/taxi/"
-
-SILVER_FX_RATES    = f"{SILVER}.silver_fx_rates"
-SILVER_GDP         = f"{SILVER}.silver_gdp"
-SILVER_AIR_QUALITY = f"{SILVER}.silver_air_quality"
-SILVER_TAXI_TRIPS  = f"{SILVER}.silver_taxi_trips"
+from pyspark.sql.functions import col, to_date, to_timestamp, year, month
 
 # METADATA ********************
 
@@ -67,12 +58,27 @@ SILVER_TAXI_TRIPS  = f"{SILVER}.silver_taxi_trips"
 
 # MARKDOWN ********************
 
-# ## Imports
-# PySpark functions used across all ETL cells.
+# ## Config
 
 # CELL ********************
 
-from pyspark.sql.functions import col, to_date, year, month
+BRONZE = "bronze_lakehouse"
+SILVER = "silver_lakehouse"
+
+_b = notebookutils.lakehouse.get(BRONZE)
+BRONZE_FILES = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.id}/Files"
+
+BRONZE_FX_RATES              = f"{BRONZE}.bronze_fx_rates"
+BRONZE_GDP                   = f"{BRONZE}.bronze_gdp"
+BRONZE_OPENAQ_LOCATIONS      = f"{BRONZE}.bronze_openaq_locations"
+BRONZE_OPENAQ_MEASUREMENTS   = f"{BRONZE}.bronze_openaq_measurements"
+BRONZE_TAXI_FILES            = f"{BRONZE_FILES}/raw/taxi/"
+
+SILVER_FX_RATES              = f"{SILVER}.silver_fx_rates"
+SILVER_GDP                   = f"{SILVER}.silver_gdp"
+SILVER_OPENAQ_LOCATIONS      = f"{SILVER}.silver_openaq_locations"
+SILVER_OPENAQ_MEASUREMENTS   = f"{SILVER}.silver_openaq_measurements"
+SILVER_TAXI_TRIPS            = f"{SILVER}.silver_taxi_trips"
 
 # METADATA ********************
 
@@ -172,8 +178,8 @@ display(df_silver.limit(5))
 
 # CELL ********************
 
-df = spark.read.table(BRONZE_AIR_QUALITY)
-print(f"[{BRONZE_AIR_QUALITY}] rows read: {df.count()}")
+df = spark.read.table(BRONZE_OPENAQ_LOCATIONS)
+print(f"[{BRONZE_OPENAQ_LOCATIONS}] rows read: {df.count()}")
 
 df_silver = (
     df
@@ -182,7 +188,7 @@ df_silver = (
     .orderBy("country_id", "location_id")
 )
 
-write_silver(df_silver, SILVER_AIR_QUALITY)
+write_silver(df_silver, SILVER_OPENAQ_LOCATIONS)
 display(df_silver.limit(5))
 
 # METADATA ********************
@@ -234,8 +240,40 @@ display(df_silver.limit(5))
 
 # MARKDOWN ********************
 
+# ## OpenAQ Measurements
+# Filter out non-positive readings, deduplicate by (location_id, parameter, datetime),
+# cast datetime, add year/month partition keys. Partitioned by year/month.
+
+# CELL ********************
+
+df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
+print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] rows read: {df.count()}")
+
+df_silver = (
+    df
+    .filter(col("value") > 0)
+    .withColumn("datetime", to_timestamp(col("datetime")))
+    .dropDuplicates(["location_id", "parameter", "datetime"])
+    .filter(col("location_id").isNotNull() & col("parameter").isNotNull() & col("datetime").isNotNull())
+    .withColumn("year", year(col("datetime")))
+    .withColumn("month", month(col("datetime")))
+    .orderBy("location_id", "parameter", "datetime")
+)
+
+write_silver(df_silver, SILVER_OPENAQ_MEASUREMENTS, partition_by=["year", "month"])
+display(df_silver.limit(5))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
 # ## Verification
-# Confirm all four Silver tables were created successfully.
+# Confirm all five Silver tables were created successfully.
 
 # CELL ********************
 

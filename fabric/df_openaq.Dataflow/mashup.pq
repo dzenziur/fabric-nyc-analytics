@@ -29,6 +29,6 @@ shared openaq_locations_DataDestination = let
   Pattern = Lakehouse.Contents([CreateNavigationProperties = false, EnableFolding = false, HierarchicalNavigation = null, EnableVorder = true, OutputMetadataRefresh = true]),
   Navigation_1 = Pattern{[workspaceId = "d5f75821-ae8f-4a0a-b235-74982716aa0b"]}[Data],
   Navigation_2 = Navigation_1{[lakehouseId = "c9741aec-56ed-41b9-9025-c45ee072256d"]}[Data],
-  TableNavigation = Navigation_2{[Id = "bronze_air_quality", ItemKind = "Table"]}?[Data]?
+  TableNavigation = Navigation_2{[Id = "bronze_openaq_locations", ItemKind = "Table"]}?[Data]?
 in
   TableNavigation;
