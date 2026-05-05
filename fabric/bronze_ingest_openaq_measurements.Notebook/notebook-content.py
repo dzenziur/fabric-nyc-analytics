@@ -41,11 +41,31 @@
 
 # MARKDOWN ********************
 
-# ## Config
+# ## Imports
 
 # CELL ********************
 
 from datetime import datetime
+import io
+import boto3
+import pandas as pd
+from botocore import UNSIGNED
+from botocore.client import Config
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from pyspark.sql.functions import col
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Config
+
+# CELL ********************
 
 BRONZE = "bronze_lakehouse"
 
@@ -64,27 +84,6 @@ BRONZE_OPENAQ_MEASUREMENTS = f"{BRONZE}.bronze_openaq_measurements"
 MAX_WORKERS = 50
 
 print(f"Year range: {YEAR_START} – {YEAR_END}")
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# MARKDOWN ********************
-
-# ## Imports
-
-# CELL ********************
-
-import io
-import boto3
-import pandas as pd
-from botocore import UNSIGNED
-from botocore.client import Config
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from pyspark.sql.functions import col
 
 # METADATA ********************
 

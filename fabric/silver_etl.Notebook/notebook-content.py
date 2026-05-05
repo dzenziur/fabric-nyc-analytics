@@ -40,25 +40,14 @@
 # **Input:** `bronze_fx_rates`, `bronze_gdp`, `bronze_openaq_locations`, `bronze_openaq_measurements`, `Files/raw/taxi/`
 # **Output:** `silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_taxi_trips`
 
+# MARKDOWN ********************
+
+# ## Imports
+# PySpark functions used across all ETL cells.
+
 # CELL ********************
 
-BRONZE = "bronze_lakehouse"
-SILVER = "silver_lakehouse"
-
-_b = notebookutils.lakehouse.get(BRONZE)
-BRONZE_FILES = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.id}/Files"
-
-BRONZE_FX_RATES              = f"{BRONZE}.bronze_fx_rates"
-BRONZE_GDP                   = f"{BRONZE}.bronze_gdp"
-BRONZE_OPENAQ_LOCATIONS           = f"{BRONZE}.bronze_openaq_locations"
-BRONZE_OPENAQ_MEASUREMENTS  = f"{BRONZE}.bronze_openaq_measurements"
-BRONZE_TAXI_FILES            = f"{BRONZE_FILES}/raw/taxi/"
-
-SILVER_FX_RATES              = f"{SILVER}.silver_fx_rates"
-SILVER_GDP                   = f"{SILVER}.silver_gdp"
-SILVER_OPENAQ_LOCATIONS           = f"{SILVER}.silver_openaq_locations"
-SILVER_OPENAQ_MEASUREMENTS  = f"{SILVER}.silver_openaq_measurements"
-SILVER_TAXI_TRIPS            = f"{SILVER}.silver_taxi_trips"
+from pyspark.sql.functions import col, to_date, to_timestamp, year, month
 
 # METADATA ********************
 
@@ -69,12 +58,27 @@ SILVER_TAXI_TRIPS            = f"{SILVER}.silver_taxi_trips"
 
 # MARKDOWN ********************
 
-# ## Imports
-# PySpark functions used across all ETL cells.
+# ## Config
 
 # CELL ********************
 
-from pyspark.sql.functions import col, to_date, to_timestamp, year, month
+BRONZE = "bronze_lakehouse"
+SILVER = "silver_lakehouse"
+
+_b = notebookutils.lakehouse.get(BRONZE)
+BRONZE_FILES = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.id}/Files"
+
+BRONZE_FX_RATES              = f"{BRONZE}.bronze_fx_rates"
+BRONZE_GDP                   = f"{BRONZE}.bronze_gdp"
+BRONZE_OPENAQ_LOCATIONS      = f"{BRONZE}.bronze_openaq_locations"
+BRONZE_OPENAQ_MEASUREMENTS   = f"{BRONZE}.bronze_openaq_measurements"
+BRONZE_TAXI_FILES            = f"{BRONZE_FILES}/raw/taxi/"
+
+SILVER_FX_RATES              = f"{SILVER}.silver_fx_rates"
+SILVER_GDP                   = f"{SILVER}.silver_gdp"
+SILVER_OPENAQ_LOCATIONS      = f"{SILVER}.silver_openaq_locations"
+SILVER_OPENAQ_MEASUREMENTS   = f"{SILVER}.silver_openaq_measurements"
+SILVER_TAXI_TRIPS            = f"{SILVER}.silver_taxi_trips"
 
 # METADATA ********************
 
