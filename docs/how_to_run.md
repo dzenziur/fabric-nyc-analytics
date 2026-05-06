@@ -224,7 +224,7 @@ great_expectations checkpoint run silver_taxi_checkpoint
    ```
    [Parallel]
      df_ecb_fx (Dataflow Gen2 activity)
-     df_openaq (Dataflow Gen2 activity)
+     df_openaq_locations (Dataflow Gen2 activity)
      df_worldbank_gdp (Dataflow Gen2 activity)
      pl_ingest_nyc_taxi (Pipeline activity, only on new month)
    [Then]

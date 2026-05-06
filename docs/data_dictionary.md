@@ -274,7 +274,6 @@ Grain: one row per calendar day
 | day_of_week | int | 1=Monday, 7=Sunday |
 | day_name | string | Monday–Sunday |
 | is_weekend | boolean | True if Sat or Sun |
-| is_us_holiday | boolean | US federal holidays |
 
 ---
 

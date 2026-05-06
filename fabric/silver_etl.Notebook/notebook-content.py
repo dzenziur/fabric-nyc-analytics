@@ -89,7 +89,7 @@ SILVER_TAXI_TRIPS            = f"{SILVER}.silver_taxi_trips"
 
 # MARKDOWN ********************
 
-# ## Helper Functions
+# ## Helper
 # `write_silver` — writes a cleaned DataFrame to Silver Lakehouse as a Delta table.
 # Accepts optional `partition_by` for partitioned writes.
 

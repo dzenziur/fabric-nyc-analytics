@@ -67,8 +67,8 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 - **Format:** Delta Lake (auto-created by Dataflow Gen2 and Pipeline)
 - **Tables:**
   - `bronze_taxi_trips` — raw Parquet loaded from TLC (via Pipeline)
-  - `bronze_air_quality` — OpenAQ location metadata (station list, ~5k rows) via Dataflow Gen2
-  - `bronze_air_quality_measurements` — OpenAQ pollutant readings for 22 NYC stations, last 5 years, via PySpark Notebook reading public S3 archive
+  - `bronze_openaq_locations` — OpenAQ location metadata (station list, ~5k rows) via Dataflow Gen2
+  - `bronze_openaq_measurements` — OpenAQ pollutant readings for 22 NYC stations, last 5 years, via PySpark Notebook reading public S3 archive
   - `bronze_gdp` — World Bank yearly GDP per country via Dataflow Gen2
   - `bronze_fx_rates` — ECB daily USD/EUR rates via Dataflow Gen2
 
@@ -77,8 +77,8 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 - **Transformations applied:** see [fabric/silver_etl.Notebook/notebook-content.py](../fabric/silver_etl.Notebook/notebook-content.py)
 - **Tables:**
   - `silver_taxi_trips` — renamed columns to snake_case, dropped nulls, deduped by (pickup_datetime, dropoff_datetime, pu_location_id, do_location_id, fare_amount), partitioned by year/month
-  - `silver_air_quality` — location metadata, deduped by location_id, rows with null location_id or country_id dropped
-  - `silver_air_quality_measurements` — pollutant readings for NYC stations, value > 0, deduped by (location_id, parameter, datetime), partitioned by year/month
+  - `silver_openaq_locations` — location metadata, deduped by location_id, rows with null location_id or country_id dropped
+  - `silver_openaq_measurements` — pollutant readings for NYC stations, value > 0, deduped by (location_id, parameter, datetime), partitioned by year/month
   - `silver_gdp` — yearly GDP per country, nulls dropped, cast to correct types
   - `silver_fx_rates` — daily USD/EUR, deduped by date, nulls dropped
 
@@ -89,14 +89,14 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 
 ### Data Factory
 - **Pipeline:** `pl_ingest_nyc_taxi` — copies monthly Parquet files to Bronze
-- **Dataflow Gen2:** `df_openaq` — OpenAQ API v3 `/locations` → `bronze_air_quality` (station metadata); API key stored in Fabric Connections
+- **Dataflow Gen2:** `df_openaq_locations` — OpenAQ API v3 `/locations` → `bronze_openaq_locations` (station metadata); API key stored in Fabric Connections
 - **Dataflow Gen2:** `df_worldbank_gdp` — World Bank API → `bronze_gdp`
 - **Dataflow Gen2:** `df_ecb_fx` — ECB CSV → `bronze_fx_rates`
 - **Orchestration Pipeline:** `pl_master_orchestrator` — runs all ingestion + triggers notebooks
 
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
-- `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for 22 NYC stations × last 5 years → `bronze_air_quality_measurements`
+- `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for 22 NYC stations × last 5 years → `bronze_openaq_measurements`
 - `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 4 data sources + air quality measurements
 - `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + SQL) *(Phase 3)*
 - `fabric/analytics.Notebook/` — Correlation analysis and visualizations *(Phase 4)*
@@ -205,7 +205,7 @@ bypasses Spark's S3A entirely, and achieves anonymous access. Downloads are para
 
 ### Partitioning Strategy
 - `silver_taxi_trips` — partitioned by `year`, `month` (aligns with source file cadence)
-- `silver_air_quality` — not partitioned (static locations table, no date dimension)
+- `silver_openaq_locations` — not partitioned (static locations table, no date dimension)
 - `silver_gdp` — not partitioned (small table, ~6k rows)
 - `silver_fx_rates` — not partitioned (small table, ~7k rows)
 - Gold/Warehouse — no partitioning (managed by Fabric Warehouse engine)
@@ -230,8 +230,8 @@ bypasses Spark's S3A entirely, and achieves anonymous access. Downloads are para
 |-------|-----------|-----------------|
 | bronze_taxi_trips (Files) | 2,964,624 | Monthly |
 | silver_taxi_trips | 2,869,710 | Monthly |
-| bronze_air_quality | 5,000 | Daily |
-| silver_air_quality | 5,000 | Daily |
+| bronze_openaq_locations | 5,000 | Daily |
+| silver_openaq_locations | 5,000 | Daily |
 | bronze_gdp | 6,384 | Yearly |
 | silver_gdp | 6,193 | Yearly |
 | bronze_fx_rates | 7,058 | Daily |

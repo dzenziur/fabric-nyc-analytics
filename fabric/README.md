@@ -8,7 +8,7 @@ Fabric workspace items synced via Fabric Git Integration.
 |--------|-------------|
 | `df_ecb_fx.Dataflow/` | ECB CSV API → `bronze_fx_rates` |
 | `df_worldbank_gdp.Dataflow/` | World Bank JSON API → `bronze_gdp` |
-| `df_openaq.Dataflow/` | OpenAQ JSON API (paginated) → `bronze_openaq_locations` (displayName: `df_openaq_locations`) |
+| `df_openaq_locations.Dataflow/` | OpenAQ JSON API (paginated) → `bronze_openaq_locations` |
 
 ## Pipelines (Phase 1 — Bronze ingestion)
 
