@@ -14,6 +14,9 @@
 # META       "known_lakehouses": [
 # META         {
 # META           "id": "cc456ca8-0bdb-48e0-b22e-523d9267e9c6"
+# META         },
+# META         {
+# META           "id": "c9741aec-56ed-41b9-9025-c45ee072256d"
 # META         }
 # META       ]
 # META     },
@@ -43,6 +46,7 @@
 # CELL ********************
 
 import com.microsoft.spark.fabric
+import urllib.request
 from pyspark.sql.functions import (
     col, explode, sequence, to_date,
     year, quarter, month, date_format,
@@ -64,11 +68,15 @@ from pyspark.sql.functions import (
 
 # CELL ********************
 
+BRONZE = "bronze_lakehouse"
 SILVER = "silver_lakehouse"
 GOLD   = "gold_warehouse"
 
 YEAR_START = 2019
 YEAR_END   = 2025
+
+_b = notebookutils.lakehouse.get(BRONZE)
+BRONZE_FILES = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.id}/Files"
 
 SILVER_TAXI_TRIPS           = f"{SILVER}.silver_taxi_trips"
 SILVER_OPENAQ_MEASUREMENTS  = f"{SILVER}.silver_openaq_measurements"
@@ -146,12 +154,66 @@ display(df_dim_date.limit(10))
 
 # MARKDOWN ********************
 
+# ## DimZone
+# TLC taxi zone lookup CSV → 265 rows. zone_key = LocationID (natural PK, 1–265).
+# CSV is downloaded once to bronze_lakehouse Files and read via Spark.
+
+# CELL ********************
+
+ZONE_CSV_URL  = "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
+ZONE_CSV_PATH = f"{BRONZE_FILES}/raw/taxi_zones/taxi_zone_lookup.csv"
+
+urllib.request.urlretrieve(ZONE_CSV_URL, "/tmp/taxi_zone_lookup.csv")
+notebookutils.fs.cp("file:///tmp/taxi_zone_lookup.csv", ZONE_CSV_PATH, overwrite=True)
+print(f"Zone CSV written to {ZONE_CSV_PATH}")
+
+df_dim_zone = (
+    spark.read.option("header", True).csv(ZONE_CSV_PATH)
+    .select(
+        col("LocationID").cast("int").alias("zone_key"),
+        col("LocationID").cast("int").alias("location_id"),
+        col("Zone").alias("zone_name"),
+        col("Borough").alias("borough"),
+        col("service_zone"),
+    )
+    .filter(col("zone_key").isNotNull())
+    .orderBy("zone_key")
+)
+
+write_gold(df_dim_zone, "DimZone")
+display(df_dim_zone.limit(10))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
 # ## Verification
 
 # CELL ********************
 
-spark.sql(f"SELECT COUNT(*) AS total_days, MIN(date) AS min_date, MAX(date) AS max_date FROM {GOLD}.dbo.DimDate").show()
-spark.sql(f"SELECT is_weekend, COUNT(*) AS cnt FROM {GOLD}.dbo.DimDate GROUP BY is_weekend").show()
+df_check = spark.read.synapsesql(f"{GOLD}.dbo.DimDate")
+print(f"DimDate rows: {df_check.count()}")
+df_check.groupBy("is_weekend").count().show()
+display(df_check.limit(5))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df_check = spark.read.synapsesql(f"{GOLD}.dbo.DimZone")
+print(f"DimZone rows: {df_check.count()}")
+df_check.groupBy("borough").count().orderBy("borough").show()
+display(df_check.limit(5))
 
 # METADATA ********************
 
