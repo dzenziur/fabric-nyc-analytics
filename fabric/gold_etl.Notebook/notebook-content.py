@@ -223,6 +223,30 @@ display(df_dim_fx.limit(10))
 
 # MARKDOWN ********************
 
+# ## DimGDP
+# One row per (country, year). gdp_trillion_usd is a display-friendly derived column.
+
+# CELL ********************
+
+df_dim_gdp = (
+    spark.read.table(SILVER_GDP)
+    .withColumn("gdp_trillion_usd", spark_round(col("gdp_usd") / 1e12, 4))
+    .withColumn("gdp_key", row_number().over(Window.orderBy("country_code", "year")))
+    .select("gdp_key", "country_code", "country_name", "year", "gdp_usd", "gdp_trillion_usd")
+)
+
+write_gold(df_dim_gdp, "DimGDP")
+display(df_dim_gdp.limit(10))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
 # ## Verification
 
 # CELL ********************
@@ -257,6 +281,20 @@ display(df_check.limit(5))
 
 df_check = spark.read.synapsesql(f"{GOLD}.dbo.DimFX")
 print(f"DimFX rows: {df_check.count()}")
+display(df_check.limit(5))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df_check = spark.read.synapsesql(f"{GOLD}.dbo.DimGDP")
+print(f"DimGDP rows: {df_check.count()}")
+df_check.groupBy("year").count().orderBy("year").show(5)
 display(df_check.limit(5))
 
 # METADATA ********************
