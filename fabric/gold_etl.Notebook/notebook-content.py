@@ -32,9 +32,7 @@
 # MARKDOWN ********************
 
 # # Gold ETL — Silver → Fabric Warehouse (star schema)
-# Transforms Silver tables into a star schema in `gold_warehouse`.
-# Python cells handle all transformations and register temp views.
-# Scala cells write each temp view to gold_warehouse via synapsesql.
+# Builds star schema from Silver tables and writes to `gold_warehouse` via synapsesql.
 # **Input:** silver_taxi_trips, silver_openaq_measurements, silver_fx_rates, silver_gdp
 # **Output:** gold_warehouse.dbo — DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily
 
@@ -44,6 +42,7 @@
 
 # CELL ********************
 
+import com.microsoft.spark.fabric
 from pyspark.sql.functions import (
     col, explode, sequence, to_date,
     year, quarter, month, date_format,
@@ -91,10 +90,10 @@ print(f"Date spine: {YEAR_START}-01-01 → {YEAR_END}-12-31")
 
 # CELL ********************
 
-def stage(df, table: str) -> None:
-    """Count rows, register temp view for Scala synapsesql write."""
-    print(f"[{table}] rows staged: {df.count()}")
-    df.createOrReplaceTempView(f"v_{table}")
+def write_gold(df, table: str) -> None:
+    print(f"[{table}] rows before write: {df.count()}")
+    df.write.mode("overwrite").synapsesql(f"{GOLD}.dbo.{table}")
+    print(f"[{table}] write done")
 
 # METADATA ********************
 
@@ -135,7 +134,7 @@ df_dim_date = (
     )
 )
 
-stage(df_dim_date, "DimDate")
+write_gold(df_dim_date, "DimDate")
 display(df_dim_date.limit(10))
 
 # METADATA ********************
@@ -145,32 +144,18 @@ display(df_dim_date.limit(10))
 # META   "language_group": "synapse_pyspark"
 # META }
 
-# CELL ********************
-
-%%scala
-spark.table("v_DimDate").write.mode("overwrite").synapsesql("gold_warehouse.dbo.DimDate")
-println("[DimDate] write done")
-
-# METADATA ********************
-
-# META {
-# META   "language": "scala",
-# META   "language_group": "synapse_spark"
-# META }
-
 # MARKDOWN ********************
 
 # ## Verification
 
 # CELL ********************
 
-%%scala
-spark.sql("SELECT COUNT(*) AS total_days, MIN(date) AS min_date, MAX(date) AS max_date FROM gold_warehouse.dbo.DimDate").show()
-spark.sql("SELECT is_weekend, COUNT(*) AS cnt FROM gold_warehouse.dbo.DimDate GROUP BY is_weekend").show()
+spark.sql(f"SELECT COUNT(*) AS total_days, MIN(date) AS min_date, MAX(date) AS max_date FROM {GOLD}.dbo.DimDate").show()
+spark.sql(f"SELECT is_weekend, COUNT(*) AS cnt FROM {GOLD}.dbo.DimDate GROUP BY is_weekend").show()
 
 # METADATA ********************
 
 # META {
-# META   "language": "scala",
-# META   "language_group": "synapse_spark"
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
 # META }

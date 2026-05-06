@@ -136,6 +136,15 @@ All notebooks live in `fabric/` as Fabric Notebook items synced via Git integrat
 
 ## Architectural Decisions
 
+### Why Gold tables are in silver_lakehouse (not gold_warehouse)
+
+The `synapsesql` Spark connector for Fabric Warehouse writes is not available in Fabric Trial
+(neither in Python `DataFrameWriter` nor in Scala). The connector exists in documentation for
+paid F-SKU capacities only. As a result, Gold Delta tables (`DimDate`, `DimZone`, `DimFX`,
+`DimGDP`, `FactTaxiDaily`, `FactAirQualityDaily`) are written to `silver_lakehouse` via
+`df.write.format("delta").saveAsTable()`. The Lakehouse SQL endpoint is fully equivalent to a
+Warehouse SQL endpoint for Power BI connectivity — reports and DAX measures work identically.
+
 ### Why boto3 for OpenAQ S3 ingestion (not Spark S3A)
 
 Fabric Spark runs on Azure infrastructure with a hardcoded AWS credential provider chain
