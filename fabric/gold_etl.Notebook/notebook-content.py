@@ -47,6 +47,7 @@
 
 import com.microsoft.spark.fabric
 import urllib.request
+from datetime import datetime
 from pyspark.sql.functions import (
     col, explode, sequence, to_date,
     year, quarter, month, date_format,
@@ -73,8 +74,8 @@ BRONZE = "bronze_lakehouse"
 SILVER = "silver_lakehouse"
 GOLD   = "gold_warehouse"
 
-YEAR_START = 2019
-YEAR_END   = 2025
+YEAR_END   = datetime.now().year - 1
+YEAR_START = YEAR_END - 4
 
 _b = notebookutils.lakehouse.get(BRONZE)
 BRONZE_FILES = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.id}/Files"
@@ -85,7 +86,7 @@ SILVER_OPENAQ_LOCATIONS     = f"{SILVER}.silver_openaq_locations"
 SILVER_FX_RATES             = f"{SILVER}.silver_fx_rates"
 SILVER_GDP                  = f"{SILVER}.silver_gdp"
 
-print(f"Date spine: {YEAR_START}-01-01 → {YEAR_END}-12-31")
+print(f"Year range: {YEAR_START} - {YEAR_END}")
 
 # METADATA ********************
 
