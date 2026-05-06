@@ -52,8 +52,9 @@ from pyspark.sql.functions import (
     year, quarter, month, date_format,
     weekofyear, dayofmonth, dayofweek,
     avg, max, min, count, sum as spark_sum,
-    round as spark_round
+    round as spark_round, row_number
 )
+from pyspark.sql.window import Window
 
 # METADATA ********************
 
@@ -192,6 +193,36 @@ display(df_dim_zone.limit(10))
 
 # MARKDOWN ********************
 
+# ## DimFX
+# One row per trading date. fx_key is a sequential surrogate key ordered by date.
+
+# CELL ********************
+
+df_dim_fx = (
+    spark.read.table(SILVER_FX_RATES)
+    .select(
+        col("date"),
+        (year(col("date")) * 10000
+         + month(col("date")) * 100
+         + dayofmonth(col("date"))).cast("int").alias("date_key"),
+        col("usd_eur_rate"),
+    )
+    .withColumn("fx_key", row_number().over(Window.orderBy("date")))
+    .select("fx_key", "date_key", "date", "usd_eur_rate")
+)
+
+write_gold(df_dim_fx, "DimFX")
+display(df_dim_fx.limit(10))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
 # ## Verification
 
 # CELL ********************
@@ -213,6 +244,19 @@ display(df_check.limit(5))
 df_check = spark.read.synapsesql(f"{GOLD}.dbo.DimZone")
 print(f"DimZone rows: {df_check.count()}")
 df_check.groupBy("borough").count().orderBy("borough").show()
+display(df_check.limit(5))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df_check = spark.read.synapsesql(f"{GOLD}.dbo.DimFX")
+print(f"DimFX rows: {df_check.count()}")
 display(df_check.limit(5))
 
 # METADATA ********************
