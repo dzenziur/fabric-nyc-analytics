@@ -12,7 +12,7 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 ## Current Status
 
-**Active branch:** `feature/data-modeling` (Phase 3)
+**Active branch:** `feature/data-visualization` (Phase 4)
 **Deadline:** May 15, 2026
 
 ### Phase completion
@@ -22,19 +22,25 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 | Phase 0 — Terraform IaC | ✅ Done | workspace + bronze_lakehouse + silver_lakehouse + gold_warehouse |
 | Phase 1 — Bronze ingestion | ✅ Done | Taxi, GDP, FX, OpenAQ locations, OpenAQ measurements (S3 archive, boto3) |
 | Phase 2 — Silver ETL | ✅ Done | silver_taxi_trips, silver_gdp, silver_fx_rates, silver_openaq_locations, silver_openaq_measurements |
-| Phase 3 — Gold / star schema | 🔄 In progress | |
-| Phase 4 — Visualizations | ❌ Not started | |
+| Phase 3 — Gold / star schema | ✅ Done | DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily in gold_warehouse |
+| Phase 4 — Visualizations | 🔄 In progress | Power BI semantic model + Notebook analytics |
 | Phase 5 — Governance / monitoring | ❌ Not started | Weather, InfluxDB, Grafana, GE, Telegram bot |
 
-### Key table row counts (Silver, after Phase 2)
+### Key table row counts
 
-| Table | Rows |
-|-------|------|
-| silver_taxi_trips | ~2.87M |
-| silver_openaq_locations | ~5k |
-| silver_openaq_measurements | ~1.1M |
-| silver_gdp | ~6.2k |
-| silver_fx_rates | ~7k |
+| Table | Rows | Layer |
+|-------|------|-------|
+| silver_taxi_trips | ~2.87M | Silver |
+| silver_openaq_locations | ~5k | Silver |
+| silver_openaq_measurements | ~1.1M | Silver |
+| silver_gdp | ~6.2k | Silver |
+| silver_fx_rates | ~7k | Silver |
+| DimDate | 2,557 | Gold |
+| DimZone | 265 | Gold |
+| DimFX | 6,996 | Gold |
+| DimGDP | 6,193 | Gold |
+| FactTaxiDaily | 6,856 | Gold |
+| FactAirQualityDaily | 49,287 | Gold |
 
 ### Key reference docs
 
@@ -94,7 +100,7 @@ Required env vars are documented in `.env.example`.
 
 | Variable | Phase | Purpose |
 |----------|-------|---------|
-| `OPENAQ_API_KEY` | Phase 1 | OpenAQ v3 API — required for `df_openaq` Dataflow |
+| `OPENAQ_API_KEY` | Phase 1 | OpenAQ v3 API — required for `df_openaq_locations` Dataflow |
 | `INFLUXDB_URL/TOKEN/ORG/BUCKET` | Phase 5 | InfluxDB Cloud — weather time-series (add when starting Phase 5) |
 | `TELEGRAM_BOT_TOKEN/CHAT_ID` | Phase 5 | Telegram bot — DQ alerts (add when starting Phase 5) |
 
