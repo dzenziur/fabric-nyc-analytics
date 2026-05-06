@@ -52,7 +52,7 @@ from pyspark.sql.functions import (
     year, quarter, month, date_format,
     weekofyear, dayofmonth, dayofweek,
     avg, max, min, count, sum as spark_sum,
-    round as spark_round, row_number
+    round as spark_round, row_number, unix_timestamp
 )
 from pyspark.sql.window import Window
 
@@ -247,6 +247,61 @@ display(df_dim_gdp.limit(10))
 
 # MARKDOWN ********************
 
+# ## FactTaxiDaily
+# Grain: one row per day × pickup zone. FX join is left — weekend/holiday dates have no ECB rate (null fx_key).
+
+# CELL ********************
+
+df_fx   = spark.read.synapsesql(f"{GOLD}.dbo.DimFX").select("fx_key", "date", "usd_eur_rate")
+df_zone = spark.read.synapsesql(f"{GOLD}.dbo.DimZone").select("zone_key", "location_id")
+
+df_agg = (
+    spark.read.table(SILVER_TAXI_TRIPS)
+    .withColumn("trip_date", to_date(col("pickup_datetime")))
+    .withColumn("duration_min",
+        (unix_timestamp(col("dropoff_datetime")) - unix_timestamp(col("pickup_datetime"))) / 60
+    )
+    .groupBy("trip_date", "pu_location_id")
+    .agg(
+        count("*").alias("trip_count"),
+        spark_round(spark_sum("fare_amount"), 2).alias("total_fare_usd"),
+        spark_round(avg("fare_amount"), 4).alias("avg_fare_usd"),
+        spark_round(avg("duration_min"), 4).alias("avg_trip_duration_min"),
+        spark_round(avg("trip_distance"), 4).alias("avg_trip_distance_mi"),
+        spark_sum("passenger_count").cast("int").alias("total_passengers"),
+    )
+)
+
+df_fact_taxi = (
+    df_agg
+    .join(df_fx,   df_agg["trip_date"]      == df_fx["date"],        "left")
+    .join(df_zone, df_agg["pu_location_id"] == df_zone["location_id"], "left")
+    .withColumn("date_key",
+        (year(col("trip_date")) * 10000
+         + month(col("trip_date")) * 100
+         + dayofmonth(col("trip_date"))).cast("int")
+    )
+    .withColumn("total_fare_eur", spark_round(col("total_fare_usd") * col("usd_eur_rate"), 2))
+    .select(
+        "date_key", "zone_key", "fx_key",
+        "trip_count", "total_fare_usd", "total_fare_eur",
+        "avg_fare_usd", "avg_trip_duration_min", "avg_trip_distance_mi",
+        "total_passengers",
+    )
+)
+
+write_gold(df_fact_taxi, "FactTaxiDaily")
+display(df_fact_taxi.limit(10))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
 # ## Verification
 
 # CELL ********************
@@ -295,6 +350,22 @@ display(df_check.limit(5))
 df_check = spark.read.synapsesql(f"{GOLD}.dbo.DimGDP")
 print(f"DimGDP rows: {df_check.count()}")
 df_check.groupBy("year").count().orderBy("year").show(5)
+display(df_check.limit(5))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df_check = spark.read.synapsesql(f"{GOLD}.dbo.FactTaxiDaily")
+print(f"FactTaxiDaily rows: {df_check.count()}")
+print(f"Null zone_key: {df_check.filter(col('zone_key').isNull()).count()}")
+print(f"Null fx_key:   {df_check.filter(col('fx_key').isNull()).count()}")
+df_check.withColumn("year", (col("date_key") / 10000).cast("int")).groupBy("year").count().orderBy("year").show()
 display(df_check.limit(5))
 
 # METADATA ********************
