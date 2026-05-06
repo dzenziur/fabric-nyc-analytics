@@ -11,9 +11,8 @@ let
   Navigation = Source[results],
   #"Converted to table" = Table.FromList(Navigation, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
   #"Expanded Column1 1" = Table.ExpandRecordColumn(#"Converted to table", "Column1", {"id", "name", "timezone", "country", "coordinates"}, {"id", "name", "timezone", "country", "coordinates"}),
-  #"Expanded country" = Table.ExpandRecordColumn(#"Expanded Column1 1", "country", {"id", "name"}, {"id.1", "name.1"}),
-  #"Renamed columns" = Table.RenameColumns(#"Expanded country", {{"id.1", "country_id"}, {"name.1", "country_name"}}),
-  #"Expanded coordinates" = Table.ExpandRecordColumn(#"Renamed columns", "coordinates", {"latitude", "longitude"}, {"latitude", "longitude"}),
+  #"Expanded country" = Table.ExpandRecordColumn(#"Expanded Column1 1", "country", {"code", "name"}, {"country_id", "country_name"}),
+  #"Expanded coordinates" = Table.ExpandRecordColumn(#"Expanded country", "coordinates", {"latitude", "longitude"}, {"latitude", "longitude"}),
   #"Renamed columns 1" = Table.RenameColumns(#"Expanded coordinates", {{"id", "location_id"}, {"name", "location_name"}}),
   #"Changed column type" = Table.TransformColumnTypes(#"Renamed columns 1", {{"location_id", Int64.Type}, {"location_name", type text}, {"timezone", type text}, {"country_id", type text}, {"country_name", type text}, {"latitude", type number}, {"longitude", type number}})
 in
