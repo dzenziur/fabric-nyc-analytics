@@ -116,7 +116,7 @@ def write_gold(df, table: str) -> None:
 # MARKDOWN ********************
 
 # ## DimDate
-# Full date spine 2019-01-01 → 2025-12-31. day_of_week: 1=Monday … 7=Sunday.
+# Full date spine covering the last 5 calendar years. day_of_week: 1=Monday … 7=Sunday.
 
 # CELL ********************
 
@@ -354,6 +354,10 @@ display(df_fact_aq.limit(10))
 
 # ## Verification
 
+# MARKDOWN ********************
+
+# ### DimDate
+
 # CELL ********************
 
 df_check = spark.read.synapsesql(f"{GOLD}.dbo.DimDate")
@@ -367,6 +371,10 @@ display(df_check.limit(5))
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark"
 # META }
+
+# MARKDOWN ********************
+
+# ### DimZone
 
 # CELL ********************
 
@@ -382,6 +390,10 @@ display(df_check.limit(5))
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# ### DimFX
+
 # CELL ********************
 
 df_check = spark.read.synapsesql(f"{GOLD}.dbo.DimFX")
@@ -394,6 +406,10 @@ display(df_check.limit(5))
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark"
 # META }
+
+# MARKDOWN ********************
+
+# ### DimGDP
 
 # CELL ********************
 
@@ -408,6 +424,10 @@ display(df_check.limit(5))
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark"
 # META }
+
+# MARKDOWN ********************
+
+# ### FactTaxiDaily
 
 # CELL ********************
 
@@ -424,6 +444,10 @@ display(df_check.limit(5))
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark"
 # META }
+
+# MARKDOWN ********************
+
+# ### FactAirQualityDaily
 
 # CELL ********************
 
