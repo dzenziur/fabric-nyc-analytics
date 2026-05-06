@@ -81,6 +81,7 @@ BRONZE_FILES = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.i
 
 SILVER_TAXI_TRIPS           = f"{SILVER}.silver_taxi_trips"
 SILVER_OPENAQ_MEASUREMENTS  = f"{SILVER}.silver_openaq_measurements"
+SILVER_OPENAQ_LOCATIONS     = f"{SILVER}.silver_openaq_locations"
 SILVER_FX_RATES             = f"{SILVER}.silver_fx_rates"
 SILVER_GDP                  = f"{SILVER}.silver_gdp"
 
@@ -302,6 +303,54 @@ display(df_fact_taxi.limit(10))
 
 # MARKDOWN ********************
 
+# ## FactAirQualityDaily
+# Grain: one row per day × location × parameter. city/country joined from silver_openaq_locations.
+
+# CELL ********************
+
+df_loc = spark.read.table(SILVER_OPENAQ_LOCATIONS).select("location_id", "country_id")
+
+df_fact_aq = (
+    spark.read.table(SILVER_OPENAQ_MEASUREMENTS)
+    .withColumn("meas_date", to_date(col("datetime")))
+    .groupBy("meas_date", "location_id", "location", "parameter")
+    .agg(
+        spark_round(avg("value"), 4).alias("avg_value"),
+        spark_round(max("value"), 4).alias("max_value"),
+        spark_round(min("value"), 4).alias("min_value"),
+        count("*").alias("measurement_count"),
+    )
+    .join(df_loc, "location_id", "left")
+    .withColumn("date_key",
+        (year(col("meas_date")) * 10000
+         + month(col("meas_date")) * 100
+         + dayofmonth(col("meas_date"))).cast("int")
+    )
+    .select(
+        "date_key",
+        "location_id",
+        col("location").alias("city"),
+        col("country_id").alias("country"),
+        "parameter",
+        "avg_value",
+        "max_value",
+        "min_value",
+        "measurement_count",
+    )
+)
+
+write_gold(df_fact_aq, "FactAirQualityDaily")
+display(df_fact_aq.limit(10))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
 # ## Verification
 
 # CELL ********************
@@ -366,6 +415,20 @@ print(f"FactTaxiDaily rows: {df_check.count()}")
 print(f"Null zone_key: {df_check.filter(col('zone_key').isNull()).count()}")
 print(f"Null fx_key:   {df_check.filter(col('fx_key').isNull()).count()}")
 df_check.withColumn("year", (col("date_key") / 10000).cast("int")).groupBy("year").count().orderBy("year").show()
+display(df_check.limit(5))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df_check = spark.read.synapsesql(f"{GOLD}.dbo.FactAirQualityDaily")
+print(f"FactAirQualityDaily rows: {df_check.count()}")
+df_check.groupBy("parameter").count().orderBy("parameter").show()
 display(df_check.limit(5))
 
 # METADATA ********************
