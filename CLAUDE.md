@@ -104,6 +104,13 @@ Required env vars are documented in `.env.example`.
 | `INFLUXDB_URL/TOKEN/ORG/BUCKET` | Phase 5 | InfluxDB Cloud — weather time-series (add when starting Phase 5) |
 | `TELEGRAM_BOT_TOKEN/CHAT_ID` | Phase 5 | Telegram bot — DQ alerts (add when starting Phase 5) |
 
+## Fabric-specific gotchas
+
+- **synapsesql in Python:** requires `import com.microsoft.spark.fabric` in the imports cell. Without it, `df.write.synapsesql()` raises `AttributeError`. This is not documented in Fabric UI.
+- **Warehouse reads:** `spark.sql("SELECT * FROM gold_warehouse.dbo.T")` fails with namespace error. Use `spark.read.synapsesql(f"{GOLD}.dbo.TableName")` instead.
+- **notebookutils.fs.cp:** signature is `cp(src, dest)` — no `overwrite` keyword argument.
+- **Fabric Git folder naming:** folder name in `fabric/` must exactly match `displayName` in the item's `.platform` file. Use `git mv` to fix divergence; Fabric won't sync otherwise.
+
 ## Key principles
 
 - **Bronze is immutable** — raw data is never modified after landing; re-run ingestion if you need to fix it.
