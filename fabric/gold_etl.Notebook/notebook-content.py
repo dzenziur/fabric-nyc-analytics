@@ -164,7 +164,7 @@ ZONE_CSV_URL  = "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv
 ZONE_CSV_PATH = f"{BRONZE_FILES}/raw/taxi_zones/taxi_zone_lookup.csv"
 
 urllib.request.urlretrieve(ZONE_CSV_URL, "/tmp/taxi_zone_lookup.csv")
-notebookutils.fs.cp("file:///tmp/taxi_zone_lookup.csv", ZONE_CSV_PATH, overwrite=True)
+notebookutils.fs.cp("file:///tmp/taxi_zone_lookup.csv", ZONE_CSV_PATH)
 print(f"Zone CSV written to {ZONE_CSV_PATH}")
 
 df_dim_zone = (
