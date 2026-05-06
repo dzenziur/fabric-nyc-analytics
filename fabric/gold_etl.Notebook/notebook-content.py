@@ -29,11 +29,130 @@
 # META   }
 # META }
 
+# MARKDOWN ********************
+
+# # Gold ETL — Silver → Fabric Warehouse
+# Builds star schema in `gold_warehouse` from cleaned Silver tables.
+# **Input:** `silver_lakehouse` — silver_taxi_trips, silver_openaq_measurements, silver_fx_rates, silver_gdp
+# **Output:** `gold_warehouse.dbo` — DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily
+
+# MARKDOWN ********************
+
+# ## Imports
+
 # CELL ********************
 
-# Welcome to your new notebook
-# Type here in the cell editor to add code!
+from pyspark.sql.functions import (
+    col, explode, sequence, to_date,
+    year, quarter, month, date_format,
+    weekofyear, dayofmonth, dayofweek,
+    avg, max, min, count, sum as spark_sum,
+    round as spark_round
+)
 
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Config
+
+# CELL ********************
+
+SILVER = "silver_lakehouse"
+GOLD   = "gold_warehouse"
+
+YEAR_START = 2019
+YEAR_END   = 2025
+
+SILVER_TAXI_TRIPS           = f"{SILVER}.silver_taxi_trips"
+SILVER_OPENAQ_MEASUREMENTS  = f"{SILVER}.silver_openaq_measurements"
+SILVER_FX_RATES             = f"{SILVER}.silver_fx_rates"
+SILVER_GDP                  = f"{SILVER}.silver_gdp"
+
+print(f"Date spine: {YEAR_START}-01-01 → {YEAR_END}-12-31")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Helper
+
+# CELL ********************
+
+def write_gold(df, table: str) -> None:
+    """Write DataFrame to gold_warehouse.dbo.<table>, overwrite."""
+    print(f"[{table}] rows before write: {df.count()}")
+    df.write.synapsesql(f"{GOLD}.dbo.{table}", mode="overwrite")
+    print(f"[{table}] write done")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## DimDate
+# Full date spine 2019-01-01 → 2025-12-31. day_of_week: 1=Monday … 7=Sunday.
+
+# CELL ********************
+
+df_dim_date = (
+    spark.sql(f"""
+        SELECT explode(sequence(
+            to_date('{YEAR_START}-01-01'),
+            to_date('{YEAR_END}-12-31'),
+            interval 1 day
+        )) AS date
+    """)
+    .select(
+        (year(col("date")) * 10000
+         + month(col("date")) * 100
+         + dayofmonth(col("date"))).cast("int").alias("date_key"),
+        col("date"),
+        year(col("date")).alias("year"),
+        quarter(col("date")).alias("quarter"),
+        month(col("date")).alias("month"),
+        date_format(col("date"), "MMMM").alias("month_name"),
+        weekofyear(col("date")).alias("week_of_year"),
+        dayofmonth(col("date")).alias("day_of_month"),
+        ((dayofweek(col("date")) + 5) % 7 + 1).alias("day_of_week"),
+        date_format(col("date"), "EEEE").alias("day_name"),
+        (((dayofweek(col("date")) + 5) % 7 + 1)).isin([6, 7]).alias("is_weekend"),
+    )
+)
+
+write_gold(df_dim_date, "DimDate")
+display(df_dim_date.limit(10))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Verification
+
+# CELL ********************
+
+spark.sql(f"SELECT COUNT(*) AS total_days, MIN(date) AS min_date, MAX(date) AS max_date FROM {GOLD}.dbo.DimDate").show()
+spark.sql(f"SELECT is_weekend, COUNT(*) AS cnt FROM {GOLD}.dbo.DimDate GROUP BY is_weekend").show()
+spark.sql(f"SELECT COUNT(*) AS holidays FROM {GOLD}.dbo.DimDate WHERE is_us_holiday = true").show()
 
 # METADATA ********************
 
