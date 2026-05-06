@@ -91,6 +91,15 @@ spec/         Original project specification (PDF)
 pip install -r requirements.txt
 ```
 
+```bash
+# Provision / update infrastructure
+make -C terraform plan
+make -C terraform apply
+
+# Fabric Git sync — push branch, then in Fabric UI:
+# Workspace → Source control → Update all
+```
+
 Full setup: see [docs/how_to_run.md](docs/how_to_run.md)
 Architecture decisions: see [docs/architecture.md](docs/architecture.md)
 
