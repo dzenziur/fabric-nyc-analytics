@@ -94,6 +94,20 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 - **Dataflow Gen2:** `df_ecb_fx` — ECB CSV → `bronze_fx_rates`
 - **Orchestration Pipeline:** `pl_master_orchestrator` — runs all ingestion + triggers notebooks
 
+### Power BI Semantic Model
+- **Item:** `fabric/nyc_analytics_model.SemanticModel/`
+- **Storage mode:** Direct Lake on SQL (delegated identity mode, DirectQuery fallback enabled)
+- **Source:** `gold_warehouse` SQL analytics endpoint
+- **Tables:** DimDate, DimFX, DimGDP, DimZone, FactTaxiDaily, FactAirQualityDaily
+- **Relationships:**
+  - `FactTaxiDaily[date_key]` → `DimDate[date_key]` (Many:1, active)
+  - `FactTaxiDaily[fx_key]` → `DimFX[fx_key]` (Many:1, active)
+  - `FactTaxiDaily[zone_key]` → `DimZone[zone_key]` (Many:1, active)
+  - `FactAirQualityDaily[date_key]` → `DimDate[date_key]` (Many:1, active)
+  - `DimGDP` — no relationship (used as standalone context table)
+- **DAX measures in FactTaxiDaily:** Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD, Avg Trip Distance (mi), Avg Trip Duration (min)
+- **DAX measures in FactAirQualityDaily:** Avg PM2.5, Avg NO2, Avg O3, Max PM2.5
+
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
 - `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for 22 NYC stations × last 5 years → `bronze_openaq_measurements`
@@ -236,8 +250,8 @@ bypasses Spark's S3A entirely, and achieves anonymous access. Downloads are para
 | silver_gdp | 6,193 | Yearly |
 | bronze_fx_rates | 7,058 | Daily |
 | silver_fx_rates | 6,996 | Daily |
-| FactTaxiDaily | ___ | Monthly |
-| FactAirQualityDaily | ___ | Daily |
+| FactTaxiDaily | 6,856 | Monthly |
+| FactAirQualityDaily | 49,287 | Daily |
 
 ---
 

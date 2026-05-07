@@ -135,14 +135,29 @@ Expected tables in gold_warehouse:
 
 ## Step 5 — Build Visualizations
 
-**Option A — Notebooks (faster):**
-- Open `analytics` notebook in workspace (synced from `fabric/analytics.Notebook/`)
-- Run cells to generate matplotlib/plotly charts
+### 5a. Semantic Model (required before Power BI reports)
 
-**Option B — Power BI:**
-1. In workspace → New → **Report**
-2. Connect to `gold_warehouse` SQL endpoint
-3. Import tables, build relationships, create visuals
+1. Open **gold_warehouse** in workspace → click **New semantic model**
+2. Name: `nyc_analytics_model`, storage mode: **Direct Lake on SQL** → select all 6 tables → **Confirm**
+3. Open the model → **Model** tab → add relationships:
+   - `FactTaxiDaily[date_key]` → `DimDate[date_key]` (Many:1)
+   - `FactTaxiDaily[fx_key]` → `DimFX[fx_key]` (Many:1)
+   - `FactTaxiDaily[zone_key]` → `DimZone[zone_key]` (Many:1)
+   - `FactAirQualityDaily[date_key]` → `DimDate[date_key]` (Many:1)
+4. Add DAX measures to **FactTaxiDaily**: `Total Trips`, `Total Revenue USD`, `Total Revenue EUR`, `Avg Fare USD`, `Avg Trip Distance (mi)`, `Avg Trip Duration (min)`
+5. Add DAX measures to **FactAirQualityDaily**: `Avg PM2.5`, `Avg NO2`, `Avg O3`, `Max PM2.5`
+6. Sync back to Git: workspace → Source control → Commit
+
+### 5b. Power BI Reports
+
+1. In workspace → New → **Report** → pick `nyc_analytics_model`
+2. Build **Mobility Dashboard**: trips/day trend, avg fare, busiest zones, revenue USD vs EUR
+3. Build **Air Quality Dashboard**: PM2.5/NO2/O3 daily trends by location
+
+### 5c. Analytics Notebook
+
+- Open `analytics` notebook in workspace (synced from `fabric/analytics.Notebook/`)
+- Run cells to generate matplotlib/plotly charts (Correlation + Economic Impact)
 
 ---
 

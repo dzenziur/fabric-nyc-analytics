@@ -26,6 +26,17 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 | Phase 4 — Visualizations | 🔄 In progress | Power BI semantic model + Notebook analytics |
 | Phase 5 — Governance / monitoring | ❌ Not started | Weather, InfluxDB, Grafana, GE, Telegram bot |
 
+### Current branch goal (`feature/data-visualization`)
+
+Phase 4 — Power BI dashboards + Analytics Notebook
+
+- [x] Power BI Semantic Model — connect `gold_warehouse`, define table relationships, add core DAX measures (trip count, avg fare, avg pollutant, revenue EUR)
+- [ ] Mobility Dashboard (Power BI) — trips/day trend, avg fare over time, busiest pickup zones, revenue in USD vs EUR
+- [ ] Air Quality Dashboard (Power BI) — PM2.5 / NO2 / O3 daily trends by location, worst-day highlights
+- [ ] Analytics Notebook (`analytics.Notebook`) — Mobility vs Air Quality Correlation (overlay taxi volume with pollution spikes)
+- [ ] Analytics Notebook (`analytics.Notebook`) — Economic Impact (revenue USD/EUR, FX rate effect, GDP context)
+
+
 ### Key table row counts
 
 | Table | Rows | Layer |
