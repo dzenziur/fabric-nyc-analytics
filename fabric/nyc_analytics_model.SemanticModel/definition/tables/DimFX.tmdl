@@ -1,0 +1,58 @@
+table DimFX
+	lineageTag: b393b04f-1988-4aee-a484-bb550cea816e
+	sourceLineageTag: [dbo].[DimFX]
+
+	column fx_key
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: d4352175-0fd5-497e-a1a0-622a4f02e615
+		sourceLineageTag: fx_key
+		summarizeBy: none
+		sourceColumn: fx_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column date_key
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 5171fcc6-2fe1-41e0-8ebb-6160a800edb4
+		sourceLineageTag: date_key
+		summarizeBy: none
+		sourceColumn: date_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column date
+		dataType: dateTime
+		formatString: General Date
+		sourceProviderType: date
+		lineageTag: e5c042b2-7e8b-44ae-a669-f3b16411db49
+		sourceLineageTag: date
+		summarizeBy: none
+		sourceColumn: date
+
+		annotation SummarizationSetBy = Automatic
+
+	column usd_eur_rate
+		dataType: double
+		sourceProviderType: float
+		lineageTag: 8ec19526-a646-480d-b07d-6492054ac124
+		sourceLineageTag: usd_eur_rate
+		summarizeBy: none
+		sourceColumn: usd_eur_rate
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	partition DimFX = entity
+		mode: directLake
+		source
+			entityName: DimFX
+			schemaName: dbo
+			expressionSource: DatabaseQuery
+
+	annotation PBI_ResultType = Table
+
