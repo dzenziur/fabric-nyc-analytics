@@ -4,7 +4,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                          EXTERNAL DATA SOURCES                               │
+│                          EXTERNAL DATA SOURCES                              │
 ├───────────────────┬──────────────────────┬─────────────────┬────────────────┤
 │  NYC Taxi (TLC)   │  OpenAQ API + S3     │  World Bank API │  ECB FX API    │
 │  Parquet / month  │  JSON / CSV.gz       │  JSON           │  CSV           │
@@ -18,53 +18,61 @@
          └─────────────────────┴────────────────────┴────────────────┘
                                         │
                            ┌────────────▼────────────┐
-                           │    pl_master_orchestrator │
-                           │  year_start / year_end    │
+                           │  pl_master_orchestrator │
+                           │  year_start / year_end  │
                            └────────────┬────────────┘
                                         │
                            ┌────────────▼────────────┐
-                           │      BRONZE LAKEHOUSE     │
-                           │  raw · immutable          │
-                           │  OneLake · Delta Lake     │
-                           └────────────┬────────────┘
-                                        │
-                               silver_etl (PySpark)
-                                        │
-                           ┌────────────▼────────────┐
-                           │      SILVER LAKEHOUSE     │
-                           │  clean · normalized       │
-                           │  Delta Lake               │
-                           └────────────┬────────────┘
-                                        │
-                               gold_etl (PySpark)
-                                        │
-                           ┌────────────▼────────────┐
-                           │      FABRIC WAREHOUSE     │
-                           │  star schema · T-SQL      │
-                           │  FactTaxiDaily            │
-                           │  FactAirQualityDaily      │
-                           │  DimDate · DimZone        │
-                           │  DimFX · DimGDP           │
+                           │      BRONZE LAKEHOUSE   │
+                           │  raw · immutable        │
+                           │  OneLake · Delta Lake   │
                            └────────────┬────────────┘
                                         │
                            ┌────────────▼────────────┐
-                           │   nyc_analytics_model     │
-                           │   Direct Lake on SQL      │
+                           │   silver_etl Notebook   │
+                           │   PySpark               │
                            └────────────┬────────────┘
                                         │
                            ┌────────────▼────────────┐
-                           │   NYC ANALYTICS REPORT    │
-                           │   Mobility                │
-                           │   Air Quality             │
-                           │   Correlation             │
-                           │   Economic Impact         │
+                           │      SILVER LAKEHOUSE   │
+                           │  clean · normalized     │
+                           │  Delta Lake             │
+                           └────────────┬────────────┘
+                                        │
+                           ┌────────────▼────────────┐
+                           │   gold_etl Notebook     │
+                           │   PySpark               │
+                           └────────────┬────────────┘
+                                        │
+                           ┌────────────▼────────────┐
+                           │      FABRIC WAREHOUSE   │
+                           │  star schema · T-SQL    │
+                           │  FactTaxiDaily          │
+                           │  FactAirQualityDaily    │
+                           │  DimDate · DimZone      │
+                           │  DimFX · DimGDP         │
+                           └────────────┬────────────┘
+                                        │
+                           ┌────────────▼────────────┐
+                           │   nyc_analytics_model   │
+                           │   Direct Lake on SQL    │
+                           └────────────┬────────────┘
+                                        │
+                           ┌────────────▼────────────┐
+                           │   NYC ANALYTICS REPORT  │
+                           │   Mobility              │
+                           │   Air Quality           │
+                           │   Correlation           │
+                           │   Economic Impact       │
                            └─────────────────────────┘
 
-Open-Meteo API ──► Python Job ──► Bronze Lakehouse ──► silver_etl ──► FactWeatherDaily
-                        │
-                        └──► InfluxDB Cloud ──► Grafana Dashboard
-
-Great Expectations ──► Silver validation ──► Telegram / Discord Bot ──► DQ report
+┌─── Phase 6 ────────────────────────────────────────────────────────────────────────┐
+│  Open-Meteo API ──► Python Job ──► Bronze Lakehouse ──► silver_etl                 │
+│                          │                                  └──► FactWeatherDaily  │
+│                          └──► InfluxDB Cloud ──► Grafana Dashboard                 │
+│                                                                                    │
+│  Great Expectations ──► Silver validation ──► Telegram / Discord Bot ──► DQ report │
+└────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---

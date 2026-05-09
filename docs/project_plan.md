@@ -10,7 +10,7 @@ Unified analytics platform on Microsoft Fabric integrating:
 - **Open-Meteo Weather** (JSON API, free) — hourly NYC weather
 
 Architecture: **Bronze → Silver → Gold** (Medallion) via Lakehouse + Warehouse + Power BI
-External stack (Phase 5): **InfluxDB** + **Grafana** + **Great Expectations** + **Telegram Bot**
+External stack (Phase 6): **InfluxDB** + **Grafana** + **Great Expectations** + **Telegram / Discord Bot**
 
 ---
 
@@ -140,7 +140,7 @@ pl_master_orchestrator(year_start, year_end)
 - Validate Silver tables: null checks, value ranges, allowed categories
 - Suites stored in `ge/expectations/`
 
-### Telegram Bot
+### Telegram / Discord Bot
 - Command `/report` → runs GE checkpoint → replies with pass/fail summary
 - Script: `bot/dq_bot.py`
 
@@ -158,11 +158,11 @@ pl_master_orchestrator(year_start, year_end)
 | Cloud platform | Microsoft Fabric (Lakehouse, Warehouse, Data Factory, Notebooks) |
 | Storage format | Delta Lake (Bronze + Silver), T-SQL tables (Gold) |
 | ETL | Data Factory Pipelines + Dataflow Gen2 + PySpark |
-| Time-series DB | InfluxDB Cloud (Phase 5) |
-| External dashboards | Grafana (Phase 5) |
-| Data quality | Great Expectations (Phase 5) |
-| DQ notifications | Telegram Bot (Phase 5) |
-| Reporting | Power BI / Fabric Notebooks (matplotlib/plotly) |
+| Time-series DB | InfluxDB Cloud (Phase 6) |
+| External dashboards | Grafana (Phase 6) |
+| Data quality | Great Expectations (Phase 6) |
+| DQ notifications | Telegram / Discord Bot (Phase 6) |
+| Reporting | Power BI
 | Version control | Git |
 
 ---
@@ -180,4 +180,4 @@ pl_master_orchestrator(year_start, year_end)
 | InfluxDB + Python | InfluxDB docs: influxdb-client-python |
 | Grafana + InfluxDB | Grafana docs: "InfluxDB data source" |
 | Great Expectations | docs.greatexpectations.io — "Quickstart" |
-| Telegram Bot | python-telegram-bot docs |
+| Telegram / Discord Bot | python-telegram-bot / discord.py docs |
