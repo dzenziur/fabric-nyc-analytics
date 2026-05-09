@@ -135,18 +135,56 @@ Expected tables in gold_warehouse:
 
 ## Step 5 — Build Visualizations
 
-**Option A — Notebooks (faster):**
-- Open `analytics` notebook in workspace (synced from `fabric/analytics.Notebook/`)
-- Run cells to generate matplotlib/plotly charts
+### 5a. Semantic Model (required before Power BI reports)
 
-**Option B — Power BI:**
-1. In workspace → New → **Report**
-2. Connect to `gold_warehouse` SQL endpoint
-3. Import tables, build relationships, create visuals
+1. Open **gold_warehouse** in workspace → click **New semantic model**
+2. Name: `nyc_analytics_model`, storage mode: **Direct Lake on SQL** → select all 6 tables → **Confirm**
+3. Open the model → **Model** tab → add relationships:
+   - `FactTaxiDaily[date_key]` → `DimDate[date_key]` (Many:1)
+   - `FactTaxiDaily[fx_key]` → `DimFX[fx_key]` (Many:1)
+   - `FactTaxiDaily[zone_key]` → `DimZone[zone_key]` (Many:1)
+   - `FactAirQualityDaily[date_key]` → `DimDate[date_key]` (Many:1)
+4. Add DAX measures to **FactTaxiDaily**: `Total Trips`, `Total Revenue USD`, `Total Revenue EUR`, `Avg Fare USD`, `Avg Trip Distance (mi)`, `Avg Trip Duration (min)`
+5. Add DAX measures to **FactAirQualityDaily**: `Avg PM2.5`, `Avg NO2`, `Avg O3`, `Max PM2.5`
+6. Sync back to Git: workspace → Source control → Commit
+
+### 5b. Power BI Reports
+
+1. In workspace → New → **Report** → pick `nyc_analytics_model` → **Create blank report** → save as `NYC Analytics`
+2. Build **Mobility** page: KPI cards (Total Trips, Total Revenue USD, Avg Fare USD), trips/day line chart, top 10 pickup zones bar chart, revenue USD vs EUR column chart
+3. Build **Air Quality** page: KPI cards (Avg PM2.5, Avg NO2, Max PM2.5), PM2.5 daily trend, NO2+O3 dual-line trend, top 10 stations by Avg PM2.5 bar chart
+4. Build **Correlation** page: KPI cards (Total Trips, Avg PM2.5), dual-axis line chart (Total Trips + Avg PM2.5 by date), year tile slicer
+5. Build **Economic Impact** page: KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year from DimGDP)
+
+### 5c. Analytics Notebook
+
+- Open `analytics` notebook in workspace (synced from `fabric/analytics.Notebook/`)
+- Run cells to generate matplotlib/plotly charts (Correlation + Economic Impact)
 
 ---
 
-## Step 5b — Weather External Job + InfluxDB
+## Step 5 — Master Orchestrator
+
+1. In workspace → New → **Data Pipeline** → name: `pl_master_orchestrator`
+2. Add pipeline parameters: `year_start` (Int, default: 2022), `year_end` (Int, default: 2024)
+3. Add activities in order:
+   ```
+   [Parallel]
+     df_ecb_fx               (Dataflow Gen2 activity)
+     df_openaq_locations     (Dataflow Gen2 activity)
+     df_worldbank_gdp        (Dataflow Gen2 activity)
+     bronze_ingest_openaq_measurements (Notebook activity, pass year_start/year_end)
+     ForEach year/month → pl_ingest_nyc_taxi (Pipeline activity)
+   [Then]
+     silver_etl notebook (Notebook activity, pass year_start/year_end)
+   [Then]
+     gold_etl notebook (Notebook activity, pass year_start/year_end)
+   ```
+4. Run with parameters `year_start=2022`, `year_end=2024` for full backfill
+
+---
+
+## Step 6 — Weather External Job + InfluxDB (Phase 6)
 
 ### InfluxDB Cloud setup
 1. Register at https://cloud2.influxdata.com (free tier)
@@ -181,7 +219,7 @@ export INFLUXDB_BUCKET="nyc_analytics"
 
 ---
 
-## Step 5c — Great Expectations + Telegram Bot
+## Step 6b — Great Expectations + Telegram Bot (Phase 6)
 
 ### Great Expectations setup
 ```bash
@@ -217,7 +255,7 @@ great_expectations checkpoint run silver_taxi_checkpoint
 
 ---
 
-## Step 6 — Set Up Automation (Master Orchestrator)
+## Step 6c — Schedule Automation
 
 1. New → **Data Pipeline** → name: `pl_master_orchestrator`
 2. Add activities in order:
@@ -249,7 +287,7 @@ great_expectations checkpoint run silver_taxi_checkpoint
 6. Run silver_etl notebook                   → silver_* tables
 6. Run gold_etl notebook     → Fact/Dim tables in Warehouse
 7. Refresh Power BI          → Reports update
---- Phase 5 additions ---
+--- Phase 6 additions ---
 8. python jobs/weather_ingest.py → bronze_weather + InfluxDB
 9. Run silver_etl notebook (weather) → silver_weather (+ GE validation)
 10. Open Grafana             → Weather dashboard live

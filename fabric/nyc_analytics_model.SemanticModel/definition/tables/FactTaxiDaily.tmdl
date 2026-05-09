@@ -1,0 +1,169 @@
+table FactTaxiDaily
+	lineageTag: f7f09055-0924-4b61-b4f1-fe017defc373
+	sourceLineageTag: [dbo].[FactTaxiDaily]
+
+	measure 'Total Trips' = SUM(FactTaxiDaily[trip_count])
+		formatString: 0
+		lineageTag: 02598c3e-5652-44b8-9acf-5d62816e2f44
+
+		changedProperty = Name
+
+	measure 'Total Revenue USD' = SUM(FactTaxiDaily[total_fare_usd])
+		lineageTag: e7104b69-b06b-4666-9ce1-e2e846ac67a6
+
+		changedProperty = Name
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Total Revenue EUR' = SUM(FactTaxiDaily[total_fare_eur])
+		lineageTag: 9bd10d0c-52f1-4665-9056-93168534bd0f
+
+		changedProperty = Name
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Avg Fare USD' = AVERAGE(FactTaxiDaily[avg_fare_usd])
+		lineageTag: 7e4624cc-c19f-4e2d-aafa-69cee8acc8d5
+
+		changedProperty = Name
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Avg Trip Distance (mi)' = AVERAGE(FactTaxiDaily[avg_trip_distance_mi])
+		lineageTag: 648d613d-547e-441a-96b8-d39986ddecbc
+
+		changedProperty = Name
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Avg Trip Duration (min)' = AVERAGE(FactTaxiDaily[avg_trip_duration_min])
+		lineageTag: 5c2b00ce-1eb2-40ee-8095-97e8e6a52b69
+
+		changedProperty = Name
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column date_key
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: c6665368-af06-49b5-946c-a95735fc0027
+		sourceLineageTag: date_key
+		summarizeBy: none
+		sourceColumn: date_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column zone_key
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: a821a782-c50d-441b-a458-e21364c0f7ab
+		sourceLineageTag: zone_key
+		summarizeBy: none
+		sourceColumn: zone_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column fx_key
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 00d39a5e-82de-49f4-a8d8-8335ad0c6fcb
+		sourceLineageTag: fx_key
+		summarizeBy: none
+		sourceColumn: fx_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column trip_count
+		dataType: int64
+		formatString: 0
+		sourceProviderType: bigint
+		lineageTag: a3555d0c-6aab-49a2-b5c5-46635c744909
+		sourceLineageTag: trip_count
+		summarizeBy: sum
+		sourceColumn: trip_count
+
+		annotation SummarizationSetBy = Automatic
+
+	column total_fare_usd
+		dataType: double
+		sourceProviderType: float
+		lineageTag: 9ced6a7e-c7f4-4d62-84af-942675a64fcc
+		sourceLineageTag: total_fare_usd
+		summarizeBy: sum
+		sourceColumn: total_fare_usd
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column total_fare_eur
+		dataType: double
+		sourceProviderType: float
+		lineageTag: 988e94d5-d038-4916-90a7-5b51b482e6ba
+		sourceLineageTag: total_fare_eur
+		summarizeBy: sum
+		sourceColumn: total_fare_eur
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column avg_fare_usd
+		dataType: double
+		sourceProviderType: float
+		lineageTag: a9b45c36-cfb9-43ba-8f76-ee6eb89ad55c
+		sourceLineageTag: avg_fare_usd
+		summarizeBy: sum
+		sourceColumn: avg_fare_usd
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column avg_trip_duration_min
+		dataType: double
+		sourceProviderType: float
+		lineageTag: 8cdaf258-cd82-4b17-bf14-72cf7b3db985
+		sourceLineageTag: avg_trip_duration_min
+		summarizeBy: sum
+		sourceColumn: avg_trip_duration_min
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column avg_trip_distance_mi
+		dataType: double
+		sourceProviderType: float
+		lineageTag: 5c264753-5729-4a84-a342-ccea4bdb575d
+		sourceLineageTag: avg_trip_distance_mi
+		summarizeBy: sum
+		sourceColumn: avg_trip_distance_mi
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column total_passengers
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: d5f84648-2ce5-4375-a569-57e70e07ed8c
+		sourceLineageTag: total_passengers
+		summarizeBy: sum
+		sourceColumn: total_passengers
+
+		annotation SummarizationSetBy = Automatic
+
+	partition FactTaxiDaily = entity
+		mode: directLake
+		source
+			entityName: FactTaxiDaily
+			schemaName: dbo
+			expressionSource: DatabaseQuery
+
+	annotation PBI_ResultType = Table
+

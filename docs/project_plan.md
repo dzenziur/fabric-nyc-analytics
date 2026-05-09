@@ -84,15 +84,47 @@ Fabric Warehouse — Star Schema:
 
 ## Phase 4 — Analytics & Visualization
 
-Power BI or Notebook visualizations:
-1. **Mobility Dashboard** — trips/day, avg fare, busiest zones
-2. **Air Quality Dashboard** — PM2.5/NO2 trends by day and location
-3. **Mobility vs Air Quality Correlation** — overlay taxi trips with pollution spikes
-4. **Economic Impact Dashboard** — revenue in USD vs EUR, GDP context
+Power BI dashboards (all in single `NYC Analytics` report):
+1. **Mobility** — trips/day trend, avg fare, busiest pickup zones, revenue USD vs EUR by year
+2. **Air Quality** — PM2.5/NO2/O3 daily trends by location, top stations by Avg PM2.5
+3. **Correlation** — dual-axis overlay of Total Trips + Avg PM2.5 by date, year slicer
+4. **Economic Impact** — revenue USD/EUR by year, USA GDP trend from DimGDP
+
+Semantic model: `nyc_analytics_model` — Direct Lake on SQL, 4 relationships, DAX measures in FactTaxiDaily, FactAirQualityDaily, DimGDP.
 
 ---
 
-## Phase 5 — Governance & External Integrations
+## Phase 5 — Master Orchestrator
+
+Single-entry-point pipeline that runs the entire data platform end-to-end with configurable year range.
+
+### Parameterization
+- `pl_master_orchestrator` pipeline — parameters: `year_start` (int), `year_end` (int)
+- `silver_etl` notebook — parameters: `year_start`, `year_end` (partition-level overwrite)
+- `gold_etl` notebook — parameters: `year_start`, `year_end` (partition-level overwrite)
+- `bronze_ingest_openaq_measurements` — already has `year_start`, `year_end`
+- `pl_ingest_nyc_taxi` — already has `year`, `month`; wrapped in ForEach loop
+
+### Pipeline structure
+```
+pl_master_orchestrator(year_start, year_end)
+  [Parallel]
+    df_ecb_fx
+    df_openaq_locations
+    df_worldbank_gdp
+    bronze_ingest_openaq_measurements(year_start, year_end)
+    ForEach(year, month) → pl_ingest_nyc_taxi(year, month)
+  [Then] silver_etl(year_start, year_end)
+  [Then] gold_etl(year_start, year_end)
+```
+
+### Data backfill
+- Run orchestrator for 2022–2024 to populate multi-year trends in Power BI dashboards
+- Fix city names in FactAirQualityDaily (join `silver_openaq_locations` on `location_id`)
+
+---
+
+## Phase 6 — Governance & External Integrations
 
 ### Weather ingestion
 - Source: Open-Meteo API (free, no key) — hourly NYC weather

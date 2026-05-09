@@ -1,0 +1,65 @@
+table DimZone
+	lineageTag: 2e2b7b6e-12b7-4b17-8603-424196316c6a
+	sourceLineageTag: [dbo].[DimZone]
+
+	column zone_key
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 06dda93a-b881-4d05-b099-e950acf0ead9
+		sourceLineageTag: zone_key
+		summarizeBy: none
+		sourceColumn: zone_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column location_id
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 89d414a7-161e-4f6e-9ee7-a8699a30e265
+		sourceLineageTag: location_id
+		summarizeBy: none
+		sourceColumn: location_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column zone_name
+		dataType: string
+		sourceProviderType: varchar(-1)
+		lineageTag: e760c77a-e867-4e78-95e9-9008622e52a8
+		sourceLineageTag: zone_name
+		summarizeBy: none
+		sourceColumn: zone_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column borough
+		dataType: string
+		sourceProviderType: varchar(-1)
+		lineageTag: dbabe240-dfb4-4da6-b965-933106189e43
+		sourceLineageTag: borough
+		summarizeBy: none
+		sourceColumn: borough
+
+		annotation SummarizationSetBy = Automatic
+
+	column service_zone
+		dataType: string
+		sourceProviderType: varchar(-1)
+		lineageTag: 2c951d1d-1ca6-45e9-88c8-95c496ca51a4
+		sourceLineageTag: service_zone
+		summarizeBy: none
+		sourceColumn: service_zone
+
+		annotation SummarizationSetBy = Automatic
+
+	partition DimZone = entity
+		mode: directLake
+		source
+			entityName: DimZone
+			schemaName: dbo
+			expressionSource: DatabaseQuery
+
+	annotation PBI_ResultType = Table
+

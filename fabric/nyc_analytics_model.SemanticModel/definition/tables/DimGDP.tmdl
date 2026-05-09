@@ -1,0 +1,91 @@
+table DimGDP
+	lineageTag: 40074a32-33fe-4a8d-ae04-47d99444649a
+	sourceLineageTag: [dbo].[DimGDP]
+
+	measure 'USA GDP (USD)' =
+			
+			CALCULATE(
+			    MAX(DimGDP[gdp_usd]),
+			    DimGDP[country_code] = "US"
+			)
+		lineageTag: 5bf0db5a-bd91-44b5-9880-ecac44917316
+
+		changedProperty = Name
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column gdp_key
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 9ae55a6c-545d-4264-83db-83d515f00bc2
+		sourceLineageTag: gdp_key
+		summarizeBy: sum
+		sourceColumn: gdp_key
+
+		annotation SummarizationSetBy = Automatic
+
+	column country_code
+		dataType: string
+		sourceProviderType: varchar(-1)
+		lineageTag: a99e1c85-59b4-4525-861d-480ddffaf9bc
+		sourceLineageTag: country_code
+		summarizeBy: none
+		sourceColumn: country_code
+
+		annotation SummarizationSetBy = Automatic
+
+	column country_name
+		dataType: string
+		sourceProviderType: varchar(-1)
+		lineageTag: 40e06441-1c32-439a-8e44-88d49047c079
+		sourceLineageTag: country_name
+		summarizeBy: none
+		sourceColumn: country_name
+
+		annotation SummarizationSetBy = Automatic
+
+	column year
+		dataType: int64
+		formatString: 0
+		sourceProviderType: int
+		lineageTag: 59a185bb-9409-4cc7-bd6a-0f04c7ba09d8
+		sourceLineageTag: year
+		summarizeBy: sum
+		sourceColumn: year
+
+		annotation SummarizationSetBy = Automatic
+
+	column gdp_usd
+		dataType: double
+		sourceProviderType: float
+		lineageTag: 90d54508-c492-41e0-a37c-cdb741e7c518
+		sourceLineageTag: gdp_usd
+		summarizeBy: sum
+		sourceColumn: gdp_usd
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column gdp_trillion_usd
+		dataType: double
+		sourceProviderType: float
+		lineageTag: b25ef493-4473-4913-b9f7-c5ead6ac12fa
+		sourceLineageTag: gdp_trillion_usd
+		summarizeBy: sum
+		sourceColumn: gdp_trillion_usd
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	partition DimGDP = entity
+		mode: directLake
+		source
+			entityName: DimGDP
+			schemaName: dbo
+			expressionSource: DatabaseQuery
+
+	annotation PBI_ResultType = Table
+

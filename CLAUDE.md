@@ -12,7 +12,7 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 ## Current Status
 
-**Active branch:** `feature/data-visualization` (Phase 4)
+**Active branch:** `feature/data-orchestration`
 **Deadline:** May 15, 2026
 
 ### Phase completion
@@ -23,8 +23,25 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 | Phase 1 — Bronze ingestion | ✅ Done | Taxi, GDP, FX, OpenAQ locations, OpenAQ measurements (S3 archive, boto3) |
 | Phase 2 — Silver ETL | ✅ Done | silver_taxi_trips, silver_gdp, silver_fx_rates, silver_openaq_locations, silver_openaq_measurements |
 | Phase 3 — Gold / star schema | ✅ Done | DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily in gold_warehouse |
-| Phase 4 — Visualizations | 🔄 In progress | Power BI semantic model + Notebook analytics |
-| Phase 5 — Governance / monitoring | ❌ Not started | Weather, InfluxDB, Grafana, GE, Telegram bot |
+| Phase 4 — Visualizations | ✅ Done | Semantic model, Mobility, Air Quality, Correlation, Economic Impact pages in Power BI |
+| Phase 5 — Master Orchestrator | 🔄 In progress | pl_master_orchestrator + parameterized notebooks + data backfill |
+| Phase 6 — Governance / monitoring | ❌ Not started | Weather, InfluxDB, Grafana, GE, Telegram bot |
+
+### Current branch goal (`feature/data-orchestration`)
+
+Phase 5 — Master orchestrator — single-entry-point pipeline with `year_start`/`year_end` parameters
+
+- [ ] Add `year_start` / `year_end` notebook parameters to `silver_etl`
+- [ ] Add `year_start` / `year_end` notebook parameters to `gold_etl`
+- [ ] Create `pl_master_orchestrator` pipeline in Fabric with `year_start`/`year_end` parameters
+- [ ] Add ForEach loop for `pl_ingest_nyc_taxi` (iterate year/month combinations)
+- [ ] Wire all activities: parallel ingestion → silver_etl → gold_etl
+- [ ] Backfill data: run orchestrator for 2022–2024 to populate multi-year trends
+- [ ] Fix city names in FactAirQualityDaily (gold_etl: join silver_openaq_locations on location_id)
+
+### Future improvements (post-Phase 5)
+
+- **Multi-pollutant station coverage** — not all OpenAQ stations measure all pollutants; some stations have gaps in NO2/O3 data. Known data limitation from OpenAQ source.
 
 ### Key table row counts
 
@@ -73,7 +90,8 @@ spec/         Original project specification (PDF)
 | `feature/data-transformation` | Phase 2 — PySpark ETL into Silver Lakehouse |
 | `feature/data-modeling` | Phase 3 — Star schema in Fabric Warehouse |
 | `feature/data-visualization` | Phase 4 — Power BI / Notebook dashboards |
-| `feature/data-governance` | Phase 5 — Scheduling, data quality, monitoring |
+| `feature/data-orchestration` | Phase 5 — Master orchestrator + data backfill |
+| `feature/data-governance` | Phase 6 — Scheduling, data quality, monitoring |
 
 ## Data sources
 
@@ -112,13 +130,6 @@ Required env vars are documented in `.env.example`.
 | `OPENAQ_API_KEY` | Phase 1 | OpenAQ v3 API — required for `df_openaq_locations` Dataflow |
 | `INFLUXDB_URL/TOKEN/ORG/BUCKET` | Phase 5 | InfluxDB Cloud — weather time-series (add when starting Phase 5) |
 | `TELEGRAM_BOT_TOKEN/CHAT_ID` | Phase 5 | Telegram bot — DQ alerts (add when starting Phase 5) |
-
-## Fabric-specific gotchas
-
-- **synapsesql in Python:** requires `import com.microsoft.spark.fabric` in the imports cell. Without it, `df.write.synapsesql()` raises `AttributeError`. This is not documented in Fabric UI.
-- **Warehouse reads:** `spark.sql("SELECT * FROM gold_warehouse.dbo.T")` fails with namespace error. Use `spark.read.synapsesql(f"{GOLD}.dbo.TableName")` instead.
-- **notebookutils.fs.cp:** signature is `cp(src, dest)` — no `overwrite` keyword argument.
-- **Fabric Git folder naming:** folder name in `fabric/` must exactly match `displayName` in the item's `.platform` file. Use `git mv` to fix divergence; Fabric won't sync otherwise.
 
 ## Key principles
 
