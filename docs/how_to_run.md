@@ -163,7 +163,28 @@ Expected tables in gold_warehouse:
 
 ---
 
-## Step 5b — Weather External Job + InfluxDB
+## Step 5 — Master Orchestrator
+
+1. In workspace → New → **Data Pipeline** → name: `pl_master_orchestrator`
+2. Add pipeline parameters: `year_start` (Int, default: 2022), `year_end` (Int, default: 2024)
+3. Add activities in order:
+   ```
+   [Parallel]
+     df_ecb_fx               (Dataflow Gen2 activity)
+     df_openaq_locations     (Dataflow Gen2 activity)
+     df_worldbank_gdp        (Dataflow Gen2 activity)
+     bronze_ingest_openaq_measurements (Notebook activity, pass year_start/year_end)
+     ForEach year/month → pl_ingest_nyc_taxi (Pipeline activity)
+   [Then]
+     silver_etl notebook (Notebook activity, pass year_start/year_end)
+   [Then]
+     gold_etl notebook (Notebook activity, pass year_start/year_end)
+   ```
+4. Run with parameters `year_start=2022`, `year_end=2024` for full backfill
+
+---
+
+## Step 6 — Weather External Job + InfluxDB (Phase 6)
 
 ### InfluxDB Cloud setup
 1. Register at https://cloud2.influxdata.com (free tier)
@@ -198,7 +219,7 @@ export INFLUXDB_BUCKET="nyc_analytics"
 
 ---
 
-## Step 5c — Great Expectations + Telegram Bot
+## Step 6b — Great Expectations + Telegram Bot (Phase 6)
 
 ### Great Expectations setup
 ```bash
@@ -234,7 +255,7 @@ great_expectations checkpoint run silver_taxi_checkpoint
 
 ---
 
-## Step 6 — Set Up Automation (Master Orchestrator)
+## Step 6c — Schedule Automation
 
 1. New → **Data Pipeline** → name: `pl_master_orchestrator`
 2. Add activities in order:
@@ -266,7 +287,7 @@ great_expectations checkpoint run silver_taxi_checkpoint
 6. Run silver_etl notebook                   → silver_* tables
 6. Run gold_etl notebook     → Fact/Dim tables in Warehouse
 7. Refresh Power BI          → Reports update
---- Phase 5 additions ---
+--- Phase 6 additions ---
 8. python jobs/weather_ingest.py → bronze_weather + InfluxDB
 9. Run silver_etl notebook (weather) → silver_weather (+ GE validation)
 10. Open Grafana             → Weather dashboard live

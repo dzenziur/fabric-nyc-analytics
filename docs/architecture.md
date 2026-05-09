@@ -3,44 +3,68 @@
 ## High-Level Diagram
 
 ```
-External Sources
-    │
-    ├── NYC Taxi (Parquet, CloudFront)   ──► Data Factory Pipeline ─────────────┐
-    ├── OpenAQ API (JSON, paginated)     ──► Dataflow Gen2 ────────────────────►│
-    ├── World Bank API (JSON)            ──► Dataflow Gen2 ────────────────────►│
-    ├── ECB FX API (CSV)                ──► Dataflow Gen2 ────────────────────►│
-    └── Open-Meteo Weather API (JSON)   ──► Python External Job ───────────────►│
-                                                                                 │
-                                                                    ┌────────────▼────────────┐
-                                                                    │   BRONZE LAKEHOUSE       │
-                                                                    │   (raw, immutable)       │
-                                                                    │   OneLake / Delta        │
-                                                                    └────────────┬────────────┘
-                                                                                 │
-                                                               PySpark Notebook (Silver ETL)
-                                                                                 │
-                                                                    ┌────────────▼────────────┐
-                                                                    │   SILVER LAKEHOUSE       │
-                                                                    │   (clean, normalized)    │
-                                                                    │   Delta tables           │
-                                                                    └────────────┬────────────┘
-                                                                                 │
-                                                               PySpark Notebook (Gold ETL)
-                                                                                 │
-                                                                    ┌────────────▼────────────┐
-                                                                    │   FABRIC WAREHOUSE       │
-                                                                    │   (star schema / Gold)   │
-                                                                    │   SQL endpoint           │
-                                                                    └────────────┬────────────┘
-                                                                                 │
-                                                                    ┌────────────┴────────────┐
-                                                                    │                         │
-                                                               Power BI                  Notebooks
-                                                              Reports               (matplotlib/plotly)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          EXTERNAL DATA SOURCES                               │
+├───────────────────┬──────────────────────┬─────────────────┬────────────────┤
+│  NYC Taxi (TLC)   │  OpenAQ API + S3     │  World Bank API │  ECB FX API    │
+│  Parquet / month  │  JSON / CSV.gz       │  JSON           │  CSV           │
+└────────┬──────────┴──────────┬───────────┴────────┬────────┴───────┬────────┘
+         │                     │                    │                │
+  pl_ingest_nyc_taxi   df_openaq_locations   df_worldbank_gdp   df_ecb_fx
+  Data Factory          + bronze_ingest_       Dataflow Gen2      Dataflow Gen2
+  Pipeline              openaq_measurements
+                        Notebook (boto3)
+         │                     │                    │                │
+         └─────────────────────┴────────────────────┴────────────────┘
+                                        │
+                           ┌────────────▼────────────┐
+                           │    pl_master_orchestrator │
+                           │  year_start / year_end    │
+                           └────────────┬────────────┘
+                                        │
+                           ┌────────────▼────────────┐
+                           │      BRONZE LAKEHOUSE     │
+                           │  raw · immutable          │
+                           │  OneLake · Delta Lake     │
+                           └────────────┬────────────┘
+                                        │
+                               silver_etl (PySpark)
+                                        │
+                           ┌────────────▼────────────┐
+                           │      SILVER LAKEHOUSE     │
+                           │  clean · normalized       │
+                           │  Delta Lake               │
+                           └────────────┬────────────┘
+                                        │
+                               gold_etl (PySpark)
+                                        │
+                           ┌────────────▼────────────┐
+                           │      FABRIC WAREHOUSE     │
+                           │  star schema · T-SQL      │
+                           │  FactTaxiDaily            │
+                           │  FactAirQualityDaily      │
+                           │  DimDate · DimZone        │
+                           │  DimFX · DimGDP           │
+                           └────────────┬────────────┘
+                                        │
+                           ┌────────────▼────────────┐
+                           │   nyc_analytics_model     │
+                           │   Direct Lake on SQL      │
+                           └────────────┬────────────┘
+                                        │
+                           ┌────────────▼────────────┐
+                           │   NYC ANALYTICS REPORT    │
+                           │   Mobility                │
+                           │   Air Quality             │
+                           │   Correlation             │
+                           │   Economic Impact         │
+                           └─────────────────────────┘
 
-Open-Meteo ──► Python Job (enriched data) ──► InfluxDB Cloud ──► Grafana Dashboard
+Open-Meteo API ──► Python Job ──► Bronze Lakehouse ──► silver_etl ──► FactWeatherDaily
+                        │
+                        └──► InfluxDB Cloud ──► Grafana Dashboard
 
-Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ──► DQ Report to user
+Great Expectations ──► Silver validation ──► Telegram / Discord Bot ──► DQ report
 ```
 
 ---
@@ -88,11 +112,11 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 - **Access:** SQL endpoint (T-SQL compatible)
 
 ### Data Factory
-- **Pipeline:** `pl_ingest_nyc_taxi` — copies monthly Parquet files to Bronze
+- **Pipeline:** `pl_ingest_nyc_taxi` — copies monthly Parquet files to Bronze; parameters: `year` (int), `month` (int)
 - **Dataflow Gen2:** `df_openaq_locations` — OpenAQ API v3 `/locations` → `bronze_openaq_locations` (station metadata); API key stored in Fabric Connections
 - **Dataflow Gen2:** `df_worldbank_gdp` — World Bank API → `bronze_gdp`
 - **Dataflow Gen2:** `df_ecb_fx` — ECB CSV → `bronze_fx_rates`
-- **Orchestration Pipeline:** `pl_master_orchestrator` — runs all ingestion + triggers notebooks
+- **Orchestration Pipeline:** `pl_master_orchestrator` *(planned — not yet created)* — single-entry-point pipeline with `year_start`/`year_end` parameters; runs all ingestion in parallel, then triggers silver_etl and gold_etl notebooks sequentially
 
 ### Power BI Semantic Model
 - **Item:** `fabric/nyc_analytics_model.SemanticModel/`
@@ -120,10 +144,9 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
-- `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for 22 NYC stations × last 5 years → `bronze_openaq_measurements`
-- `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 4 data sources + air quality measurements
-- `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + SQL) *(Phase 3)*
-- `fabric/analytics.Notebook/` — Correlation analysis and visualizations *(Phase 4)*
+- `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for 22 NYC stations × last 5 years → `bronze_openaq_measurements`; parameters: `year_start`, `year_end`
+- `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 5 data sources
+- `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + SQL)
 
 ### Weather External Job (Python)
 - **Source:** Open-Meteo API (free, no key) — hourly weather for NYC (lat 40.71, lon -74.01)
@@ -144,16 +167,16 @@ All notebooks live in `fabric/` as Fabric Notebook items synced via Git integrat
 - **Dashboards:** `Weather NYC`, `Weather vs Taxi Demand`
 - **Hosting:** Grafana Cloud free tier or local Docker
 
-### Great Expectations (Phase 5)
+### Great Expectations (Phase 6)
 - **Purpose:** Data quality validation on Silver tables
-- **Suite files:** `ge/expectations/silver_taxi_trips.json`, etc. (added in Phase 5)
-- **Trigger:** Telegram/Discord bot command `/report`
+- **Suite files:** `ge/expectations/silver_taxi_trips.json`, etc. (added in Phase 6)
+- **Trigger:** Telegram / Discord Bot command `/report`
 - **Output:** HTML report + JSON result summary
 
-### Telegram / Discord Bot (Phase 5)
+### Telegram / Discord Bot (Phase 6)
 - **Purpose:** User-friendly DQ trigger and report delivery
 - **Command:** `/report [table_name]` → runs GE checkpoint → replies with pass/fail summary
-- **Implementation:** `bot/dq_bot.py` using python-telegram-bot (added in Phase 5)
+- **Implementation:** `bot/dq_bot.py` using python-telegram-bot (added in Phase 6)
 - **Hosting:** local during defense; Railway.app or Azure Container Instance in production
 
 ---
@@ -200,7 +223,7 @@ bypasses Spark's S3A entirely, and achieves anonymous access. Downloads are para
 - Supports both pandas and Spark backends
 - Alternative: dbt tests — but dbt is harder to integrate with Fabric Notebooks
 
-### Why Telegram/Discord Bot (not email)?
+### Why Telegram / Discord Bot (not email)?
 - Demonstrates event-driven / interactive data quality monitoring
 - Low-latency: report arrives within seconds of command
 - More engaging for a defense demo than "it sends an email"
@@ -239,11 +262,20 @@ bypasses Spark's S3A entirely, and achieves anonymous access. Downloads are para
 ## Data Flow — End-to-End
 
 ```
-1. [Trigger] Master Pipeline runs (scheduled or manual)
-2. [Parallel] Dataflow Gen2 × 3 + Pipeline ingest to Bronze Lakehouse
-3. [Sequential] silver_etl Notebook reads Bronze → writes Silver
-4. [Sequential] gold_etl Notebook reads Silver → loads Fabric Warehouse
-5. [Always-on] Power BI Semantic Model / Notebook reads Warehouse
+Current (manual):
+1. Run df_ecb_fx, df_worldbank_gdp, df_openaq_locations (Dataflow Gen2, parallel)
+2. Run bronze_ingest_openaq_measurements notebook (year_start / year_end)
+3. Run pl_ingest_nyc_taxi pipeline (year / month per file)
+4. Run silver_etl notebook → writes Silver tables
+5. Run gold_etl notebook → loads Fabric Warehouse
+6. Power BI report reads Warehouse via Direct Lake semantic model
+
+Planned (pl_master_orchestrator):
+1. [Trigger] pl_master_orchestrator(year_start, year_end) — manual or scheduled
+2. [Parallel] df_ecb_fx + df_worldbank_gdp + df_openaq_locations + bronze_ingest_openaq_measurements + pl_ingest_nyc_taxi (ForEach year/month)
+3. [Sequential] silver_etl notebook (year_start, year_end passed as parameters)
+4. [Sequential] gold_etl notebook (year_start, year_end passed as parameters)
+5. [Always-on] Power BI reads updated Warehouse
 ```
 
 ---
