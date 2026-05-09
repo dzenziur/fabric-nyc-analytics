@@ -2,6 +2,18 @@ table DimGDP
 	lineageTag: 40074a32-33fe-4a8d-ae04-47d99444649a
 	sourceLineageTag: [dbo].[DimGDP]
 
+	measure 'USA GDP (USD)' =
+			
+			CALCULATE(
+			    MAX(DimGDP[gdp_usd]),
+			    DimGDP[country_code] = "US"
+			)
+		lineageTag: 5bf0db5a-bd91-44b5-9880-ecac44917316
+
+		changedProperty = Name
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
 	column gdp_key
 		dataType: int64
 		formatString: 0
