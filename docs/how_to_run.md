@@ -150,9 +150,11 @@ Expected tables in gold_warehouse:
 
 ### 5b. Power BI Reports
 
-1. In workspace → New → **Report** → pick `nyc_analytics_model`
-2. Build **Mobility Dashboard**: trips/day trend, avg fare, busiest zones, revenue USD vs EUR
-3. Build **Air Quality Dashboard**: PM2.5/NO2/O3 daily trends by location
+1. In workspace → New → **Report** → pick `nyc_analytics_model` → **Create blank report** → save as `NYC Analytics`
+2. Build **Mobility** page: KPI cards (Total Trips, Total Revenue USD, Avg Fare USD), trips/day line chart, top 10 pickup zones bar chart, revenue USD vs EUR column chart
+3. Build **Air Quality** page: KPI cards (Avg PM2.5, Avg NO2, Max PM2.5), PM2.5 daily trend, NO2+O3 dual-line trend, top 10 stations by Avg PM2.5 bar chart
+4. Build **Correlation** page: KPI cards (Total Trips, Avg PM2.5), dual-axis line chart (Total Trips + Avg PM2.5 by date), year tile slicer
+5. Build **Economic Impact** page: KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year from DimGDP)
 
 ### 5c. Analytics Notebook
 

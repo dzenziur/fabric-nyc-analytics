@@ -107,6 +107,7 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
   - `DimGDP` — no relationship (used as standalone context table)
 - **DAX measures in FactTaxiDaily:** Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD, Avg Trip Distance (mi), Avg Trip Duration (min)
 - **DAX measures in FactAirQualityDaily:** Avg PM2.5, Avg NO2, Avg O3, Max PM2.5
+- **DAX measures in DimGDP:** USA GDP (USD) — `CALCULATE(MAX(DimGDP[gdp_usd]), DimGDP[country_code] = "US")`
 
 ### Power BI Report: NYC Analytics
 - **Item:** `fabric/NYC Analytics.Report/`
@@ -114,6 +115,8 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 - **Pages:**
   - **Mobility** — KPI cards (Total Trips, Total Revenue USD, Avg Fare USD), trips/day trend, top 10 pickup zones by trip count, revenue USD vs EUR by year
   - **Air Quality** — KPI cards (Avg PM2.5, Avg NO2, Max PM2.5), PM2.5 daily trend, NO2+O3 daily trend, top 10 stations by Avg PM2.5
+  - **Correlation** — KPI cards (Total Trips, Avg PM2.5), dual-axis line chart (Total Trips + Avg PM2.5 by date), year tile slicer
+  - **Economic Impact** — KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP 2000–2023)
 
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
