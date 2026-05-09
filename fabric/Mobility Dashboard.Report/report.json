@@ -1,0 +1,87 @@
+{
+  "config": "{\"version\":\"5.73\",\"themeCollection\":{\"baseTheme\":{\"name\":\"CY26SU05\",\"type\":2,\"version\":{\"visual\":\"2.9.0\",\"report\":\"3.3.0\",\"page\":\"2.3.1\"}}},\"activeSectionIndex\":0,\"defaultDrillFilterOtherVisuals\":true,\"linguisticSchemaSyncVersion\":0,\"settings\":{\"useNewFilterPaneExperience\":true,\"allowChangeFilterTypes\":true,\"useStylableVisualContainerHeader\":true,\"queryLimitOption\":6,\"useEnhancedTooltips\":true,\"exportDataMode\":1,\"useDefaultAggregateDisplayName\":true},\"objects\":{\"section\":[{\"properties\":{\"verticalAlignment\":{\"expr\":{\"Literal\":{\"Value\":\"'Top'\"}}}}}]},\"creationSource\":\"QuickCreate\"}",
+  "layoutOptimization": 0,
+  "resourcePackages": [
+    {
+      "resourcePackage": {
+        "disabled": false,
+        "items": [
+          {
+            "name": "CY26SU05",
+            "path": "BaseThemes/CY26SU05.json",
+            "type": 202
+          }
+        ],
+        "name": "SharedResources",
+        "type": 2
+      }
+    }
+  ],
+  "sections": [
+    {
+      "config": "{}",
+      "displayName": "Page 1",
+      "displayOption": 2,
+      "filters": "[]",
+      "height": 720.00,
+      "name": "8be1288ada6122c568c3",
+      "visualContainers": [
+        {
+          "config": "{\"name\":\"63500ad19b5887869d82\",\"layouts\":[{\"id\":0,\"position\":{\"x\":795.8658603628367,\"y\":18.999450247388676,\"z\":3001,\"width\":475.68993952721274,\"height\":341.28642111050027,\"tabOrder\":3001}}],\"singleVisual\":{\"visualType\":\"clusteredBarChart\",\"projections\":{\"Category\":[{\"queryRef\":\"DimZone.zone_name\",\"active\":true}],\"Y\":[{\"queryRef\":\"FactTaxiDaily.Total Trips\"}]},\"prototypeQuery\":{\"Version\":2,\"From\":[{\"Name\":\"d\",\"Entity\":\"DimZone\",\"Type\":0},{\"Name\":\"f\",\"Entity\":\"FactTaxiDaily\",\"Type\":0}],\"Select\":[{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"d\"}},\"Property\":\"zone_name\"},\"Name\":\"DimZone.zone_name\",\"NativeReferenceName\":\"zone_name\"},{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"Total Trips\"},\"Name\":\"FactTaxiDaily.Total Trips\",\"NativeReferenceName\":\"Total Trips\"}],\"OrderBy\":[{\"Direction\":2,\"Expression\":{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"Total Trips\"}}}]},\"drillFilterOtherVisuals\":true,\"hasDefaultSort\":true}}",
+          "filters": "[{\"expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"DimZone\"}},\"Property\":\"zone_name\"}},\"filter\":{\"Version\":2,\"From\":[{\"Name\":\"subquery\",\"Expression\":{\"Subquery\":{\"Query\":{\"Version\":2,\"From\":[{\"Name\":\"d\",\"Entity\":\"DimZone\",\"Type\":0},{\"Name\":\"f\",\"Entity\":\"FactTaxiDaily\",\"Type\":0}],\"Select\":[{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"d\"}},\"Property\":\"zone_name\"},\"Name\":\"field\"}],\"OrderBy\":[{\"Direction\":2,\"Expression\":{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"Total Trips\"}}}],\"Top\":10}}},\"Type\":2},{\"Name\":\"d\",\"Entity\":\"DimZone\",\"Type\":0}],\"Where\":[{\"Condition\":{\"In\":{\"Expressions\":[{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"d\"}},\"Property\":\"zone_name\"}}],\"Table\":{\"SourceRef\":{\"Source\":\"subquery\"}}}}}]},\"type\":\"TopN\",\"howCreated\":0,\"isHiddenInViewMode\":false}]",
+          "height": 341.29,
+          "width": 475.69,
+          "x": 795.87,
+          "y": 19.00,
+          "z": 3001.00
+        },
+        {
+          "config": "{\"name\":\"8cb1286bcd76b7e01cae\",\"layouts\":[{\"id\":0,\"position\":{\"x\":14.813256180957392,\"y\":360.23145712782747,\"z\":3000,\"width\":1256.4334560757497,\"height\":338.68490268279857,\"tabOrder\":3000}}],\"singleVisual\":{\"visualType\":\"lineChart\",\"projections\":{\"Y\":[{\"queryRef\":\"FactTaxiDaily.Total Trips\"}],\"Category\":[{\"queryRef\":\"DimDate.date\",\"active\":true}]},\"prototypeQuery\":{\"Version\":2,\"From\":[{\"Name\":\"f\",\"Entity\":\"FactTaxiDaily\",\"Type\":0},{\"Name\":\"d\",\"Entity\":\"DimDate\",\"Type\":0}],\"Select\":[{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"Total Trips\"},\"Name\":\"FactTaxiDaily.Total Trips\",\"NativeReferenceName\":\"Total Trips\"},{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"d\"}},\"Property\":\"date\"},\"Name\":\"DimDate.date\",\"NativeReferenceName\":\"date\"}],\"OrderBy\":[{\"Direction\":1,\"Expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"d\"}},\"Property\":\"date\"}}}]},\"drillFilterOtherVisuals\":true,\"hasDefaultSort\":true}}",
+          "filters": "[]",
+          "height": 338.68,
+          "width": 1256.43,
+          "x": 14.81,
+          "y": 360.23,
+          "z": 3000.00
+        },
+        {
+          "config": "{\"name\":\"9a8ce221ac97f2277d26\",\"layouts\":[{\"id\":0,\"position\":{\"x\":14.777350192413413,\"y\":125.95931830676196,\"z\":3002,\"width\":763.4964266080264,\"height\":223.77130291368883,\"tabOrder\":3002}}],\"singleVisual\":{\"visualType\":\"clusteredColumnChart\",\"projections\":{\"Category\":[{\"queryRef\":\"DimDate.year\",\"active\":true}],\"Y\":[{\"queryRef\":\"FactTaxiDaily.Total Revenue EUR\"},{\"queryRef\":\"FactTaxiDaily.Total Revenue USD\"}]},\"prototypeQuery\":{\"Version\":2,\"From\":[{\"Name\":\"d\",\"Entity\":\"DimDate\",\"Type\":0},{\"Name\":\"f\",\"Entity\":\"FactTaxiDaily\",\"Type\":0}],\"Select\":[{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"d\"}},\"Property\":\"year\"},\"Name\":\"DimDate.year\",\"NativeReferenceName\":\"year\"},{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"Total Revenue EUR\"},\"Name\":\"FactTaxiDaily.Total Revenue EUR\",\"NativeReferenceName\":\"Total Revenue EUR\"},{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"Total Revenue USD\"},\"Name\":\"FactTaxiDaily.Total Revenue USD\",\"NativeReferenceName\":\"Total Revenue USD\"}],\"OrderBy\":[{\"Direction\":2,\"Expression\":{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"Total Revenue EUR\"}}}]},\"drillFilterOtherVisuals\":true,\"hasDefaultSort\":true}}",
+          "filters": "[]",
+          "height": 223.77,
+          "width": 763.50,
+          "x": 14.78,
+          "y": 125.96,
+          "z": 3002.00
+        },
+        {
+          "config": "{\"name\":\"ae1d9e0f330df315988d\",\"layouts\":[{\"id\":0,\"position\":{\"x\":0,\"y\":0,\"z\":0,\"width\":265.1952108276939,\"height\":131.93128578865173,\"tabOrder\":0}}],\"singleVisual\":{\"visualType\":\"cardVisual\",\"projections\":{\"Data\":[{\"queryRef\":\"FactTaxiDaily.Total Trips\"}]},\"prototypeQuery\":{\"Version\":2,\"From\":[{\"Name\":\"f\",\"Entity\":\"FactTaxiDaily\",\"Type\":0}],\"Select\":[{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"Total Trips\"},\"Name\":\"FactTaxiDaily.Total Trips\",\"NativeReferenceName\":\"Total Trips\"}],\"OrderBy\":[{\"Direction\":2,\"Expression\":{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"Total Trips\"}}}]},\"drillFilterOtherVisuals\":true,\"hasDefaultSort\":true}}",
+          "filters": "[]",
+          "height": 131.93,
+          "width": 265.20,
+          "x": 0.00,
+          "y": 0.00,
+          "z": 0.00
+        },
+        {
+          "config": "{\"name\":\"cf20bc49c1566a635303\",\"layouts\":[{\"id\":0,\"position\":{\"x\":265.1952108276939,\"y\":0,\"z\":2000,\"width\":265.1952108276939,\"height\":131.93128578865173,\"tabOrder\":2000}}],\"singleVisual\":{\"visualType\":\"cardVisual\",\"projections\":{\"Data\":[{\"queryRef\":\"FactTaxiDaily.Total Revenue USD\"}]},\"prototypeQuery\":{\"Version\":2,\"From\":[{\"Name\":\"f\",\"Entity\":\"FactTaxiDaily\",\"Type\":0}],\"Select\":[{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"Total Revenue USD\"},\"Name\":\"FactTaxiDaily.Total Revenue USD\",\"NativeReferenceName\":\"Total Revenue USD\"}],\"OrderBy\":[{\"Direction\":2,\"Expression\":{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"Total Revenue USD\"}}}]},\"drillFilterOtherVisuals\":true,\"hasDefaultSort\":true}}",
+          "filters": "[]",
+          "height": 131.93,
+          "width": 265.20,
+          "x": 265.20,
+          "y": 0.00,
+          "z": 2000.00
+        },
+        {
+          "config": "{\"name\":\"dd22c9b5eab2845d18f9\",\"layouts\":[{\"id\":0,\"position\":{\"x\":530.3904216553879,\"y\":0,\"z\":1000,\"width\":265.1952108276939,\"height\":131.93128578865173,\"tabOrder\":1000}}],\"singleVisual\":{\"visualType\":\"cardVisual\",\"projections\":{\"Data\":[{\"queryRef\":\"FactTaxiDaily.Avg Fare USD\"}]},\"prototypeQuery\":{\"Version\":2,\"From\":[{\"Name\":\"f\",\"Entity\":\"FactTaxiDaily\",\"Type\":0}],\"Select\":[{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"Avg Fare USD\"},\"Name\":\"FactTaxiDaily.Avg Fare USD\",\"NativeReferenceName\":\"Avg Fare USD\"}],\"OrderBy\":[{\"Direction\":2,\"Expression\":{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"Avg Fare USD\"}}}]},\"drillFilterOtherVisuals\":true,\"hasDefaultSort\":true}}",
+          "filters": "[]",
+          "height": 131.93,
+          "width": 265.20,
+          "x": 530.39,
+          "y": 0.00,
+          "z": 1000.00
+        }
+      ],
+      "width": 1280.00
+    }
+  ]
+}
