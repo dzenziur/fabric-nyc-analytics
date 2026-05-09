@@ -108,6 +108,13 @@ Great Expectations ──► Checkpoint run ──► Telegram / Discord Bot ─
 - **DAX measures in FactTaxiDaily:** Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD, Avg Trip Distance (mi), Avg Trip Duration (min)
 - **DAX measures in FactAirQualityDaily:** Avg PM2.5, Avg NO2, Avg O3, Max PM2.5
 
+### Power BI Report: NYC Analytics
+- **Item:** `fabric/NYC Analytics.Report/`
+- **Semantic model:** `nyc_analytics_model`
+- **Pages:**
+  - **Mobility** — KPI cards (Total Trips, Total Revenue USD, Avg Fare USD), trips/day trend, top 10 pickup zones by trip count, revenue USD vs EUR by year
+  - **Air Quality** — KPI cards (Avg PM2.5, Avg NO2, Max PM2.5), PM2.5 daily trend, NO2+O3 daily trend, top 10 stations by Avg PM2.5
+
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
 - `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for 22 NYC stations × last 5 years → `bronze_openaq_measurements`
