@@ -2,7 +2,9 @@
 section Section1;
 [DataDestinations = {[Definition = [Kind = "Reference", QueryName = "Query_DataDestination", IsNewTarget = true], Settings = [Kind = "Automatic", TypeSettings = [Kind = "Table"]]]}]
 shared worldbank_gdp = let
-  Source = Json.Document(Web.Contents("https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000&date=2000:2023")),
+  currentYear = Date.Year(DateTime.LocalNow()) - 1,
+  url = "https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000&date=2000:" & Text.From(currentYear),
+  Source = Json.Document(Web.Contents(url)),
   #"Converted to table" = Table.FromList(Source, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
   Navigation = #"Converted to table"{1}[Column1],
   #"Converted to table 1" = Table.FromList(Navigation, Splitter.SplitByNothing(), null, null, ExtraValues.Error),
