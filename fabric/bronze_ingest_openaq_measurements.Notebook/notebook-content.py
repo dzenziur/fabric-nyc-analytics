@@ -28,9 +28,22 @@
 # **Output:** `bronze_openaq_measurements` (raw CSV data, no transformations)
 # **Note:** Fabric Spark S3A cannot access public S3 anonymously — boto3 is used instead.
 
+# PARAMETERS CELL ********************
+
+year_start = 2023
+year_end = 2023
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
 # CELL ********************
 
-%pip install boto3 -q
+import subprocess
+subprocess.run(["pip", "install", "boto3", "-q"], check=True)
 
 # METADATA ********************
 
@@ -72,8 +85,8 @@ BRONZE = "bronze_lakehouse"
 NYC_LAT_MIN, NYC_LAT_MAX = 40.4, 40.9
 NYC_LON_MIN, NYC_LON_MAX = -74.3, -73.7
 
-YEAR_END   = datetime.now().year - 1
-YEAR_START = YEAR_END - 4
+YEAR_END   = year_end
+YEAR_START = year_start
 
 S3_BUCKET = "openaq-data-archive"
 S3_BASE   = "records/csv.gz"
