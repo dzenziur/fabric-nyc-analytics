@@ -40,6 +40,18 @@
 # **Input:** `bronze_fx_rates`, `bronze_gdp`, `bronze_openaq_locations`, `bronze_openaq_measurements`, `Files/raw/taxi/`
 # **Output:** `silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_taxi_trips`
 
+# PARAMETERS CELL ********************
+
+year_start = 2022
+year_end = 2024
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
 # MARKDOWN ********************
 
 # ## Imports
@@ -80,6 +92,8 @@ SILVER_OPENAQ_LOCATIONS      = f"{SILVER}.silver_openaq_locations"
 SILVER_OPENAQ_MEASUREMENTS   = f"{SILVER}.silver_openaq_measurements"
 SILVER_TAXI_TRIPS            = f"{SILVER}.silver_taxi_trips"
 
+print(f"Year range: {year_start} - {year_end}")
+
 # METADATA ********************
 
 # META {
@@ -95,11 +109,15 @@ SILVER_TAXI_TRIPS            = f"{SILVER}.silver_taxi_trips"
 
 # CELL ********************
 
-def write_silver(df, table_name: str, partition_by: list = None) -> None:
-    """Write DataFrame to Silver Lakehouse as Delta table."""
+def write_silver(df, table_name: str, partition_by: list = None, replace_where: str = None) -> None:
+    """Write DataFrame to Silver Lakehouse as Delta table.
+    replace_where enables partition-level overwrite (Delta replaceWhere) instead of full table overwrite.
+    """
     print(f"[{table_name}] rows before write: {df.count()}")
 
     writer = df.write.format("delta").mode("overwrite")
+    if replace_where:
+        writer = writer.option("replaceWhere", replace_where)
     if partition_by:
         writer = writer.partitionBy(*partition_by)
 
@@ -225,10 +243,12 @@ df_silver = (
         & col("do_location_id").isNotNull()
         & (col("trip_distance") > 0)
         & (col("fare_amount") > 0)
+        & col("year").between(year_start, year_end)
     )
 )
 
-write_silver(df_silver, SILVER_TAXI_TRIPS, partition_by=["year", "month"])
+write_silver(df_silver, SILVER_TAXI_TRIPS, partition_by=["year", "month"],
+             replace_where=f"year >= {year_start} AND year <= {year_end}")
 display(df_silver.limit(5))
 
 # METADATA ********************
@@ -257,10 +277,12 @@ df_silver = (
     .filter(col("location_id").isNotNull() & col("parameter").isNotNull() & col("datetime").isNotNull())
     .withColumn("year", year(col("datetime")))
     .withColumn("month", month(col("datetime")))
+    .filter(col("year").between(year_start, year_end))
     .orderBy("location_id", "parameter", "datetime")
 )
 
-write_silver(df_silver, SILVER_OPENAQ_MEASUREMENTS, partition_by=["year", "month"])
+write_silver(df_silver, SILVER_OPENAQ_MEASUREMENTS, partition_by=["year", "month"],
+             replace_where=f"year >= {year_start} AND year <= {year_end}")
 display(df_silver.limit(5))
 
 # METADATA ********************
