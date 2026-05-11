@@ -42,8 +42,8 @@
 
 # PARAMETERS CELL ********************
 
-year_start = 2022
-year_end = 2024
+year_start = 2023
+year_end = 2023
 
 # METADATA ********************
 
@@ -60,6 +60,7 @@ year_end = 2024
 # CELL ********************
 
 from pyspark.sql.functions import col, to_date, to_timestamp, year, month
+from pyspark.sql.types import StructType, StructField, LongType, DoubleType, StringType, TimestampType
 
 # METADATA ********************
 
@@ -91,6 +92,8 @@ SILVER_GDP                   = f"{SILVER}.silver_gdp"
 SILVER_OPENAQ_LOCATIONS      = f"{SILVER}.silver_openaq_locations"
 SILVER_OPENAQ_MEASUREMENTS   = f"{SILVER}.silver_openaq_measurements"
 SILVER_TAXI_TRIPS            = f"{SILVER}.silver_taxi_trips"
+
+spark.conf.set("spark.sql.parquet.enableVectorizedReader", "false")
 
 print(f"Year range: {year_start} - {year_end}")
 
@@ -223,7 +226,48 @@ display(df_silver.limit(5))
 
 # CELL ********************
 
-df = spark.read.parquet(BRONZE_TAXI_FILES)
+_taxi_schema = StructType([
+    StructField("VendorID",              LongType(),      True),
+    StructField("tpep_pickup_datetime",  TimestampType(), True),
+    StructField("tpep_dropoff_datetime", TimestampType(), True),
+    StructField("passenger_count",       DoubleType(),    True),
+    StructField("trip_distance",         DoubleType(),    True),
+    StructField("RatecodeID",            DoubleType(),    True),
+    StructField("store_and_fwd_flag",    StringType(),    True),
+    StructField("PULocationID",          LongType(),      True),
+    StructField("DOLocationID",          LongType(),      True),
+    StructField("payment_type",          LongType(),      True),
+    StructField("fare_amount",           DoubleType(),    True),
+    StructField("extra",                 DoubleType(),    True),
+    StructField("mta_tax",               DoubleType(),    True),
+    StructField("tip_amount",            DoubleType(),    True),
+    StructField("tolls_amount",          DoubleType(),    True),
+    StructField("improvement_surcharge", DoubleType(),    True),
+    StructField("total_amount",          DoubleType(),    True),
+    StructField("congestion_surcharge",  DoubleType(),    True),
+    StructField("airport_fee",           DoubleType(),    True),
+])
+
+taxi_files = sorted(
+    f.path for f in notebookutils.fs.ls(BRONZE_TAXI_FILES)
+    if f.name.endswith(".parquet")
+)
+
+dfs = []
+for path in taxi_files:
+    df_f = (
+        spark.read.parquet(path)
+        .withColumn("VendorID",     col("VendorID").cast("long"))
+        .withColumn("PULocationID", col("PULocationID").cast("long"))
+        .withColumn("DOLocationID", col("DOLocationID").cast("long"))
+        .withColumn("payment_type", col("payment_type").cast("long"))
+    )
+    dfs.append(df_f)
+
+df = dfs[0]
+for d in dfs[1:]:
+    df = df.unionByName(d, allowMissingColumns=True)
+
 print(f"[{BRONZE}.taxi_files] rows read: {df.count()}")
 
 df_silver = (
@@ -247,6 +291,7 @@ df_silver = (
     )
 )
 
+spark.sql(f"DROP TABLE IF EXISTS {SILVER_TAXI_TRIPS}")
 write_silver(df_silver, SILVER_TAXI_TRIPS, partition_by=["year", "month"],
              replace_where=f"year >= {year_start} AND year <= {year_end}")
 display(df_silver.limit(5))
