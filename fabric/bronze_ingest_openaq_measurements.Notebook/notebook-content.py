@@ -58,7 +58,6 @@ subprocess.run(["pip", "install", "boto3", "-q"], check=True)
 
 # CELL ********************
 
-from datetime import datetime
 import io
 import boto3
 import pandas as pd
