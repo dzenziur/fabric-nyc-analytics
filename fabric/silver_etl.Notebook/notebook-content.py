@@ -55,12 +55,11 @@ year_end = 2023
 # MARKDOWN ********************
 
 # ## Imports
-# PySpark functions used across all ETL cells.
+# PySpark functions and types used across all ETL cells.
 
 # CELL ********************
 
 from pyspark.sql.functions import col, to_date, to_timestamp, year, month
-from pyspark.sql.types import StructType, StructField, LongType, DoubleType, StringType, TimestampType
 
 # METADATA ********************
 
@@ -92,8 +91,6 @@ SILVER_GDP                   = f"{SILVER}.silver_gdp"
 SILVER_OPENAQ_LOCATIONS      = f"{SILVER}.silver_openaq_locations"
 SILVER_OPENAQ_MEASUREMENTS   = f"{SILVER}.silver_openaq_measurements"
 SILVER_TAXI_TRIPS            = f"{SILVER}.silver_taxi_trips"
-
-spark.conf.set("spark.sql.parquet.enableVectorizedReader", "false")
 
 print(f"Year range: {year_start} - {year_end}")
 
@@ -194,8 +191,9 @@ display(df_silver.limit(5))
 
 # MARKDOWN ********************
 
-# ## OpenAQ Air Quality
-# Deduplicate by location_id, drop records missing location or country.
+# ## OpenAQ Locations
+# Source: `bronze_openaq_locations` populated by `bronze_ingest_openaq_locations` notebook.
+# Deduplicate by location_id, drop records missing location_id or country_id.
 
 # CELL ********************
 
@@ -225,28 +223,6 @@ display(df_silver.limit(5))
 # Rename columns to snake_case, add year/month for partitioning, filter out invalid trips.
 
 # CELL ********************
-
-_taxi_schema = StructType([
-    StructField("VendorID",              LongType(),      True),
-    StructField("tpep_pickup_datetime",  TimestampType(), True),
-    StructField("tpep_dropoff_datetime", TimestampType(), True),
-    StructField("passenger_count",       DoubleType(),    True),
-    StructField("trip_distance",         DoubleType(),    True),
-    StructField("RatecodeID",            DoubleType(),    True),
-    StructField("store_and_fwd_flag",    StringType(),    True),
-    StructField("PULocationID",          LongType(),      True),
-    StructField("DOLocationID",          LongType(),      True),
-    StructField("payment_type",          LongType(),      True),
-    StructField("fare_amount",           DoubleType(),    True),
-    StructField("extra",                 DoubleType(),    True),
-    StructField("mta_tax",               DoubleType(),    True),
-    StructField("tip_amount",            DoubleType(),    True),
-    StructField("tolls_amount",          DoubleType(),    True),
-    StructField("improvement_surcharge", DoubleType(),    True),
-    StructField("total_amount",          DoubleType(),    True),
-    StructField("congestion_surcharge",  DoubleType(),    True),
-    StructField("airport_fee",           DoubleType(),    True),
-])
 
 taxi_files = sorted(
     f.path for f in notebookutils.fs.ls(BRONZE_TAXI_FILES)
