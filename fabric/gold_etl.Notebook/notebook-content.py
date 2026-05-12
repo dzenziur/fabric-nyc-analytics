@@ -36,7 +36,7 @@
 
 # # Gold ETL — Silver → Fabric Warehouse (star schema)
 # Builds star schema from Silver tables and writes to `gold_warehouse` via synapsesql.
-# **Input:** silver_taxi_trips, silver_openaq_measurements, silver_fx_rates, silver_gdp
+# **Input:** silver_taxi_trips, silver_openaq_measurements, silver_openaq_locations, silver_fx_rates, silver_gdp
 # **Output:** gold_warehouse.dbo — DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily
 
 # PARAMETERS CELL ********************
@@ -320,12 +320,12 @@ display(df_fact_taxi.limit(10))
 
 # CELL ********************
 
-df_loc = spark.read.table(SILVER_OPENAQ_LOCATIONS).select("location_id", "country_name")
+df_loc = spark.read.table(SILVER_OPENAQ_LOCATIONS).select("location_id", "location_name", "country_name")
 
 df_fact_aq = (
     spark.read.table(SILVER_OPENAQ_MEASUREMENTS)
     .withColumn("meas_date", to_date(col("datetime")))
-    .groupBy("meas_date", "location_id", "location", "parameter")
+    .groupBy("meas_date", "location_id", "parameter")
     .agg(
         spark_round(avg("value"), 4).alias("avg_value"),
         spark_round(max("value"), 4).alias("max_value"),
@@ -341,7 +341,7 @@ df_fact_aq = (
     .select(
         "date_key",
         "location_id",
-        col("location").alias("city"),
+        col("location_name").alias("city"),
         col("country_name").alias("country"),
         "parameter",
         "avg_value",
