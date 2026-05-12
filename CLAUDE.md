@@ -8,11 +8,11 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 **Infrastructure as Code:** Terraform with `microsoft/fabric` provider — manages workspace + lakehouses + warehouse declaratively. See `terraform/`.
 
-**External stack** (introduced later phases): InfluxDB Cloud (weather time-series), Grafana (weather dashboard), Great Expectations (data quality), Telegram Bot (DQ alerts).
+**External stack** (Phase 6): InfluxDB Cloud (weather time-series), Grafana (weather dashboard), Great Expectations (data quality), Telegram / Discord Bot (DQ alerts).
 
 ## Current Status
 
-**Active branch:** `feature/data-orchestration`
+**Active branch:** `feature/data-governance`
 **Deadline:** May 15, 2026
 
 ### Phase completion
@@ -24,40 +24,34 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 | Phase 2 — Silver ETL | ✅ Done | silver_taxi_trips, silver_gdp, silver_fx_rates, silver_openaq_locations, silver_openaq_measurements |
 | Phase 3 — Gold / star schema | ✅ Done | DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily in gold_warehouse |
 | Phase 4 — Visualizations | ✅ Done | Semantic model, Mobility, Air Quality, Correlation, Economic Impact pages in Power BI |
-| Phase 5 — Master Orchestrator | 🔄 In progress | pl_master_orchestrator + parameterized notebooks + data backfill |
-| Phase 6 — Governance / monitoring | ❌ Not started | Weather, InfluxDB, Grafana, GE, Telegram bot |
+| Phase 5 — Master Orchestrator | ✅ Done | pl_master_orchestrator + parameterized silver/gold notebooks + dynamic taxi loop |
+| Phase 6 — Governance / monitoring | 🔄 In progress | Weather, InfluxDB, Grafana, GE, Telegram bot |
 
-### Current branch goal (`feature/data-orchestration`)
+### Current branch goal (`feature/data-governance`)
 
-Phase 5 — Master orchestrator — single-entry-point pipeline with `year_start`/`year_end` parameters
+Phase 6 — Governance & external integrations
 
-- [ ] Add `year_start` / `year_end` notebook parameters to `silver_etl`
-- [ ] Add `year_start` / `year_end` notebook parameters to `gold_etl`
-- [ ] Create `pl_master_orchestrator` pipeline in Fabric with `year_start`/`year_end` parameters
-- [ ] Add ForEach loop for `pl_ingest_nyc_taxi` (iterate year/month combinations)
-- [ ] Wire all activities: parallel ingestion → silver_etl → gold_etl
-- [ ] Backfill data: run orchestrator for 2022–2024 to populate multi-year trends
+- [ ] Weather ingestion — `jobs/weather_ingest.py` → Bronze Lakehouse + InfluxDB Cloud
+- [ ] Silver table `silver_weather` (temp, precipitation, windspeed) in `silver_etl`
+- [ ] Gold table `FactWeatherDaily` in `gold_etl`
+- [ ] Grafana dashboard — InfluxDB data source, weather vs taxi demand panels (`grafana/dashboards/weather_nyc.json`)
+- [ ] Great Expectations — validate Silver tables: null checks, value ranges, allowed categories (`ge/expectations/`)
+- [ ] Telegram bot `bot/dq_bot.py` — `/report` triggers GE checkpoint, replies with pass/fail summary
+- [ ] Schedule automation — daily pipeline for FX/OpenAQ/Weather, monthly for Taxi/GDP
+
+## Backlog
+
+Items confirmed as needed but not yet scheduled. Claude reads this at the start of every session (see compaction instructions in `CLAUDE.local.md`). When a new improvement or fix is identified, add it here — do not leave it only in the conversation.
+
+### Deferred items
+- [ ] Backfill data: run orchestrator for 2022–2024 to populate multi-year trends (demo runs with 2023 only)
 - [ ] Fix city names in FactAirQualityDaily (gold_etl: join silver_openaq_locations on location_id)
+- [ ] Row-Level Security in Power BI (optional)
+- [ ] Microsoft Purview lineage (optional)
 
-### Future improvements (post-Phase 5)
-
+### Known data limitations
 - **Multi-pollutant station coverage** — not all OpenAQ stations measure all pollutants; some stations have gaps in NO2/O3 data. Known data limitation from OpenAQ source.
-
-### Key table row counts
-
-| Table | Rows | Layer |
-|-------|------|-------|
-| silver_taxi_trips | ~2.87M | Silver |
-| silver_openaq_locations | ~5k | Silver |
-| silver_openaq_measurements | ~1.1M | Silver |
-| silver_gdp | ~6.2k | Silver |
-| silver_fx_rates | ~7k | Silver |
-| DimDate | 2,557 | Gold |
-| DimZone | 265 | Gold |
-| DimFX | 6,996 | Gold |
-| DimGDP | 6,193 | Gold |
-| FactTaxiDaily | 6,856 | Gold |
-| FactAirQualityDaily | 49,287 | Gold |
+- **TLC parquet schema drift** — files pre/post mid-2023 have INT32 vs INT64 for location columns; handled in `silver_etl` via file-by-file read + explicit cast.
 
 ### Key reference docs
 
@@ -75,7 +69,7 @@ Phase 5 — Master orchestrator — single-entry-point pipeline with `year_start
 ```
 fabric/       All Fabric workspace items: dataflows, pipelines, notebooks, warehouse SQL
               Synced automatically via Fabric Git integration
-jobs/         External Python jobs — run outside Fabric (added in Phase 5)
+jobs/         External Python jobs — run outside Fabric (added in Phase 6)
 terraform/    IaC: workspace, lakehouses, warehouse (run `make help`)
 docs/         Architecture, data dictionary, how-to-run
 spec/         Original project specification (PDF)
@@ -101,7 +95,7 @@ spec/         Original project specification (PDF)
 | OpenAQ Air Quality | JSON API, paginated | Dataflow Gen2 |
 | World Bank GDP | JSON API | Dataflow Gen2 |
 | ECB FX rates | CSV API | Dataflow Gen2 |
-| Open-Meteo Weather | JSON API | Python job (Phase 5) |
+| Open-Meteo Weather | JSON API | Python job (Phase 6) |
 
 ## Quick start
 
@@ -127,9 +121,9 @@ Required env vars are documented in `.env.example`.
 
 | Variable | Phase | Purpose |
 |----------|-------|---------|
-| `OPENAQ_API_KEY` | Phase 1 | OpenAQ v3 API — required for `df_openaq_locations` Dataflow |
-| `INFLUXDB_URL/TOKEN/ORG/BUCKET` | Phase 5 | InfluxDB Cloud — weather time-series (add when starting Phase 5) |
-| `TELEGRAM_BOT_TOKEN/CHAT_ID` | Phase 5 | Telegram bot — DQ alerts (add when starting Phase 5) |
+| `OPENAQ_API_KEY` | Phase 1 | OpenAQ v3 API — passed as parameter to `bronze_ingest_openaq_locations` notebook |
+| `INFLUXDB_URL/TOKEN/ORG/BUCKET` | Phase 6 | InfluxDB Cloud — weather time-series (add when starting Phase 6) |
+| `TELEGRAM_BOT_TOKEN/CHAT_ID` | Phase 6 | Telegram / Discord Bot — DQ alerts (add when starting Phase 6) |
 
 ## Key principles
 
