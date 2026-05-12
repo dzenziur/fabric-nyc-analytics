@@ -112,9 +112,17 @@ print(f"Year range: {YEAR_START} - {YEAR_END}")
 
 # CELL ********************
 
-def write_gold(df, table: str) -> None:
-    print(f"[{table}] rows before write: {df.count()}")
-    df.write.mode("overwrite").synapsesql(f"{GOLD}.dbo.{table}")
+def write_gold(df_new, table: str, exclude_filter: str = None) -> None:
+    if exclude_filter:
+        try:
+            df_existing = spark.read.synapsesql(f"{GOLD}.dbo.{table}")
+            df_final = df_existing.filter(exclude_filter).unionByName(df_new)
+        except Exception:
+            df_final = df_new
+    else:
+        df_final = df_new
+    print(f"[{table}] rows before write: {df_final.count()}")
+    df_final.write.mode("overwrite").synapsesql(f"{GOLD}.dbo.{table}")
     print(f"[{table}] write done")
 
 # METADATA ********************
@@ -303,7 +311,8 @@ df_fact_taxi = (
     )
 )
 
-write_gold(df_fact_taxi, "FactTaxiDaily")
+write_gold(df_fact_taxi, "FactTaxiDaily",
+           exclude_filter=f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}")
 display(df_fact_taxi.limit(10))
 
 # METADATA ********************
@@ -351,7 +360,8 @@ df_fact_aq = (
     )
 )
 
-write_gold(df_fact_aq, "FactAirQualityDaily")
+write_gold(df_fact_aq, "FactAirQualityDaily",
+           exclude_filter=f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}")
 display(df_fact_aq.limit(10))
 
 # METADATA ********************
