@@ -22,12 +22,12 @@ External stack (Phase 6): **InfluxDB** + **Grafana** + **Great Expectations** + 
 - Task: Copy Activity in Pipeline → OneLake Bronze Lakehouse (Files section)
 - Note: test on 1–2 months first — files are large
 
-### OpenAQ — Location Metadata (Dataflow Gen2)
+### OpenAQ — Location Metadata (PySpark Notebook)
 - Source: OpenAQ API v3 `/v3/locations` — https://docs.openaq.org
 - Format: JSON API, pagination via `page` + `limit=1000`
-- Task: Dataflow Gen2 `df_openaq_locations` → flatten location records → `bronze_openaq_locations` (station metadata only)
+- Task: Notebook `bronze_ingest_openaq_locations` → fetch all stations (paginated) → `bronze_openaq_locations`
 - Columns: location_id, location_name, timezone, country_id, country_name, latitude, longitude
-- Note: API key stored in Fabric Connections (not hardcoded in Dataflow)
+- Note: API key passed as notebook parameter `openaq_api_key`
 
 ### OpenAQ — Measurements (PySpark Notebook)
 - Source: OpenAQ public S3 archive — `s3://openaq-data-archive/records/csv.gz/`
@@ -110,7 +110,7 @@ Single-entry-point pipeline that runs the entire data platform end-to-end with c
 pl_master_orchestrator(year_start, year_end)
   [Parallel]
     df_ecb_fx
-    df_openaq_locations
+    bronze_ingest_openaq_locations(openaq_api_key)
     df_worldbank_gdp
     bronze_ingest_openaq_measurements(year_start, year_end)
     ForEach(year, month) → pl_ingest_nyc_taxi(year, month)

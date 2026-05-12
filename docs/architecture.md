@@ -10,10 +10,10 @@
 │  Parquet / month  │  JSON / CSV.gz       │  JSON           │  CSV           │
 └────────┬──────────┴──────────┬───────────┴────────┬────────┴───────┬────────┘
          │                     │                    │                │
-  pl_ingest_nyc_taxi   df_openaq_locations   df_worldbank_gdp   df_ecb_fx
-  Data Factory          + bronze_ingest_       Dataflow Gen2      Dataflow Gen2
-  Pipeline              openaq_measurements
-                        Notebook (boto3)
+  pl_ingest_nyc_taxi   bronze_ingest_openaq_ df_worldbank_gdp   df_ecb_fx
+  Data Factory          locations +           Dataflow Gen2      Dataflow Gen2
+  Pipeline              bronze_ingest_openaq_
+                        measurements Notebooks
          │                     │                    │                │
          └─────────────────────┴────────────────────┴────────────────┘
                                         │
@@ -99,7 +99,7 @@
 - **Format:** Delta Lake (auto-created by Dataflow Gen2 and Pipeline)
 - **Tables:**
   - `bronze_taxi_trips` — raw Parquet loaded from TLC (via Pipeline)
-  - `bronze_openaq_locations` — OpenAQ location metadata (station list, ~5k rows) via Dataflow Gen2
+  - `bronze_openaq_locations` — OpenAQ location metadata (24k+ global stations) via `bronze_ingest_openaq_locations` Notebook (replaced Dataflow Gen2 for API key security)
   - `bronze_openaq_measurements` — OpenAQ pollutant readings for 22 NYC stations, last 5 years, via PySpark Notebook reading public S3 archive
   - `bronze_gdp` — World Bank yearly GDP per country via Dataflow Gen2
   - `bronze_fx_rates` — ECB daily USD/EUR rates via Dataflow Gen2
@@ -120,11 +120,10 @@
 - **Access:** SQL endpoint (T-SQL compatible)
 
 ### Data Factory
-- **Pipeline:** `pl_ingest_nyc_taxi` — copies monthly Parquet files to Bronze; parameters: `year` (int), `month` (int)
-- **Dataflow Gen2:** `df_openaq_locations` — OpenAQ API v3 `/locations` → `bronze_openaq_locations` (station metadata); API key stored in Fabric Connections
-- **Dataflow Gen2:** `df_worldbank_gdp` — World Bank API → `bronze_gdp`
-- **Dataflow Gen2:** `df_ecb_fx` — ECB CSV → `bronze_fx_rates`
-- **Orchestration Pipeline:** `pl_master_orchestrator` *(planned — not yet created)* — single-entry-point pipeline with `year_start`/`year_end` parameters; runs all ingestion in parallel, then triggers silver_etl and gold_etl notebooks sequentially
+- **Pipeline:** `pl_ingest_nyc_taxi` — copies monthly Parquet files to Bronze; parameters: `year` (int), `month` (int); source URL and destination filename are dynamically built from parameters
+- **Pipeline:** `pl_master_orchestrator` — single-entry-point orchestrator; parameters: `year_start` (int), `year_end` (int); runs all ingestion in parallel (ForEach taxi months + notebooks + dataflows), then triggers silver_etl and gold_etl sequentially
+- **Dataflow Gen2:** `df_worldbank_gdp` — World Bank API → `bronze_gdp`; end year is dynamic (`DateTime.LocalNow() - 1`)
+- **Dataflow Gen2:** `df_ecb_fx` — ECB CSV → `bronze_fx_rates` (full history, no date filter needed)
 
 ### Power BI Semantic Model
 - **Item:** `fabric/nyc_analytics_model.SemanticModel/`
@@ -152,9 +151,10 @@
 
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
-- `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for 22 NYC stations × last 5 years → `bronze_openaq_measurements`; parameters: `year_start`, `year_end`
-- `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 5 data sources
-- `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + SQL)
+- `fabric/bronze_ingest_openaq_locations.Notebook/` — fetches all OpenAQ station metadata via API v3 (paginated) → `bronze_openaq_locations`; parameter: `openaq_api_key`
+- `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for NYC stations (filtered by bounding box) → `bronze_openaq_measurements`; parameters: `year_start`, `year_end`
+- `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 5 data sources; parameters: `year_start`, `year_end`; handles TLC Parquet schema drift (INT32/INT64) via file-by-file read with explicit casts
+- `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + synapsesql); parameters: `year_start`, `year_end`
 
 ### Weather External Job (Python)
 - **Source:** Open-Meteo API (free, no key) — hourly weather for NYC (lat 40.71, lon -74.01)
@@ -270,20 +270,19 @@ bypasses Spark's S3A entirely, and achieves anonymous access. Downloads are para
 ## Data Flow — End-to-End
 
 ```
-Current (manual):
-1. Run df_ecb_fx, df_worldbank_gdp, df_openaq_locations (Dataflow Gen2, parallel)
-2. Run bronze_ingest_openaq_measurements notebook (year_start / year_end)
-3. Run pl_ingest_nyc_taxi pipeline (year / month per file)
-4. Run silver_etl notebook → writes Silver tables
-5. Run gold_etl notebook → loads Fabric Warehouse
-6. Power BI report reads Warehouse via Direct Lake semantic model
-
-Planned (pl_master_orchestrator):
-1. [Trigger] pl_master_orchestrator(year_start, year_end) — manual or scheduled
-2. [Parallel] df_ecb_fx + df_worldbank_gdp + df_openaq_locations + bronze_ingest_openaq_measurements + pl_ingest_nyc_taxi (ForEach year/month)
-3. [Sequential] silver_etl notebook (year_start, year_end passed as parameters)
-4. [Sequential] gold_etl notebook (year_start, year_end passed as parameters)
-5. [Always-on] Power BI reads updated Warehouse
+pl_master_orchestrator(year_start, year_end)
+  [Parallel]
+    df_ecb_fx                              (Dataflow Gen2)
+    df_worldbank_gdp                       (Dataflow Gen2, end year dynamic)
+    bronze_ingest_openaq_locations         (Notebook, openaq_api_key parameter)
+    bronze_ingest_openaq_measurements      (Notebook, year_start/year_end)
+    ForEach(year × month) → pl_ingest_nyc_taxi  (Pipeline, year/month dynamic URL)
+  [Sequential]
+    silver_etl(year_start, year_end)       (Notebook, partition-level overwrite)
+  [Sequential]
+    gold_etl(year_start, year_end)         (Notebook, synapsesql write)
+  [Always-on]
+    Power BI reads Warehouse via Direct Lake semantic model
 ```
 
 ---
