@@ -267,7 +267,6 @@ df_silver = (
     )
 )
 
-spark.sql(f"DROP TABLE IF EXISTS {SILVER_TAXI_TRIPS}")
 write_silver(df_silver, SILVER_TAXI_TRIPS, partition_by=["year", "month"],
              replace_where=f"year >= {year_start} AND year <= {year_end}")
 display(df_silver.limit(5))
