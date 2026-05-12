@@ -18,7 +18,10 @@
               "typeProperties": {
                 "location": {
                   "type": "HttpServerLocation",
-                  "relativeUrl": "/trip-data/yellow_tripdata_2024-01.parquet"
+                  "relativeUrl": {
+                    "value": "@concat('/trip-data/yellow_tripdata_', string(pipeline().parameters.year), '-', if(less(pipeline().parameters.month, 10), concat('0', string(pipeline().parameters.month)), string(pipeline().parameters.month)), '.parquet')",
+                    "type": "Expression"
+                  }
                 }
               },
               "externalReferences": {
@@ -30,7 +33,7 @@
           "sink": {
             "type": "BinarySink",
             "storeSettings": {
-              "type": "LakehouseWriteSettings"
+              "type": "AzureBlobStorageWriteSettings"
             },
             "datasetSettings": {
               "type": "Binary",
@@ -38,7 +41,10 @@
                 "location": {
                   "type": "LakehouseLocation",
                   "folderPath": "raw/taxi",
-                  "fileName": "yellow_tripdata_2024-01.parquet"
+                  "fileName": {
+                    "value": "@concat('yellow_tripdata_', string(pipeline().parameters.year), '-', if(less(pipeline().parameters.month, 10), concat('0', string(pipeline().parameters.month)), string(pipeline().parameters.month)), '.parquet')",
+                    "type": "Expression"
+                  }
                 }
               },
               "connectionSettings": {
@@ -71,6 +77,16 @@
         "name": "copy_taxi_parquet",
         "dependsOn": []
       }
-    ]
+    ],
+    "parameters": {
+      "year": {
+        "type": "Int",
+        "defaultValue": 2023
+      },
+      "month": {
+        "type": "Int",
+        "defaultValue": 6
+      }
+    }
   }
 }

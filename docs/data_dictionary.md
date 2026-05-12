@@ -31,7 +31,7 @@ Source: NYC TLC — https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
 
 ### `bronze_openaq_locations`
 Source: OpenAQ API v3 `/v3/locations` — https://docs.openaq.org
-Ingested by: Dataflow Gen2 `df_openaq_locations`
+Ingested by: Notebook `bronze_ingest_openaq_locations`
 Note: contains **location metadata only** (sensor stations), not measurements.
 
 | Column | Type | Description |

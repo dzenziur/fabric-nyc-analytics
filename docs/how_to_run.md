@@ -60,16 +60,14 @@ Resources created:
 3. Parameterize year/month for reuse
 4. Test with one file (e.g., `2024-01`) before scheduling
 
-### 2b. OpenAQ Locations Dataflow Gen2
+### 2b. OpenAQ Locations Notebook
 
 > Requires `OPENAQ_API_KEY` — register at https://openaq.org (free)
 
-1. New → **Dataflow Gen2** → name: `df_openaq_locations`
-2. Use **Blank query** → Advanced Editor → paste M code with `Web.Contents` + `Headers = [#"X-API-Key" = "..."]`
-3. URL: `https://api.openaq.org/v3/locations?limit=1000&page=1`
-4. Implement pagination via `fn_GetPage` function + `List.Transform({1..5}, each fn_GetPage(_))`
-5. Expand `results` list → keep: `id`, `name`, `timezone`, `country`, `coordinates`
-6. Destination: `bronze_lakehouse` → Table: `bronze_openaq_locations`
+1. Sync repo via Fabric Git integration — `bronze_ingest_openaq_locations` notebook appears in workspace
+2. Ensure `bronze_lakehouse` is the default attached lakehouse
+3. Run with parameter `openaq_api_key` = your API key
+4. Expected: ~24k+ global station records → `bronze_lakehouse.bronze_openaq_locations`
 
 ### 2e. OpenAQ Measurements Notebook
 
@@ -81,7 +79,7 @@ Resources created:
 ### 2c. World Bank GDP Dataflow Gen2
 
 1. New → **Dataflow Gen2** → name: `df_worldbank_gdp`
-2. Source: Web API → `https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000&date=2000:2023`
+2. Source: Web API → `https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000&date=2000:YYYY` where end year is dynamic (`DateTime.LocalNow() - 1` in M-code)
 3. Navigate to second element of JSON array (index 1 contains data), convert to table
 4. Expand records → keep: `country` (id, name), `date`, `value`
 5. Rename: `country_code`, `country_name`, `year`, `gdp_usd`
@@ -98,7 +96,7 @@ Resources created:
 
 ## Step 3 — Run Silver ETL Notebook
 
-1. Sync `feature/data-transformation` branch via Fabric Git integration — `silver_etl` notebook appears in workspace automatically
+1. Sync `feature/data-orchestration` branch via Fabric Git integration — `silver_etl` notebook appears in workspace automatically
 2. Open `silver_etl` notebook → attach `bronze_lakehouse` as additional data item (read source)
 3. Default attached lakehouse must be **silver_lakehouse** (write target)
 4. Run all cells top to bottom
@@ -156,31 +154,41 @@ Expected tables in gold_warehouse:
 4. Build **Correlation** page: KPI cards (Total Trips, Avg PM2.5), dual-axis line chart (Total Trips + Avg PM2.5 by date), year tile slicer
 5. Build **Economic Impact** page: KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year from DimGDP)
 
-### 5c. Analytics Notebook
-
-- Open `analytics` notebook in workspace (synced from `fabric/analytics.Notebook/`)
-- Run cells to generate matplotlib/plotly charts (Correlation + Economic Impact)
-
 ---
 
 ## Step 5 — Master Orchestrator
 
-1. In workspace → New → **Data Pipeline** → name: `pl_master_orchestrator`
-2. Add pipeline parameters: `year_start` (Int, default: 2022), `year_end` (Int, default: 2024)
-3. Add activities in order:
+1. Sync `feature/data-orchestration` branch — `pl_master_orchestrator` pipeline appears in workspace
+2. Pipeline parameters: `year_start` (Int), `year_end` (Int)
+3. Activity structure:
    ```
    [Parallel]
-     df_ecb_fx               (Dataflow Gen2 activity)
-     df_openaq_locations     (Dataflow Gen2 activity)
-     df_worldbank_gdp        (Dataflow Gen2 activity)
-     bronze_ingest_openaq_measurements (Notebook activity, pass year_start/year_end)
-     ForEach year/month → pl_ingest_nyc_taxi (Pipeline activity)
+     df_ecb_fx                              (Dataflow Gen2)
+     df_worldbank_gdp                       (Dataflow Gen2)
+     bronze_ingest_openaq_locations         (Notebook, pass openaq_api_key)
+     bronze_ingest_openaq_measurements      (Notebook, pass year_start/year_end)
+     ForEach year/month → pl_ingest_nyc_taxi (Pipeline, dynamic URL/filename)
    [Then]
-     silver_etl notebook (Notebook activity, pass year_start/year_end)
+     silver_etl                             (Notebook, pass year_start/year_end)
    [Then]
-     gold_etl notebook (Notebook activity, pass year_start/year_end)
+     gold_etl                               (Notebook, pass year_start/year_end)
    ```
-4. Run with parameters `year_start=2022`, `year_end=2024` for full backfill
+4. Run with parameters `year_start=2023`, `year_end=2023` for single-year demo; `year_start=2022`, `year_end=2024` for full backfill
+
+### Typical activity durations (1 year, measured 2026-05-12)
+
+| Activity | Duration |
+|----------|----------|
+| ForEach_taxi_months (12 months, parallel) | ~2m 54s |
+| Each ingest_taxi_month (Copy Data) | ~2m 3–4s |
+| df_worldbank_gdp | ~1m 1s |
+| df_ecb_fx | ~1m 2s |
+| bronze_ingest_openaq_locations | ~2m 18s |
+| bronze_ingest_openaq_measurements | ~4m 38s |
+| silver_etl | ~6m 9s |
+| gold_etl | ~2m 22s |
+
+Full run estimate per year: ~5–7 min (bronze parallel) + ~6 min silver + ~2 min gold ≈ **~15 min/year**.
 
 ---
 
@@ -257,21 +265,10 @@ great_expectations checkpoint run silver_taxi_checkpoint
 
 ## Step 6c — Schedule Automation
 
-1. New → **Data Pipeline** → name: `pl_master_orchestrator`
-2. Add activities in order:
-   ```
-   [Parallel]
-     df_ecb_fx (Dataflow Gen2 activity)
-     df_openaq_locations (Dataflow Gen2 activity)
-     df_worldbank_gdp (Dataflow Gen2 activity)
-     pl_ingest_nyc_taxi (Pipeline activity, only on new month)
-   [Then]
-     silver_etl notebook (Notebook activity)
-   [Then]
-     gold_etl notebook (Notebook activity)
-   ```
+1. `pl_master_orchestrator` already exists — sync `feature/data-orchestration` branch
+2. Activity structure (same as Step 5 above)
 3. Schedule:
-   - Daily at 06:00 UTC for FX + Air Quality
+   - Daily at 06:00 UTC for FX + Air Quality + OpenAQ
    - Monthly trigger for Taxi (manual or first-of-month cron)
 
 ---
@@ -279,14 +276,14 @@ great_expectations checkpoint run silver_taxi_checkpoint
 ## Full Run Order (Manual)
 
 ```
-1. Run df_ecb_fx                             → bronze_fx_rates
-2. Run df_worldbank_gdp                      → bronze_gdp
-3. Run df_openaq_locations                   → bronze_openaq_locations
-4. Run bronze_ingest_openaq_measurements     → bronze_openaq_measurements
-5. Run pl_ingest_nyc_taxi                    → Files/raw/taxi/
-6. Run silver_etl notebook                   → silver_* tables
-6. Run gold_etl notebook     → Fact/Dim tables in Warehouse
-7. Refresh Power BI          → Reports update
+1. Run df_ecb_fx                                  → bronze_fx_rates
+2. Run df_worldbank_gdp                           → bronze_gdp
+3. Run bronze_ingest_openaq_locations             → bronze_openaq_locations
+4. Run bronze_ingest_openaq_measurements          → bronze_openaq_measurements
+5. Run pl_ingest_nyc_taxi (per year/month)        → Files/raw/taxi/
+6. Run silver_etl notebook                        → silver_* tables
+7. Run gold_etl notebook                          → Fact/Dim tables in Warehouse
+8. Refresh Power BI                               → Reports update
 --- Phase 6 additions ---
 8. python jobs/weather_ingest.py → bronze_weather + InfluxDB
 9. Run silver_etl notebook (weather) → silver_weather (+ GE validation)

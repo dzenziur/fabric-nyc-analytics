@@ -14,8 +14,9 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 | `gold_warehouse` | Warehouse | Gold | ✅ Active |
 | `df_ecb_fx` | Dataflow Gen2 | Bronze | ✅ Active |
 | `df_worldbank_gdp` | Dataflow Gen2 | Bronze | ✅ Active |
-| `df_openaq_locations` | Dataflow Gen2 | Bronze | ✅ Active |
 | `pl_ingest_nyc_taxi` | Pipeline | Bronze | ✅ Active |
+| `pl_master_orchestrator` | Pipeline | Orchestration | ✅ Active |
+| `bronze_ingest_openaq_locations` | Notebook | Bronze | ✅ Active |
 | `bronze_ingest_openaq_measurements` | Notebook | Bronze | ✅ Active |
 | `silver_etl` | Notebook | Silver | ✅ Active |
 | `gold_etl` | Notebook | Gold | ✅ Active |
@@ -27,45 +28,45 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 ## Ingestion (Bronze)
 
 ### Dataflows Gen2
-| Item | Source | Destination |
-|------|--------|-------------|
-| `df_ecb_fx` | ECB FX API — daily USD/EUR CSV | `bronze_lakehouse.bronze_fx_rates` |
-| `df_worldbank_gdp` | World Bank API — yearly GDP JSON | `bronze_lakehouse.bronze_gdp` |
-| `df_openaq_locations` | OpenAQ API v3 `/locations` (paginated JSON) | `bronze_lakehouse.bronze_openaq_locations` |
+| Item | Source | Destination | Notes |
+|------|--------|-------------|-------|
+| `df_ecb_fx` | ECB FX API — daily USD/EUR CSV | `bronze_lakehouse.bronze_fx_rates` | Full history, no date filter |
+| `df_worldbank_gdp` | World Bank API — yearly GDP JSON | `bronze_lakehouse.bronze_gdp` | End year dynamic (`DateTime.LocalNow() - 1`) |
 
 ### Pipelines
-| Item | Source | Destination |
-|------|--------|-------------|
-| `pl_ingest_nyc_taxi` | TLC CloudFront — monthly Parquet | `bronze_lakehouse/Files/raw/taxi/` |
+| Item | Source | Destination | Parameters |
+|------|--------|-------------|------------|
+| `pl_ingest_nyc_taxi` | TLC CloudFront — monthly Parquet | `bronze_lakehouse/Files/raw/taxi/` | `year` (int), `month` (int) — URL and filename built dynamically |
+| `pl_master_orchestrator` | — | Triggers all ingestion + ETL | `year_start` (int), `year_end` (int) |
 
-Parameters: `year` (int), `month` (int)
+`pl_master_orchestrator` runs in order: [Parallel] all ingestion → [Sequential] `silver_etl` → [Sequential] `gold_etl`.
 
 ### Notebooks
-| Item | Source | Destination |
-|------|--------|-------------|
-| `bronze_ingest_openaq_measurements` | OpenAQ public S3 archive (`s3://openaq-data-archive/`) via boto3 | `bronze_lakehouse.bronze_openaq_measurements` |
-
-Parameters: `year_start` (int), `year_end` (int) — dynamic window, no hardcoded years.
+| Item | Source | Destination | Parameters |
+|------|--------|-------------|------------|
+| `bronze_ingest_openaq_locations` | OpenAQ API v3 `/locations` (paginated) | `bronze_lakehouse.bronze_openaq_locations` | `openaq_api_key` (string) |
+| `bronze_ingest_openaq_measurements` | OpenAQ public S3 archive (`s3://openaq-data-archive/`) via boto3 | `bronze_lakehouse.bronze_openaq_measurements` | `year_start` (int), `year_end` (int) |
 
 ---
 
 ## Transformation (Silver)
 
-| Item | Input | Output |
-|------|-------|--------|
-| `silver_etl` | All Bronze tables | `silver_taxi_trips`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_gdp`, `silver_fx_rates` |
+| Item | Input | Output | Parameters |
+|------|-------|--------|------------|
+| `silver_etl` | All Bronze tables + `Files/raw/taxi/` | `silver_taxi_trips`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_gdp`, `silver_fx_rates` | `year_start` (int), `year_end` (int) |
 
 Transformations: snake_case rename, null filtering, deduplication, type casting, year/month partitioning.
+Taxi files read file-by-file to handle INT32/INT64 schema drift across TLC Parquet releases; explicit casts normalize `VendorID`, `PULocationID`, `DOLocationID`, `payment_type` to `long`.
 
 ---
 
 ## Modeling (Gold)
 
-| Item | Input | Output |
-|------|-------|--------|
-| `gold_etl` | All Silver tables | `FactTaxiDaily`, `FactAirQualityDaily`, `DimDate`, `DimZone`, `DimFX`, `DimGDP` |
+| Item | Input | Output | Parameters |
+|------|-------|--------|------------|
+| `gold_etl` | All Silver tables | `FactTaxiDaily`, `FactAirQualityDaily`, `DimDate`, `DimZone`, `DimFX`, `DimGDP` | `year_start` (int), `year_end` (int) |
 
-Star schema in `gold_warehouse` (T-SQL / SQL analytics endpoint).
+Star schema in `gold_warehouse` (T-SQL / SQL analytics endpoint). Written via `synapsesql`.
 
 ---
 

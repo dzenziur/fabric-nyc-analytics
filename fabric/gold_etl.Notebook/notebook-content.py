@@ -39,6 +39,18 @@
 # **Input:** silver_taxi_trips, silver_openaq_measurements, silver_fx_rates, silver_gdp
 # **Output:** gold_warehouse.dbo — DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily
 
+# PARAMETERS CELL ********************
+
+year_start = 2023
+year_end = 2023
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
 # MARKDOWN ********************
 
 # ## Imports
@@ -47,7 +59,6 @@
 
 import com.microsoft.spark.fabric
 import urllib.request
-from datetime import datetime
 from pyspark.sql.functions import (
     col, explode, sequence, to_date,
     year, quarter, month, date_format,
@@ -74,8 +85,8 @@ BRONZE = "bronze_lakehouse"
 SILVER = "silver_lakehouse"
 GOLD   = "gold_warehouse"
 
-YEAR_END   = datetime.now().year - 1
-YEAR_START = YEAR_END - 4
+YEAR_START = year_start
+YEAR_END   = year_end
 
 _b = notebookutils.lakehouse.get(BRONZE)
 BRONZE_FILES = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.id}/Files"

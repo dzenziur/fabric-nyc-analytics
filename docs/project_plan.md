@@ -10,7 +10,7 @@ Unified analytics platform on Microsoft Fabric integrating:
 - **Open-Meteo Weather** (JSON API, free) — hourly NYC weather
 
 Architecture: **Bronze → Silver → Gold** (Medallion) via Lakehouse + Warehouse + Power BI
-External stack (Phase 5): **InfluxDB** + **Grafana** + **Great Expectations** + **Telegram Bot**
+External stack (Phase 6): **InfluxDB** + **Grafana** + **Great Expectations** + **Telegram / Discord Bot**
 
 ---
 
@@ -22,12 +22,12 @@ External stack (Phase 5): **InfluxDB** + **Grafana** + **Great Expectations** + 
 - Task: Copy Activity in Pipeline → OneLake Bronze Lakehouse (Files section)
 - Note: test on 1–2 months first — files are large
 
-### OpenAQ — Location Metadata (Dataflow Gen2)
+### OpenAQ — Location Metadata (PySpark Notebook)
 - Source: OpenAQ API v3 `/v3/locations` — https://docs.openaq.org
 - Format: JSON API, pagination via `page` + `limit=1000`
-- Task: Dataflow Gen2 `df_openaq_locations` → flatten location records → `bronze_openaq_locations` (station metadata only)
+- Task: Notebook `bronze_ingest_openaq_locations` → fetch all stations (paginated) → `bronze_openaq_locations`
 - Columns: location_id, location_name, timezone, country_id, country_name, latitude, longitude
-- Note: API key stored in Fabric Connections (not hardcoded in Dataflow)
+- Note: API key passed as notebook parameter `openaq_api_key`
 
 ### OpenAQ — Measurements (PySpark Notebook)
 - Source: OpenAQ public S3 archive — `s3://openaq-data-archive/records/csv.gz/`
@@ -110,7 +110,7 @@ Single-entry-point pipeline that runs the entire data platform end-to-end with c
 pl_master_orchestrator(year_start, year_end)
   [Parallel]
     df_ecb_fx
-    df_openaq_locations
+    bronze_ingest_openaq_locations(openaq_api_key)
     df_worldbank_gdp
     bronze_ingest_openaq_measurements(year_start, year_end)
     ForEach(year, month) → pl_ingest_nyc_taxi(year, month)
@@ -140,7 +140,7 @@ pl_master_orchestrator(year_start, year_end)
 - Validate Silver tables: null checks, value ranges, allowed categories
 - Suites stored in `ge/expectations/`
 
-### Telegram Bot
+### Telegram / Discord Bot
 - Command `/report` → runs GE checkpoint → replies with pass/fail summary
 - Script: `bot/dq_bot.py`
 
@@ -158,11 +158,11 @@ pl_master_orchestrator(year_start, year_end)
 | Cloud platform | Microsoft Fabric (Lakehouse, Warehouse, Data Factory, Notebooks) |
 | Storage format | Delta Lake (Bronze + Silver), T-SQL tables (Gold) |
 | ETL | Data Factory Pipelines + Dataflow Gen2 + PySpark |
-| Time-series DB | InfluxDB Cloud (Phase 5) |
-| External dashboards | Grafana (Phase 5) |
-| Data quality | Great Expectations (Phase 5) |
-| DQ notifications | Telegram Bot (Phase 5) |
-| Reporting | Power BI / Fabric Notebooks (matplotlib/plotly) |
+| Time-series DB | InfluxDB Cloud (Phase 6) |
+| External dashboards | Grafana (Phase 6) |
+| Data quality | Great Expectations (Phase 6) |
+| DQ notifications | Telegram / Discord Bot (Phase 6) |
+| Reporting | Power BI
 | Version control | Git |
 
 ---
@@ -180,4 +180,4 @@ pl_master_orchestrator(year_start, year_end)
 | InfluxDB + Python | InfluxDB docs: influxdb-client-python |
 | Grafana + InfluxDB | Grafana docs: "InfluxDB data source" |
 | Great Expectations | docs.greatexpectations.io — "Quickstart" |
-| Telegram Bot | python-telegram-bot docs |
+| Telegram / Discord Bot | python-telegram-bot / discord.py docs |

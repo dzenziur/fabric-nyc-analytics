@@ -1,0 +1,260 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "type": "RefreshDataflow",
+        "typeProperties": {
+          "dataflowId": "2ac6aadf-19b2-8434-477c-e6acda09ceb1",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "notifyOption": "NoNotification",
+          "dataflowType": "DataflowFabric"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "df_ecb_fx",
+        "dependsOn": []
+      },
+      {
+        "type": "RefreshDataflow",
+        "typeProperties": {
+          "dataflowId": "f512458f-3861-8a0e-459e-9d00213542d3",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "notifyOption": "NoNotification",
+          "dataflowType": "DataflowFabric"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "df_worldbank_gdp",
+        "dependsOn": []
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "7e3f1a92-8b40-4d5c-9e6a-2f0c1d3e5b7a",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "year_start": {
+              "value": {
+                "value": "@pipeline().parameters.year_start",
+                "type": "Expression"
+              },
+              "type": "int"
+            },
+            "year_end": {
+              "value": {
+                "value": "@pipeline().parameters.year_end",
+                "type": "Expression"
+              },
+              "type": "int"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "bronze_ingest_openaq_measurements",
+        "dependsOn": [
+          {
+            "activity": "bronze_ingest_openaq_locations",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "ForEach",
+        "typeProperties": {
+          "isSequential": false,
+          "items": {
+            "value": "@range(0, mul(add(sub(pipeline().parameters.year_end, pipeline().parameters.year_start), 1), 12))",
+            "type": "Expression"
+          },
+          "activities": [
+            {
+              "type": "InvokePipeline",
+              "typeProperties": {
+                "parameters": {
+                  "year": {
+                    "value": "@add(pipeline().parameters.year_start, div(item(), 12))",
+                    "type": "Expression"
+                  },
+                  "month": {
+                    "value": "@add(mod(item(), 12), 1)",
+                    "type": "Expression"
+                  }
+                },
+                "waitOnCompletion": true,
+                "workspaceId": "00000000-0000-0000-0000-000000000000",
+                "pipelineId": "384bdfba-6eed-8f8f-4340-f3ca11eafa29",
+                "operationType": "InvokeFabricPipeline"
+              },
+              "externalReferences": {
+                "connection": "6cd8ab0a-2c70-4d19-b314-f1b6667c9408"
+              },
+              "policy": {
+                "timeout": "0.12:00:00",
+                "retry": 0,
+                "retryIntervalInSeconds": 30,
+                "secureInput": false,
+                "secureOutput": false
+              },
+              "name": "ingest_taxi_month",
+              "dependsOn": []
+            }
+          ]
+        },
+        "name": "ForEach_taxi_months",
+        "dependsOn": []
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "23422c15-6d33-b3d9-44c0-dac6171d8419",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "year_start": {
+              "value": {
+                "value": "@pipeline().parameters.year_start",
+                "type": "Expression"
+              },
+              "type": "int"
+            },
+            "year_end": {
+              "value": {
+                "value": "@pipeline().parameters.year_end",
+                "type": "Expression"
+              },
+              "type": "int"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "silver_etl",
+        "dependsOn": [
+          {
+            "activity": "ForEach_taxi_months",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "bronze_ingest_openaq_measurements",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "df_worldbank_gdp",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          },
+          {
+            "activity": "df_ecb_fx",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "3f9192c1-583e-9d76-40aa-c0cdfeeb9fdc",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "year_start": {
+              "value": {
+                "value": "@pipeline().parameters.year_start",
+                "type": "Expression"
+              },
+              "type": "int"
+            },
+            "year_end": {
+              "value": {
+                "value": "@pipeline().parameters.year_end",
+                "type": "Expression"
+              },
+              "type": "int"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "gold_etl",
+        "dependsOn": [
+          {
+            "activity": "silver_etl",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "fe887ca6-b5ca-9d05-4488-beb05548f961",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "openaq_api_key": {
+              "value": {
+                "value": "@pipeline().parameters.openaq_api_key",
+                "type": "Expression"
+              },
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "bronze_ingest_openaq_locations",
+        "dependsOn": []
+      }
+    ],
+    "parameters": {
+      "year_start": {
+        "type": "int",
+        "defaultValue": 2023
+      },
+      "year_end": {
+        "type": "int",
+        "defaultValue": 2023
+      },
+      "openaq_api_key": {
+        "type": "string"
+      }
+    }
+  }
+}

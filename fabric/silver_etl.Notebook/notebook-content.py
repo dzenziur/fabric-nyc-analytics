@@ -40,10 +40,22 @@
 # **Input:** `bronze_fx_rates`, `bronze_gdp`, `bronze_openaq_locations`, `bronze_openaq_measurements`, `Files/raw/taxi/`
 # **Output:** `silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_taxi_trips`
 
+# PARAMETERS CELL ********************
+
+year_start = 2023
+year_end = 2023
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
 # MARKDOWN ********************
 
 # ## Imports
-# PySpark functions used across all ETL cells.
+# PySpark functions and types used across all ETL cells.
 
 # CELL ********************
 
@@ -80,6 +92,8 @@ SILVER_OPENAQ_LOCATIONS      = f"{SILVER}.silver_openaq_locations"
 SILVER_OPENAQ_MEASUREMENTS   = f"{SILVER}.silver_openaq_measurements"
 SILVER_TAXI_TRIPS            = f"{SILVER}.silver_taxi_trips"
 
+print(f"Year range: {year_start} - {year_end}")
+
 # METADATA ********************
 
 # META {
@@ -95,11 +109,15 @@ SILVER_TAXI_TRIPS            = f"{SILVER}.silver_taxi_trips"
 
 # CELL ********************
 
-def write_silver(df, table_name: str, partition_by: list = None) -> None:
-    """Write DataFrame to Silver Lakehouse as Delta table."""
+def write_silver(df, table_name: str, partition_by: list = None, replace_where: str = None) -> None:
+    """Write DataFrame to Silver Lakehouse as Delta table.
+    replace_where enables partition-level overwrite (Delta replaceWhere) instead of full table overwrite.
+    """
     print(f"[{table_name}] rows before write: {df.count()}")
 
     writer = df.write.format("delta").mode("overwrite")
+    if replace_where:
+        writer = writer.option("replaceWhere", replace_where)
     if partition_by:
         writer = writer.partitionBy(*partition_by)
 
@@ -173,8 +191,9 @@ display(df_silver.limit(5))
 
 # MARKDOWN ********************
 
-# ## OpenAQ Air Quality
-# Deduplicate by location_id, drop records missing location or country.
+# ## OpenAQ Locations
+# Source: `bronze_openaq_locations` populated by `bronze_ingest_openaq_locations` notebook.
+# Deduplicate by location_id, drop records missing location_id or country_id.
 
 # CELL ********************
 
@@ -205,7 +224,26 @@ display(df_silver.limit(5))
 
 # CELL ********************
 
-df = spark.read.parquet(BRONZE_TAXI_FILES)
+taxi_files = sorted(
+    f.path for f in notebookutils.fs.ls(BRONZE_TAXI_FILES)
+    if f.name.endswith(".parquet")
+)
+
+dfs = []
+for path in taxi_files:
+    df_f = (
+        spark.read.parquet(path)
+        .withColumn("VendorID",     col("VendorID").cast("long"))
+        .withColumn("PULocationID", col("PULocationID").cast("long"))
+        .withColumn("DOLocationID", col("DOLocationID").cast("long"))
+        .withColumn("payment_type", col("payment_type").cast("long"))
+    )
+    dfs.append(df_f)
+
+df = dfs[0]
+for d in dfs[1:]:
+    df = df.unionByName(d, allowMissingColumns=True)
+
 print(f"[{BRONZE}.taxi_files] rows read: {df.count()}")
 
 df_silver = (
@@ -225,10 +263,13 @@ df_silver = (
         & col("do_location_id").isNotNull()
         & (col("trip_distance") > 0)
         & (col("fare_amount") > 0)
+        & col("year").between(year_start, year_end)
     )
 )
 
-write_silver(df_silver, SILVER_TAXI_TRIPS, partition_by=["year", "month"])
+spark.sql(f"DROP TABLE IF EXISTS {SILVER_TAXI_TRIPS}")
+write_silver(df_silver, SILVER_TAXI_TRIPS, partition_by=["year", "month"],
+             replace_where=f"year >= {year_start} AND year <= {year_end}")
 display(df_silver.limit(5))
 
 # METADATA ********************
@@ -257,10 +298,12 @@ df_silver = (
     .filter(col("location_id").isNotNull() & col("parameter").isNotNull() & col("datetime").isNotNull())
     .withColumn("year", year(col("datetime")))
     .withColumn("month", month(col("datetime")))
+    .filter(col("year").between(year_start, year_end))
     .orderBy("location_id", "parameter", "datetime")
 )
 
-write_silver(df_silver, SILVER_OPENAQ_MEASUREMENTS, partition_by=["year", "month"])
+write_silver(df_silver, SILVER_OPENAQ_MEASUREMENTS, partition_by=["year", "month"],
+             replace_where=f"year >= {year_start} AND year <= {year_end}")
 display(df_silver.limit(5))
 
 # METADATA ********************

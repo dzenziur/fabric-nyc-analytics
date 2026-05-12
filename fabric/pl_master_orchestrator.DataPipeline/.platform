@@ -1,11 +1,11 @@
 {
   "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
   "metadata": {
-    "type": "Dataflow",
-    "displayName": "df_openaq_locations"
+    "type": "DataPipeline",
+    "displayName": "pl_master_orchestrator"
   },
   "config": {
     "version": "2.0",
-    "logicalId": "fbb161f6-3452-ab6c-4c75-aef248c9e099"
+    "logicalId": "f89b4ae7-fdf7-87bc-4cc9-85f4a9147b82"
   }
 }
