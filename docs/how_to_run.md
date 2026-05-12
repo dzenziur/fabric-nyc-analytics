@@ -194,7 +194,7 @@ Full run estimate: ~5–7 min (bronze parallel) + ~6–12 min silver + ~2–3 mi
 
 ---
 
-## Step 6 — Weather External Job + InfluxDB (Phase 6)
+## Step 6 — Weather External Job + InfluxDB (Phase 7)
 
 ### InfluxDB Cloud setup
 1. Register at https://cloud2.influxdata.com (free tier)
@@ -229,7 +229,7 @@ export INFLUXDB_BUCKET="nyc_analytics"
 
 ---
 
-## Step 6b — Great Expectations + Telegram Bot (Phase 6)
+## Step 6b — Great Expectations + Telegram Bot (Phase 7)
 
 ### Great Expectations setup
 ```bash
@@ -286,7 +286,7 @@ great_expectations checkpoint run silver_taxi_checkpoint
 6. Run silver_etl notebook                        → silver_* tables
 7. Run gold_etl notebook                          → Fact/Dim tables in Warehouse
 8. Refresh Power BI                               → Reports update
---- Phase 6 additions ---
+--- Phase 7 additions ---
 8. python jobs/weather_ingest.py → bronze_weather + InfluxDB
 9. Run silver_etl notebook (weather) → silver_weather (+ GE validation)
 10. Open Grafana             → Weather dashboard live

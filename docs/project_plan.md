@@ -10,7 +10,7 @@ Unified analytics platform on Microsoft Fabric integrating:
 - **Open-Meteo Weather** (JSON API, free) — hourly NYC weather
 
 Architecture: **Bronze → Silver → Gold** (Medallion) via Lakehouse + Warehouse + Power BI
-External stack (Phase 6): **InfluxDB** + **Grafana** + **Great Expectations** + **Telegram / Discord Bot**
+External stack (Phase 7): **InfluxDB** + **Grafana** + **Great Expectations** + **Telegram / Discord Bot**
 
 ---
 
@@ -119,12 +119,26 @@ pl_master_orchestrator(year_start, year_end)
 ```
 
 ### Data backfill
-- Run orchestrator for 2022–2024 to populate multi-year trends in Power BI dashboards
-- Fix city names in FactAirQualityDaily (join `silver_openaq_locations` on `location_id`)
+- ✅ Ran orchestrator for 2021–2025 (5 years); Power BI has full multi-year trends
+- ✅ Fixed city names in FactAirQualityDaily (gold_etl: city from `silver_openaq_locations.location_name`)
 
 ---
 
-## Phase 6 — Governance & External Integrations
+## Phase 6 — Governance & Monitoring
+
+### Schedule automation
+- Daily refresh: FX rates (ECB), OpenAQ locations + measurements
+- Monthly refresh: NYC Taxi (TLC files), World Bank GDP
+
+### Row-Level Security (optional)
+- Power BI Semantic Model — restrict data visibility by role
+
+### Microsoft Purview lineage (optional)
+- Fabric workspace → Purview → automated lineage tracking
+
+---
+
+## Phase 7 — External Integrations
 
 ### Weather ingestion
 - Source: Open-Meteo API (free, no key) — hourly NYC weather
@@ -144,11 +158,6 @@ pl_master_orchestrator(year_start, year_end)
 - Command `/report` → runs GE checkpoint → replies with pass/fail summary
 - Script: `bot/dq_bot.py`
 
-### Governance
-- Automated refresh schedules (daily for FX/OpenAQ/Weather, monthly for Taxi/GDP)
-- Row-Level Security in Power BI (optional)
-- Microsoft Purview lineage (optional)
-
 ---
 
 ## Tech Stack
@@ -158,10 +167,10 @@ pl_master_orchestrator(year_start, year_end)
 | Cloud platform | Microsoft Fabric (Lakehouse, Warehouse, Data Factory, Notebooks) |
 | Storage format | Delta Lake (Bronze + Silver), T-SQL tables (Gold) |
 | ETL | Data Factory Pipelines + Dataflow Gen2 + PySpark |
-| Time-series DB | InfluxDB Cloud (Phase 6) |
-| External dashboards | Grafana (Phase 6) |
-| Data quality | Great Expectations (Phase 6) |
-| DQ notifications | Telegram / Discord Bot (Phase 6) |
+| Time-series DB | InfluxDB Cloud (Phase 7) |
+| External dashboards | Grafana (Phase 7) |
+| Data quality | Great Expectations (Phase 7) |
+| DQ notifications | Telegram / Discord Bot (Phase 7) |
 | Reporting | Power BI
 | Version control | Git |
 
