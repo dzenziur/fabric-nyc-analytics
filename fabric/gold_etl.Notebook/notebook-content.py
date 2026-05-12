@@ -135,15 +135,29 @@ def write_gold(df_new, table: str, exclude_filter: str = None) -> None:
 # MARKDOWN ********************
 
 # ## DimDate
-# Full date spine covering the last 5 calendar years. day_of_week: 1=Monday … 7=Sunday.
+# Full date spine covering the accumulated range across all runs. day_of_week: 1=Monday … 7=Sunday.
+# Range extends to include existing DimDate years so previous years are never lost on a partial run.
 
 # CELL ********************
+
+try:
+    _row = spark.read.synapsesql(f"{GOLD}.dbo.DimDate").agg(
+        min(col("year")).alias("min_y"),
+        max(col("year")).alias("max_y"),
+    ).collect()[0]
+    _dim_year_start = _row["min_y"] if _row["min_y"] < YEAR_START else YEAR_START
+    _dim_year_end   = _row["max_y"] if _row["max_y"] > YEAR_END   else YEAR_END
+except Exception:
+    _dim_year_start = YEAR_START
+    _dim_year_end   = YEAR_END
+
+print(f"DimDate range: {_dim_year_start} - {_dim_year_end}")
 
 df_dim_date = (
     spark.sql(f"""
         SELECT explode(sequence(
-            to_date('{YEAR_START}-01-01'),
-            to_date('{YEAR_END}-12-31'),
+            to_date('{_dim_year_start}-01-01'),
+            to_date('{_dim_year_end}-12-31'),
             interval 1 day
         )) AS date
     """)
