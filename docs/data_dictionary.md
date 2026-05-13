@@ -56,7 +56,7 @@ Note: contains **actual pollutant measurements** for NYC stations, last 5 years.
 | location_id | int | OpenAQ sensor location ID |
 | sensors_id | int | Individual sensor ID within location |
 | location | string | Location name |
-| datetime | timestamp | Measurement datetime (UTC) |
+| datetime | string | Measurement datetime (UTC) — stored as string; cast to timestamp in silver_etl |
 | lat | float | Sensor latitude |
 | lon | float | Sensor longitude |
 | parameter | string | Pollutant (pm25, pm10, no2, o3, co, so2) |

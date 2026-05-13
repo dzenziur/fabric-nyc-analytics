@@ -64,7 +64,7 @@ import pandas as pd
 from botocore import UNSIGNED
 from botocore.client import Config
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from pyspark.sql.functions import col
+from pyspark.sql.functions import col, year, to_timestamp
 
 # METADATA ********************
 
@@ -197,29 +197,52 @@ print(f"IDs: {sorted(nyc_ids)}")
 # MARKDOWN ********************
 
 # ## Read Measurements from S3 and Write to Bronze
-# First location uses overwrite (idempotent re-runs). Subsequent locations append.
+# read-filter-union-overwrite: preserves rows outside the target year range.
+# Re-running for the same range replaces only those years — idempotent.
 
 # CELL ********************
 
+dfs_new = []
 total_rows = 0
 
-for i, loc_id in enumerate(nyc_ids):
+for loc_id in nyc_ids:
     df_pd = read_location(s3, S3_BUCKET, loc_id, YEAR_START, YEAR_END)
     if df_pd.empty:
         print(f"[location {loc_id}] no data, skipping")
         continue
-    write_mode = "overwrite" if i == 0 else "append"
-    (
+    dfs_new.append(
         spark.createDataFrame(df_pd)
-        .write.format("delta")
-        .mode(write_mode)
-        .option("overwriteSchema", "true" if i == 0 else "false")
-        .saveAsTable(BRONZE_OPENAQ_MEASUREMENTS)
+        .withColumn("year", year(to_timestamp(col("datetime"))))
     )
-    print(f"[location {loc_id}] rows written: {len(df_pd)}")
     total_rows += len(df_pd)
+    print(f"[location {loc_id}] rows fetched: {len(df_pd)}")
 
-print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] total rows: {total_rows}")
+print(f"New rows fetched from S3: {total_rows}")
+
+df_new = dfs_new[0]
+for d in dfs_new[1:]:
+    df_new = df_new.unionByName(d, allowMissingColumns=True)
+
+try:
+    df_existing = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
+    if "year" not in df_existing.columns:
+        df_existing = df_existing.withColumn("year", year(to_timestamp(col("datetime"))))
+    df_existing = df_existing.filter(
+        (col("year") < YEAR_START) | (col("year") > YEAR_END)
+    )
+    df_final = df_existing.unionByName(df_new, allowMissingColumns=True)
+except Exception:
+    df_final = df_new
+
+print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] rows before write: {df_final.count()}")
+(
+    df_final.write.format("delta")
+    .mode("overwrite")
+    .option("overwriteSchema", "true")
+    .partitionBy("year")
+    .saveAsTable(BRONZE_OPENAQ_MEASUREMENTS)
+)
+print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] write done")
 
 # METADATA ********************
 
@@ -234,6 +257,7 @@ print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] total rows: {total_rows}")
 
 # CELL ********************
 
+spark.sql(f"SELECT year, COUNT(*) as cnt FROM {BRONZE_OPENAQ_MEASUREMENTS} GROUP BY year ORDER BY year").show()
 spark.sql(f"SELECT parameter, COUNT(*) as cnt FROM {BRONZE_OPENAQ_MEASUREMENTS} GROUP BY parameter ORDER BY cnt DESC").show()
 
 # METADATA ********************
