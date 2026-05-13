@@ -219,6 +219,9 @@ for loc_id in nyc_ids:
 
 print(f"New rows fetched from S3: {total_rows}")
 
+if not dfs_new:
+    raise ValueError(f"No data found in S3 for any NYC station in year range {YEAR_START}–{YEAR_END}. Aborting.")
+
 df_new = dfs_new[0]
 for d in dfs_new[1:]:
     df_new = df_new.unionByName(d, allowMissingColumns=True)
