@@ -33,8 +33,12 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 - [x] Backfill data: ran orchestrator for 2021–2025 (5 years); Power BI now has full multi-year trends
 - [x] Fix city names in FactAirQualityDaily (gold_etl: city now from `silver_openaq_locations.location_name`)
 - [x] Remove `DROP TABLE IF EXISTS` from `silver_etl` taxi section — enables replaceWhere to accumulate partitions across runs
-- [ ] Gold incremental writes — replace full `overwrite` with `replaceWhere` for `FactTaxiDaily` and `FactAirQualityDaily`
-- [ ] Bronze OpenAQ Measurements — skip already-ingested years (check existing years before downloading from S3)
+- [x] Gold incremental writes — read-filter-union-overwrite pattern for `FactTaxiDaily` and `FactAirQualityDaily` (idempotent, year-range scoped)
+- [x] DimDate accumulated range — extends to cover existing years so no years lost on partial re-runs
+- [x] Fix `bronze_ingest_openaq_measurements` — implemented read-filter-union-overwrite (same pattern as Gold, derive `year` from `datetime`); re-ran for 2021–2025; propagated through silver_etl + gold_etl; all 5 years visible in Power BI
+- [x] `silver_etl` taxi file filtering — filter `taxi_files` list by `year_start`/`year_end` before reading (filename pattern `yellow_tripdata_YYYY-MM.parquet`); avoids reading all 5 years when only 1 year is needed
+- [x] Docs: add idempotency note to `docs/architecture.md` — explain why Gold uses read-filter-union-overwrite instead of append
+- [x] Docs audit — Phase 6/7 labels corrected across architecture.md, project_plan.md, how_to_run.md; backfill status updated
 
 ### Upcoming: `feature/data-governance` (Phase 6)
 
@@ -57,7 +61,18 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 Items confirmed as needed but not yet scheduled. Claude reads this at the start of every session (see compaction instructions in `CLAUDE.local.md`). When a new improvement or fix is identified, add it here — do not leave it only in the conversation.
 
+### Notebook performance & robustness
+- [ ] `gold_etl` DimZone — download `taxi_zone_lookup.csv` once to `bronze_lakehouse/Files/raw/taxi_zones/` and read from there; currently re-downloads from CloudFront on every run (network dependency)
+- [ ] `silver_etl` — remove `.orderBy()` before write on `silver_openaq_measurements` and `silver_openaq_locations`; Delta Lake uses partition pruning, not sort order; full shuffle on large tables adds cost with no benefit
+- [ ] `silver_etl` — remove redundant `df.count()` at the start of each ETL section; `write_silver` already logs row count before write, so the initial count scans the source table twice
+- [ ] `bronze_ingest_openaq_locations` — raise hard page cap from 100 to a higher value and log a warning if the last page is full (silent truncation risk); add retry logic on transient API failures
+- [ ] `gold_etl` `write_gold` — narrow `except Exception` to `AnalysisException` (table not found) so network/config errors are not silently swallowed
+
+### Docs accuracy
+- [ ] Audit all column types in `docs/data_dictionary.md` against actual Spark schemas — run `printSchema()` for each Bronze and Silver table and compare. Found first discrepancy: `bronze_openaq_measurements.datetime` is `string` in practice, `timestamp` in docs (already fixed).
+
 ### Known data limitations
+- **OpenAQ historical coverage** — NYC stations in the S3 archive have data starting ~2023; no measurements for 2021–2022. Known data limitation from OpenAQ source — not a pipeline issue.
 - **Multi-pollutant station coverage** — not all OpenAQ stations measure all pollutants; some stations have gaps in NO2/O3 data. Known data limitation from OpenAQ source.
 - **TLC parquet schema drift** — files pre/post mid-2023 have INT32 vs INT64 for location columns; handled in `silver_etl` via file-by-file read + explicit cast.
 
