@@ -175,24 +175,26 @@ Expected tables in gold_warehouse:
    ```
 4. Run with parameters `year_start=2023`, `year_end=2023` for single-year demo; `year_start=2022`, `year_end=2024` for full backfill
 
-### Typical activity durations (1 year, measured 2026-05-12)
+### Typical activity durations (measured 2026-05-12)
 
-| Activity | Duration |
-|----------|----------|
-| ForEach_taxi_months (12 months, parallel) | ~2m 54s |
-| Each ingest_taxi_month (Copy Data) | ~2m 3–4s |
-| df_worldbank_gdp | ~1m 1s |
-| df_ecb_fx | ~1m 2s |
-| bronze_ingest_openaq_locations | ~2m 18s |
-| bronze_ingest_openaq_measurements | ~4m 38s |
-| silver_etl | ~6m 9s |
-| gold_etl | ~2m 22s |
+| Activity | 1 year | 2 years |
+|----------|--------|---------|
+| ForEach_taxi_months (12 months/yr, parallel) | ~2m 54s | ~3m 30s–4m 3s |
+| Each ingest_taxi_month (Copy Data) | ~2m 3–4s | ~2m 3–4s |
+| df_worldbank_gdp | ~1m 1s | ~1m 4–17s |
+| df_ecb_fx | ~1m 2s | ~1m 17–18s |
+| bronze_ingest_openaq_locations | ~2m 18s | ~1m 49s–2m 5s |
+| bronze_ingest_openaq_measurements | ~4m 38s | ~4m 53s–8m 38s |
+| silver_etl | ~6m 9s | ~7m 8s–12m 14s |
+| gold_etl | ~2m 22s | ~2m 37s–3m 22s |
 
-Full run estimate per year: ~5–7 min (bronze parallel) + ~6 min silver + ~2 min gold ≈ **~15 min/year**.
+Note: `bronze_ingest_openaq_measurements` and `silver_etl` scale with cumulative data volume — later years (2024–2025) have more station coverage than earlier years.
+
+Full run estimate: ~5–7 min (bronze parallel) + ~6–12 min silver + ~2–3 min gold ≈ **~15–22 min per 2-year range**.
 
 ---
 
-## Step 6 — Weather External Job + InfluxDB (Phase 6)
+## Step 6 — Weather External Job + InfluxDB (Phase 7)
 
 ### InfluxDB Cloud setup
 1. Register at https://cloud2.influxdata.com (free tier)
@@ -227,7 +229,7 @@ export INFLUXDB_BUCKET="nyc_analytics"
 
 ---
 
-## Step 6b — Great Expectations + Telegram Bot (Phase 6)
+## Step 6b — Great Expectations + Telegram Bot (Phase 7)
 
 ### Great Expectations setup
 ```bash
@@ -284,7 +286,7 @@ great_expectations checkpoint run silver_taxi_checkpoint
 6. Run silver_etl notebook                        → silver_* tables
 7. Run gold_etl notebook                          → Fact/Dim tables in Warehouse
 8. Refresh Power BI                               → Reports update
---- Phase 6 additions ---
+--- Phase 7 additions ---
 8. python jobs/weather_ingest.py → bronze_weather + InfluxDB
 9. Run silver_etl notebook (weather) → silver_weather (+ GE validation)
 10. Open Grafana             → Weather dashboard live

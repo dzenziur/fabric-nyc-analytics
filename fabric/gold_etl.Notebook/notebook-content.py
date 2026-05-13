@@ -36,7 +36,7 @@
 
 # # Gold ETL — Silver → Fabric Warehouse (star schema)
 # Builds star schema from Silver tables and writes to `gold_warehouse` via synapsesql.
-# **Input:** silver_taxi_trips, silver_openaq_measurements, silver_fx_rates, silver_gdp
+# **Input:** silver_taxi_trips, silver_openaq_measurements, silver_openaq_locations, silver_fx_rates, silver_gdp
 # **Output:** gold_warehouse.dbo — DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily
 
 # PARAMETERS CELL ********************
@@ -112,9 +112,17 @@ print(f"Year range: {YEAR_START} - {YEAR_END}")
 
 # CELL ********************
 
-def write_gold(df, table: str) -> None:
-    print(f"[{table}] rows before write: {df.count()}")
-    df.write.mode("overwrite").synapsesql(f"{GOLD}.dbo.{table}")
+def write_gold(df_new, table: str, exclude_filter: str = None) -> None:
+    if exclude_filter:
+        try:
+            df_existing = spark.read.synapsesql(f"{GOLD}.dbo.{table}")
+            df_final = df_existing.filter(exclude_filter).unionByName(df_new)
+        except Exception:
+            df_final = df_new
+    else:
+        df_final = df_new
+    print(f"[{table}] rows before write: {df_final.count()}")
+    df_final.write.mode("overwrite").synapsesql(f"{GOLD}.dbo.{table}")
     print(f"[{table}] write done")
 
 # METADATA ********************
@@ -127,15 +135,29 @@ def write_gold(df, table: str) -> None:
 # MARKDOWN ********************
 
 # ## DimDate
-# Full date spine covering the last 5 calendar years. day_of_week: 1=Monday … 7=Sunday.
+# Full date spine covering the accumulated range across all runs. day_of_week: 1=Monday … 7=Sunday.
+# Range extends to include existing DimDate years so previous years are never lost on a partial run.
 
 # CELL ********************
+
+try:
+    _row = spark.read.synapsesql(f"{GOLD}.dbo.DimDate").agg(
+        min(col("year")).alias("min_y"),
+        max(col("year")).alias("max_y"),
+    ).collect()[0]
+    _dim_year_start = _row["min_y"] if _row["min_y"] < YEAR_START else YEAR_START
+    _dim_year_end   = _row["max_y"] if _row["max_y"] > YEAR_END   else YEAR_END
+except Exception:
+    _dim_year_start = YEAR_START
+    _dim_year_end   = YEAR_END
+
+print(f"DimDate range: {_dim_year_start} - {_dim_year_end}")
 
 df_dim_date = (
     spark.sql(f"""
         SELECT explode(sequence(
-            to_date('{YEAR_START}-01-01'),
-            to_date('{YEAR_END}-12-31'),
+            to_date('{_dim_year_start}-01-01'),
+            to_date('{_dim_year_end}-12-31'),
             interval 1 day
         )) AS date
     """)
@@ -303,7 +325,8 @@ df_fact_taxi = (
     )
 )
 
-write_gold(df_fact_taxi, "FactTaxiDaily")
+write_gold(df_fact_taxi, "FactTaxiDaily",
+           exclude_filter=f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}")
 display(df_fact_taxi.limit(10))
 
 # METADATA ********************
@@ -320,12 +343,12 @@ display(df_fact_taxi.limit(10))
 
 # CELL ********************
 
-df_loc = spark.read.table(SILVER_OPENAQ_LOCATIONS).select("location_id", "country_name")
+df_loc = spark.read.table(SILVER_OPENAQ_LOCATIONS).select("location_id", "location_name", "country_name")
 
 df_fact_aq = (
     spark.read.table(SILVER_OPENAQ_MEASUREMENTS)
     .withColumn("meas_date", to_date(col("datetime")))
-    .groupBy("meas_date", "location_id", "location", "parameter")
+    .groupBy("meas_date", "location_id", "parameter")
     .agg(
         spark_round(avg("value"), 4).alias("avg_value"),
         spark_round(max("value"), 4).alias("max_value"),
@@ -341,7 +364,7 @@ df_fact_aq = (
     .select(
         "date_key",
         "location_id",
-        col("location").alias("city"),
+        col("location_name").alias("city"),
         col("country_name").alias("country"),
         "parameter",
         "avg_value",
@@ -351,7 +374,8 @@ df_fact_aq = (
     )
 )
 
-write_gold(df_fact_aq, "FactAirQualityDaily")
+write_gold(df_fact_aq, "FactAirQualityDaily",
+           exclude_filter=f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}")
 display(df_fact_aq.limit(10))
 
 # METADATA ********************

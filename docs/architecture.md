@@ -66,7 +66,7 @@
                            │   Economic Impact       │
                            └─────────────────────────┘
 
-┌─── Phase 6 ────────────────────────────────────────────────────────────────────────┐
+┌─── Phase 7 ────────────────────────────────────────────────────────────────────────┐
 │  Open-Meteo API ──► Python Job ──► Bronze Lakehouse ──► silver_etl                 │
 │                          │                                  └──► FactWeatherDaily  │
 │                          └──► InfluxDB Cloud ──► Grafana Dashboard                 │
@@ -158,7 +158,7 @@ All notebooks live in `fabric/` as Fabric Notebook items synced via Git integrat
 
 ### Weather External Job (Python)
 - **Source:** Open-Meteo API (free, no key) — hourly weather for NYC (lat 40.71, lon -74.01)
-- **Script:** `jobs/weather_ingest.py` — added in Phase 5; runs on schedule (cron / Azure Function / Railway.app)
+- **Script:** `jobs/weather_ingest.py` — added in Phase 7; runs on schedule (cron / Azure Function / Railway.app)
 - **Enrichment:** joins weather readings with taxi trip counts by hour and zone
 - **Sink:** InfluxDB Cloud (measurement: `nyc_weather_enriched`)
 - Also writes raw JSON → Bronze Lakehouse for Silver processing
@@ -175,16 +175,16 @@ All notebooks live in `fabric/` as Fabric Notebook items synced via Git integrat
 - **Dashboards:** `Weather NYC`, `Weather vs Taxi Demand`
 - **Hosting:** Grafana Cloud free tier or local Docker
 
-### Great Expectations (Phase 6)
+### Great Expectations (Phase 7)
 - **Purpose:** Data quality validation on Silver tables
-- **Suite files:** `ge/expectations/silver_taxi_trips.json`, etc. (added in Phase 6)
+- **Suite files:** `ge/expectations/silver_taxi_trips.json`, etc. (added in Phase 7)
 - **Trigger:** Telegram / Discord Bot command `/report`
 - **Output:** HTML report + JSON result summary
 
-### Telegram / Discord Bot (Phase 6)
+### Telegram / Discord Bot (Phase 7)
 - **Purpose:** User-friendly DQ trigger and report delivery
 - **Command:** `/report [table_name]` → runs GE checkpoint → replies with pass/fail summary
-- **Implementation:** `bot/dq_bot.py` using python-telegram-bot (added in Phase 6)
+- **Implementation:** `bot/dq_bot.py` using python-telegram-bot (added in Phase 7)
 - **Hosting:** local during defense; Railway.app or Azure Container Instance in production
 
 ---
@@ -235,6 +235,16 @@ bypasses Spark's S3A entirely, and achieves anonymous access. Downloads are para
 - Demonstrates event-driven / interactive data quality monitoring
 - Low-latency: report arrives within seconds of command
 - More engaging for a defense demo than "it sends an email"
+
+### Why Gold uses read-filter-union-overwrite (not append)
+
+Fabric Warehouse is written via `synapsesql`, which only supports `mode("overwrite")` (full truncate+insert) or `mode("append")`. Delta Lake `replaceWhere` is not available.
+
+- **Append** is non-idempotent: re-running the orchestrator for the same year range duplicates every row.
+- **Full overwrite** deletes all years except the current run range — running for 2024 would erase 2021–2023.
+- **Read-filter-union-overwrite:** read the existing table, filter out rows in the target year range (the rows we're about to replace), union the fresh data in, write all rows back. This is idempotent (same result regardless of how many times run) and preserves all years outside the current range.
+
+`DimDate` uses the same principle extended in the other direction: it reads the existing min/max year from the warehouse and extends the date spine to cover both the existing range and the new range, so no dates are lost on partial re-runs.
 
 ### Why Medallion (Bronze/Silver/Gold)?
 - **Bronze** preserves raw data forever — allows re-processing if Silver logic changes

@@ -227,7 +227,10 @@ display(df_silver.limit(5))
 taxi_files = sorted(
     f.path for f in notebookutils.fs.ls(BRONZE_TAXI_FILES)
     if f.name.endswith(".parquet")
+    and year_start <= int(f.name[16:20]) <= year_end
 )
+
+print(f"Taxi files to read ({year_start}–{year_end}): {len(taxi_files)}")
 
 dfs = []
 for path in taxi_files:
@@ -267,7 +270,6 @@ df_silver = (
     )
 )
 
-spark.sql(f"DROP TABLE IF EXISTS {SILVER_TAXI_TRIPS}")
 write_silver(df_silver, SILVER_TAXI_TRIPS, partition_by=["year", "month"],
              replace_where=f"year >= {year_start} AND year <= {year_end}")
 display(df_silver.limit(5))
