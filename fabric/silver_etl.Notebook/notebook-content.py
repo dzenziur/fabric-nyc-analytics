@@ -59,7 +59,7 @@ year_end = 2023
 
 # CELL ********************
 
-from pyspark.sql.functions import col, to_date, to_timestamp, year, month
+from pyspark.sql.functions import col, lit, to_date, to_timestamp, when, year, month
 
 # METADATA ********************
 
@@ -292,9 +292,23 @@ display(df_silver.limit(5))
 df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
 print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] rows read: {df.count()}")
 
+PPM_TO_UGM3 = {
+    "no2": 1882, "o3": 1962, "co": 1145,
+    "no": 1227,  "nox": 1882, "so2": 2619,
+}
+
+value_expr = col("value")
+for param, factor in PPM_TO_UGM3.items():
+    value_expr = when(
+        (col("units") == "ppm") & (col("parameter") == param),
+        col("value") * factor
+    ).otherwise(value_expr)
+
 df_silver = (
     df
     .filter(col("value") > 0)
+    .withColumn("value", value_expr)
+    .withColumn("units", when(col("units") == "ppm", lit("µg/m³")).otherwise(col("units")))
     .withColumn("datetime", to_timestamp(col("datetime")))
     .dropDuplicates(["location_id", "parameter", "datetime"])
     .filter(col("location_id").isNotNull() & col("parameter").isNotNull() & col("datetime").isNotNull())

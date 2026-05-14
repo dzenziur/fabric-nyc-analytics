@@ -292,6 +292,7 @@ df_zone = spark.read.synapsesql(f"{GOLD}.dbo.DimZone").select("zone_key", "locat
 
 df_agg = (
     spark.read.table(SILVER_TAXI_TRIPS)
+    .filter(col("year").between(YEAR_START, YEAR_END))
     .withColumn("trip_date", to_date(col("pickup_datetime")))
     .withColumn("duration_min",
         (unix_timestamp(col("dropoff_datetime")) - unix_timestamp(col("pickup_datetime"))) / 60
@@ -347,6 +348,7 @@ df_loc = spark.read.table(SILVER_OPENAQ_LOCATIONS).select("location_id", "locati
 
 df_fact_aq = (
     spark.read.table(SILVER_OPENAQ_MEASUREMENTS)
+    .filter(col("year").between(YEAR_START, YEAR_END))
     .withColumn("meas_date", to_date(col("datetime")))
     .groupBy("meas_date", "location_id", "parameter")
     .agg(

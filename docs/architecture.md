@@ -110,7 +110,7 @@
 - **Tables:**
   - `silver_taxi_trips` — renamed columns to snake_case, dropped nulls, deduped by (pickup_datetime, dropoff_datetime, pu_location_id, do_location_id, fare_amount), partitioned by year/month
   - `silver_openaq_locations` — location metadata, deduped by location_id, rows with null location_id or country_id dropped
-  - `silver_openaq_measurements` — pollutant readings for NYC stations, value > 0, deduped by (location_id, parameter, datetime), partitioned by year/month
+  - `silver_openaq_measurements` — pollutant readings for NYC stations, value > 0, deduped by (location_id, parameter, datetime), partitioned by year/month; gas parameters (no2, o3, co, no, nox, so2) normalized from ppm to µg/m³ using EPA conversion factors at 25°C
   - `silver_gdp` — yearly GDP per country, nulls dropped, cast to correct types
   - `silver_fx_rates` — daily USD/EUR, deduped by date, nulls dropped
 
@@ -144,48 +144,41 @@
 - **Item:** `fabric/NYC Analytics.Report/`
 - **Semantic model:** `nyc_analytics_model`
 - **Pages:**
-  - **Mobility** — KPI cards (Total Trips, Total Revenue USD, Avg Fare USD), trips/day trend, top 10 pickup zones by trip count, revenue USD vs EUR by year
-  - **Air Quality** — KPI cards (Avg PM2.5, Avg NO2, Max PM2.5), PM2.5 daily trend, NO2+O3 daily trend, top 10 stations by Avg PM2.5
-  - **Correlation** — KPI cards (Total Trips, Avg PM2.5), dual-axis line chart (Total Trips + Avg PM2.5 by date), year tile slicer
-  - **Economic Impact** — KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP 2000–2023)
+  - **Mobility** — KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), trips/day trend, top 10 pickup zones by trip count
+  - **Air Quality** — KPI cards (Avg PM2.5, Avg NO2, Max PM2.5), station dropdown slicer, combined PM2.5+NO2+O3 daily trend (responds to slicer), top 10 stations by Avg PM2.5
+  - **Correlation** — KPI cards (Total Trips, Avg PM2.5, Avg NO2), bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines, monthly aggregation), year tile slicer
+  - **Economic Impact** — KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP 2000–present), line chart (USD/EUR exchange rate full history)
 
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
 - `fabric/bronze_ingest_openaq_locations.Notebook/` — fetches all OpenAQ station metadata via API v3 (paginated) → `bronze_openaq_locations`; parameter: `openaq_api_key`
 - `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for NYC stations (filtered by bounding box) → `bronze_openaq_measurements`; parameters: `year_start`, `year_end`
-- `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 5 data sources; parameters: `year_start`, `year_end`; handles TLC Parquet schema drift (INT32/INT64) via file-by-file read with explicit casts
+- `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 5 data sources; parameters: `year_start`, `year_end`; handles TLC Parquet schema drift (INT32/INT64) via file-by-file read with explicit casts; normalizes OpenAQ gas measurements from ppm to µg/m³
 - `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + synapsesql); parameters: `year_start`, `year_end`
 
-### Weather External Job (Python)
+### Weather External Job — Phase 7 (not yet implemented)
 - **Source:** Open-Meteo API (free, no key) — hourly weather for NYC (lat 40.71, lon -74.01)
-- **Script:** `jobs/weather_ingest.py` — added in Phase 7; runs on schedule (cron / Azure Function / Railway.app)
-- **Enrichment:** joins weather readings with taxi trip counts by hour and zone
-- **Sink:** InfluxDB Cloud (measurement: `nyc_weather_enriched`)
-- Also writes raw JSON → Bronze Lakehouse for Silver processing
+- **Script:** `jobs/weather_ingest.py` — runs on schedule (cron / Azure Function / Railway.app)
+- **Sink:** InfluxDB Cloud + Bronze Lakehouse for Silver processing
 
-### InfluxDB Cloud
-- **Purpose:** Time-series store for weather + enriched taxi data
+### InfluxDB Cloud — Phase 7 (not yet implemented)
+- **Purpose:** Time-series store for weather data
 - **Bucket:** `nyc_analytics`
-- **Measurements:** `weather_hourly`, `taxi_daily`, `nyc_weather_enriched`
 - **Access:** InfluxDB Cloud free tier (us-east-1)
 
-### Grafana
+### Grafana — Phase 7 (not yet implemented)
 - **Purpose:** Weather + mobility dashboard outside of Fabric
 - **Data source:** InfluxDB Cloud via Flux query language
-- **Dashboards:** `Weather NYC`, `Weather vs Taxi Demand`
 - **Hosting:** Grafana Cloud free tier or local Docker
 
-### Great Expectations (Phase 7)
+### Great Expectations — Phase 7 (not yet implemented)
 - **Purpose:** Data quality validation on Silver tables
-- **Suite files:** `ge/expectations/silver_taxi_trips.json`, etc. (added in Phase 7)
 - **Trigger:** Telegram / Discord Bot command `/report`
-- **Output:** HTML report + JSON result summary
 
-### Telegram / Discord Bot (Phase 7)
+### Telegram / Discord Bot — Phase 7 (not yet implemented)
 - **Purpose:** User-friendly DQ trigger and report delivery
 - **Command:** `/report [table_name]` → runs GE checkpoint → replies with pass/fail summary
-- **Implementation:** `bot/dq_bot.py` using python-telegram-bot (added in Phase 7)
-- **Hosting:** local during defense; Railway.app or Azure Container Instance in production
+- **Implementation:** `bot/dq_bot.py` using python-telegram-bot
 
 ---
 
@@ -235,6 +228,16 @@ bypasses Spark's S3A entirely, and achieves anonymous access. Downloads are para
 - Demonstrates event-driven / interactive data quality monitoring
 - Low-latency: report arrives within seconds of command
 - More engaging for a defense demo than "it sends an email"
+
+### Zone-level air quality correlation — known limitation
+
+OpenAQ sensor IDs and TLC taxi zone IDs are different geographic systems with no shared key. OpenAQ stations are identified by `location_id` (a global integer) with lat/lon coordinates; TLC zones are polygons referenced by `LocationID` (1–265). Joining them requires external geocoding (reverse geocode sensor lat/lon to a TLC zone polygon), which is not implemented.
+
+As a result, `FactAirQualityDaily` cannot be directly joined to `FactTaxiDaily` at the zone level. The Correlation page shows city-wide aggregates (all stations averaged, all zones summed) — not zone-specific correlation. This is a known architectural constraint, not a bug.
+
+### Why USA national GDP (not NYC GDP)
+
+The World Bank API provides GDP data at country level only. There is no city-level GDP available from this source. USA national GDP (`NY.GDP.MKTP.CD` for country code `USA`) is the closest available macro-economic context for NYC taxi demand. The limitation is intentional and acceptable for academic scope.
 
 ### Why Gold uses read-filter-union-overwrite (not append)
 
@@ -316,6 +319,6 @@ pl_master_orchestrator(year_start, year_end)
 
 ## Security & Governance
 
-- **Row-Level Security:** [configured / not configured] in Power BI Semantic Model
-- **Purview Lineage:** [enabled / not enabled]
+- **Row-Level Security:** not configured (Phase 6 — optional)
+- **Purview Lineage:** not enabled (Phase 6 — optional)
 - **Access control:** Workspace-level roles (Admin / Member / Contributor / Viewer)

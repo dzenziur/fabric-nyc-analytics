@@ -149,14 +149,14 @@ Expected tables in gold_warehouse:
 ### 5b. Power BI Reports
 
 1. In workspace → New → **Report** → pick `nyc_analytics_model` → **Create blank report** → save as `NYC Analytics`
-2. Build **Mobility** page: KPI cards (Total Trips, Total Revenue USD, Avg Fare USD), trips/day line chart, top 10 pickup zones bar chart, revenue USD vs EUR column chart
-3. Build **Air Quality** page: KPI cards (Avg PM2.5, Avg NO2, Max PM2.5), PM2.5 daily trend, NO2+O3 dual-line trend, top 10 stations by Avg PM2.5 bar chart
-4. Build **Correlation** page: KPI cards (Total Trips, Avg PM2.5), dual-axis line chart (Total Trips + Avg PM2.5 by date), year tile slicer
-5. Build **Economic Impact** page: KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year from DimGDP)
+2. Build **Mobility** page: KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), trips/day line chart, top 10 pickup zones bar chart
+3. Build **Air Quality** page: KPI cards (Avg PM2.5, Avg NO2, Max PM2.5), station dropdown slicer (`FactAirQualityDaily.city`), combined PM2.5+NO2+O3 line chart (responds to slicer), top 10 stations by Avg PM2.5 bar chart (does not respond to slicer)
+4. Build **Correlation** page: KPI cards (Total Trips, Avg PM2.5, Avg NO2), bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines by month), year tile slicer
+5. Build **Economic Impact** page: KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year from DimGDP), line chart (USD/EUR exchange rate from DimFX)
 
 ---
 
-## Step 5 — Master Orchestrator
+## Step 6 — Master Orchestrator
 
 1. Sync `feature/data-orchestration` branch — `pl_master_orchestrator` pipeline appears in workspace
 2. Pipeline parameters: `year_start` (Int), `year_end` (Int)
@@ -194,7 +194,7 @@ Full run estimate: ~5–7 min (bronze parallel) + ~6–12 min silver + ~2–3 mi
 
 ---
 
-## Step 6 — Weather External Job + InfluxDB (Phase 7)
+## Step 7 — Weather External Job + InfluxDB (Phase 7 — not yet implemented)
 
 ### InfluxDB Cloud setup
 1. Register at https://cloud2.influxdata.com (free tier)
@@ -229,7 +229,7 @@ export INFLUXDB_BUCKET="nyc_analytics"
 
 ---
 
-## Step 6b — Great Expectations + Telegram Bot (Phase 7)
+## Step 7b — Great Expectations + Telegram Bot (Phase 7 — not yet implemented)
 
 ### Great Expectations setup
 ```bash
@@ -265,7 +265,7 @@ great_expectations checkpoint run silver_taxi_checkpoint
 
 ---
 
-## Step 6c — Schedule Automation
+## Step 7c — Schedule Automation (Phase 6)
 
 1. `pl_master_orchestrator` already exists — sync `feature/data-orchestration` branch
 2. Activity structure (same as Step 5 above)

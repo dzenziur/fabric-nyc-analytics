@@ -55,7 +55,7 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 |------|-------|--------|------------|
 | `silver_etl` | All Bronze tables + `Files/raw/taxi/` | `silver_taxi_trips`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_gdp`, `silver_fx_rates` | `year_start` (int), `year_end` (int) |
 
-Transformations: snake_case rename, null filtering, deduplication, type casting, year/month partitioning.
+Transformations: snake_case rename, null filtering, deduplication, type casting, year/month partitioning. OpenAQ gas measurements (no2, o3, co, no, nox, so2) normalized from ppm to µg/m³ using EPA conversion factors at 25°C.
 Taxi files read file-by-file to handle INT32/INT64 schema drift across TLC Parquet releases; explicit casts normalize `VendorID`, `PULocationID`, `DOLocationID`, `payment_type` to `long`.
 
 ---
@@ -80,10 +80,10 @@ Star schema in `gold_warehouse` (T-SQL / SQL analytics endpoint). Written via `s
 ### Report — `NYC Analytics`
 | Page | Key visuals |
 |------|------------|
-| Mobility | KPI cards, trips/day trend, top 10 pickup zones, revenue USD vs EUR by year |
-| Air Quality | KPI cards, PM2.5 daily trend, NO2+O3 trends, top 10 stations by Avg PM2.5 |
-| Correlation | Dual-axis line chart (Total Trips + Avg PM2.5 by date), year tile slicer |
-| Economic Impact | Revenue USD/EUR by year, USA GDP trend (2000–2023) |
+| Mobility | KPI cards (Total Trips, Revenue USD, Avg Fare, Avg Distance), trips/day trend, top 10 pickup zones |
+| Air Quality | KPI cards, station dropdown slicer, combined PM2.5+NO2+O3 daily trend, top 10 stations by Avg PM2.5 |
+| Correlation | KPI cards (Total Trips, Avg PM2.5, Avg NO2), bar+line chart (Trips vs PM2.5+NO2 by month), year tile slicer |
+| Economic Impact | KPI cards (Revenue USD, Revenue EUR, USA GDP), revenue by year, USA GDP trend, USD/EUR exchange rate |
 
 ---
 

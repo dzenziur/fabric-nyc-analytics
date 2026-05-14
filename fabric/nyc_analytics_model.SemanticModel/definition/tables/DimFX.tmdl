@@ -2,6 +2,13 @@ table DimFX
 	lineageTag: b393b04f-1988-4aee-a484-bb550cea816e
 	sourceLineageTag: [dbo].[DimFX]
 
+	measure 'Avg FX Rate' = AVERAGE(DimFX[usd_eur_rate])
+		lineageTag: 66ce6625-eab6-443a-a2ff-1871b1426b8e
+
+		changedProperty = Name
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
 	column fx_key
 		dataType: int64
 		formatString: 0
