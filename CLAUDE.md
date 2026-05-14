@@ -12,8 +12,8 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 ## Current Status
 
-**Active branch:** `feature/viz-audit`
-**Deadline:** May 15, 2026
+**Active branch:** `feature/data-governance`
+**Deadline:** May 26, 2026 (defense) — target May 15 for main features
 
 ### Phase completion
 
@@ -23,40 +23,33 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 | Phase 1 — Bronze ingestion | ✅ Done | Taxi, GDP, FX, OpenAQ locations, OpenAQ measurements (S3 archive, boto3) |
 | Phase 2 — Silver ETL | ✅ Done | silver_taxi_trips, silver_gdp, silver_fx_rates, silver_openaq_locations, silver_openaq_measurements |
 | Phase 3 — Gold / star schema | ✅ Done | DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily in gold_warehouse |
-| Phase 4 — Visualizations | 🔄 In progress | Dashboards built; gaps identified in spec audit — see current branch goal |
+| Phase 4 — Visualizations | ✅ Done | All 4 dashboards complete; ppm normalization, location slicer, Correlation enhanced, docs updated |
 | Phase 5 — Master Orchestrator | ✅ Done | pl_master_orchestrator + parameterized silver/gold notebooks + dynamic taxi loop |
 | Phase 6 — Governance & Monitoring | ❌ Not started | Schedules, RLS, Purview lineage |
 | Phase 7 — External Integrations | ❌ Not started | Weather + InfluxDB + Grafana, Great Expectations + Telegram bot |
 
-### Current branch goal (`feature/viz-audit`)
+### Current branch goal (`feature/data-governance`)
 
-Power BI dashboard gaps identified in spec audit:
+Phase 6 — Governance & Monitoring + notebook robustness cleanup:
 
-- [x] Add exchange rate trend line (usd_eur_rate over time) to Economic Impact page
-- [x] Fix duplicate rows in FactTaxiDaily and FactAirQualityDaily for 2024-2025 — root cause: gold_etl read all years from silver instead of filtering by year_start/year_end; fixed by adding `.filter(col("year").between(YEAR_START, YEAR_END))` before aggregation in both fact table builds
-- [x] Enhance Correlation page — added Avg NO2 alongside PM2.5, switched to bar+line chart, monthly aggregation on X-axis, KPI cards for Total Trips / Avg PM2.5 / Avg NO2
-- [x] Normalize ppm gas measurements to µg/m³ in `silver_etl` — enables NO2/O3/CO to share secondary axis with PM2.5 in Power BI (conversion factors at 25°C per EPA standard)
-- [ ] Add location slicer to Air Quality page — per-station time-series trend
-- [ ] Clean up chart/axis titles on all remaining pages (Mobility, Air Quality, Correlation) — disable auto-generated axis titles where obvious, set clean custom titles
-- [ ] Document zone-level air quality correlation limitation in `docs/architecture.md`
-- [ ] Documentation audit — before closing branch, audit all docs (architecture.md, data_dictionary.md, how_to_run.md) against actual implementation; update any sections that no longer match
+#### Schedule automation
+- [ ] Set daily schedule on `pl_master_orchestrator` for FX rates + OpenAQ refresh
+- [ ] Set monthly schedule trigger for Taxi + GDP refresh
+- [ ] Verify schedule runs correctly in Fabric workspace
 
-### Upcoming: `feature/data-governance` (Phase 6)
+#### Notebook robustness (silver_etl)
+- [ ] Remove redundant `df.count()` at the start of each ETL section — `write_silver` already logs row count; double scan wastes resources
+- [ ] Remove `.orderBy()` before write on `silver_openaq_measurements` and `silver_openaq_locations` — Delta Lake uses partition pruning; full sort adds cost with no benefit
 
-#### Phase 6 — Governance & Monitoring
+#### Notebook robustness (gold_etl)
+- [ ] Narrow `except Exception` in `write_gold` to `AnalysisException` (table not found) so network/config errors are not silently swallowed
 
-- [ ] Schedule automation — daily refresh for FX/OpenAQ, monthly for Taxi/GDP
+#### Notebook robustness (bronze)
+- [ ] `bronze_ingest_openaq_locations` — raise hard page cap from 100 to a higher value (e.g. 500); after the last page check if it was full (`len(page) == limit`) and log a WARNING if so — prevents silent truncation when station count exceeds cap
+
+#### Optional
 - [ ] Row-Level Security in Power BI (optional)
-- [ ] Purview lineage in Fabric (optional)
-
-#### Phase 7 — External Integrations (Phase 7)
-
-- [ ] Weather ingestion — `jobs/weather_ingest.py` → Bronze Lakehouse + InfluxDB Cloud
-- [ ] Silver table `silver_weather` (temp, precipitation, windspeed) in `silver_etl`
-- [ ] Gold table `FactWeatherDaily` in `gold_etl`
-- [ ] Grafana dashboard — InfluxDB data source, weather vs taxi demand panels (`grafana/dashboards/weather_nyc.json`)
-- [ ] Great Expectations — validate Silver tables: null checks, value ranges, allowed categories (`ge/expectations/`)
-- [ ] Telegram/Discord bot `bot/dq_bot.py` — `/report` triggers GE checkpoint, replies with pass/fail summary
+- [ ] `gold_etl` DimZone — download `taxi_zone_lookup.csv` once to `bronze_lakehouse/Files/raw/taxi_zones/` instead of re-downloading from CloudFront on every run
 
 ## Backlog
 
@@ -70,22 +63,13 @@ Items confirmed as needed but not yet scheduled. Claude reads this at the start 
   - Economic Impact: revenue growth 2021→2025, EUR/USD gap explanation, GDP scale context
 
 ### Notebook performance & robustness
-- [ ] `gold_etl` DimZone — download `taxi_zone_lookup.csv` once to `bronze_lakehouse/Files/raw/taxi_zones/` and read from there; currently re-downloads from CloudFront on every run (network dependency)
-- [ ] `silver_etl` — remove `.orderBy()` before write on `silver_openaq_measurements` and `silver_openaq_locations`; Delta Lake uses partition pruning, not sort order; full shuffle on large tables adds cost with no benefit
-- [ ] `silver_etl` — remove redundant `df.count()` at the start of each ETL section; `write_silver` already logs row count before write, so the initial count scans the source table twice
-- [ ] `bronze_ingest_openaq_locations` — raise hard page cap from 100 to a higher value and log a warning if the last page is full (silent truncation risk); add retry logic on transient API failures
-- [ ] `gold_etl` `write_gold` — narrow `except Exception` to `AnalysisException` (table not found) so network/config errors are not silently swallowed
-
-### Docs — architecture decisions
-- [ ] Add zone-level air quality correlation limitation to `docs/architecture.md` — OpenAQ sensor IDs and TLC zone IDs are different geographic systems; zone-level correlation is not possible without external geocoding. Document as a known architectural constraint, not a bug.
-- [ ] Add note to `docs/architecture.md` about why USA national GDP is used instead of NYC GDP — World Bank API does not provide city-level GDP; national level is the closest available macro context.
+- [ ] `bronze_ingest_openaq_locations` — add retry logic on transient API failures (separate from page cap fix which is in current branch)
 
 ### Docs accuracy
 - [ ] Audit all column types in `docs/data_dictionary.md` against actual Spark schemas — run `printSchema()` for each Bronze and Silver table and compare. Found first discrepancy: `bronze_openaq_measurements.datetime` is `string` in practice, `timestamp` in docs (already fixed).
-- [ ] Update `docs/data_dictionary.md` to reflect ppm → µg/m³ normalization in `silver_openaq_measurements` — `value` column is now always in µg/m³ after silver_etl; `units` column updated accordingly.
 
-### Power BI — DirectLake framing
-- [ ] Investigate and fix DirectLake semantic model framing issue — after `write.synapsesql(mode="overwrite")` in gold_etl, the SQL warehouse endpoint shows correct data but DirectLake KPI cards can show stale values for intermediate years until a semantic model refresh triggers a Delta re-frame. Consider switching Gold write path to Lakehouse (not Warehouse) for more reliable DirectLake behavior.
+### Power BI — semantic model field naming
+- [ ] Audit and rename misnamed fields in `nyc_analytics_model` — `FactAirQualityDaily.city` actually contains station names (OpenAQ `location_name`), not city names; rename to `station_name` in the semantic model and update all visuals that reference it. Do a full pass of all column display names across all tables to ensure they match what the data actually contains.
 
 ### Known data limitations
 - **OpenAQ historical coverage** — NYC stations in the S3 archive have data for 2021–2025, but with coverage gaps: mid-2022 (May–Sep) shows near-zero measurements for many stations. Not a pipeline issue — reflects actual S3 archive availability.
@@ -101,6 +85,7 @@ Items confirmed as needed but not yet scheduled. Claude reads this at the start 
 | Components, decisions, data flow | `docs/architecture.md` |
 | Run order, setup steps | `docs/how_to_run.md` |
 | Phase breakdown, tech stack | `docs/project_plan.md` |
+| Fabric workspace items, pipelines, notebooks | `fabric/README.md` |
 
 ---
 
@@ -119,14 +104,7 @@ spec/         Original project specification (PDF)
 
 | Branch | Phase |
 |--------|-------|
-| `feature/terraform-iac` | Phase 0 — Infrastructure as Code (workspace, lakehouses, warehouse) |
-| `feature/data-ingestion` | Phase 1 — Data ingestion into Bronze Lakehouse |
-| `feature/data-transformation` | Phase 2 — PySpark ETL into Silver Lakehouse |
-| `feature/data-modeling` | Phase 3 — Star schema in Fabric Warehouse |
-| `feature/data-visualization` | Phase 4 — Power BI / Notebook dashboards |
-| `feature/viz-audit` | Phase 4 — Dashboard audit and spec gap fixes |
-| `feature/data-orchestration` | Phase 5 — Master orchestrator + data backfill |
-| `feature/data-governance` | Phase 6 + 7 — Governance, scheduling, external integrations |
+| `feature/data-governance` | Phase 6 — Governance, scheduling, notebook robustness (current) |
 
 ## Data sources
 
