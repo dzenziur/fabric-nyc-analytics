@@ -89,7 +89,7 @@ Ingested by: Dataflow Gen2 `df_ecb_fx`
 
 ---
 
-### `bronze_weather`
+### `bronze_weather` — Phase 7 (not yet implemented)
 Source: Open-Meteo API — https://api.open-meteo.com
 
 | Column | Type | Description |
@@ -157,8 +157,13 @@ ordered by country_id, location_id. Schema identical to bronze — no new column
 
 ### `silver_openaq_measurements`
 Transformations: cast datetime to timestamp, filter value > 0 and value not null,
-deduped by (location_id, parameter, datetime), ordered by location_id, datetime.
+deduped by (location_id, parameter, datetime), ppm gas values converted to µg/m³,
+ordered by location_id, datetime.
 Partitioned by: `year`, `month`.
+
+Note: gas parameters (no2, o3, co, no, nox, so2) are stored in ppm in the S3 archive;
+silver_etl normalizes them to µg/m³ using EPA conversion factors at 25°C
+(no2×1882, o3×1962, co×1145, no×1227, nox×1882, so2×2619).
 
 | Column | Type | Description | Transformation |
 |--------|------|-------------|----------------|
@@ -169,14 +174,14 @@ Partitioned by: `year`, `month`.
 | lat | float | Sensor latitude | Unchanged |
 | lon | float | Sensor longitude | Unchanged |
 | parameter | string | Pollutant (pm25, pm10, no2, o3, co, so2) | Unchanged |
-| units | string | Unit of measurement | Unchanged |
-| value | float | Measured pollutant value; filtered > 0 | Unchanged |
+| units | string | Unit of measurement (always µg/m³ after normalization) | ppm → µg/m³ for gas parameters |
+| value | float | Measured pollutant value in µg/m³; filtered > 0 | ppm gas values multiplied by EPA factor |
 | year | int | Calendar year (partition key) | Derived: YEAR(datetime) |
 | month | int | Month 1–12 (partition key) | Derived: MONTH(datetime) |
 
 ---
 
-### `silver_weather`
+### `silver_weather` — Phase 7 (not yet implemented)
 Transformations: validated ranges, added derived time fields
 
 | Column | Type | Description | Transformation |
@@ -300,7 +305,7 @@ Source: TLC Zone Lookup CSV (taxi_zone_lookup.csv)
 
 ---
 
-### `FactWeatherDaily`
+### `FactWeatherDaily` — Phase 7 (not yet implemented)
 Grain: one row per day (NYC)
 
 | Column | Type | Description |
@@ -328,7 +333,7 @@ Grain: one row per day (NYC)
 
 ---
 
-## InfluxDB — Time-Series Measurements
+## InfluxDB — Time-Series Measurements — Phase 7 (not yet implemented)
 
 ### Bucket: `nyc_analytics`
 
@@ -356,7 +361,7 @@ Tags: `city`, `data_source`
 
 ---
 
-## Great Expectations — Expectation Suites
+## Great Expectations — Expectation Suites — Phase 7 (not yet implemented)
 
 ### Suite: `silver_taxi_trips`
 | Expectation | Parameters |
