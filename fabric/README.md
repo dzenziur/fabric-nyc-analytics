@@ -18,6 +18,7 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 | `pl_master_orchestrator` | Pipeline | Orchestration | ✅ Active |
 | `bronze_ingest_openaq_locations` | Notebook | Bronze | ✅ Active |
 | `bronze_ingest_openaq_measurements` | Notebook | Bronze | ✅ Active |
+| `bronze_ingest_taxi_zones` | Notebook | Bronze | ✅ Active |
 | `silver_etl` | Notebook | Silver | ✅ Active |
 | `gold_etl` | Notebook | Gold | ✅ Active |
 | `nyc_analytics_model` | Semantic Model | Reporting | ✅ Active |
@@ -46,6 +47,7 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 |------|--------|-------------|------------|
 | `bronze_ingest_openaq_locations` | OpenAQ API v3 `/locations` (paginated) | `bronze_lakehouse.bronze_openaq_locations` | `openaq_api_key` (string) |
 | `bronze_ingest_openaq_measurements` | OpenAQ public S3 archive (`s3://openaq-data-archive/`) via boto3 | `bronze_lakehouse.bronze_openaq_measurements` | `year_start` (int), `year_end` (int) |
+| `bronze_ingest_taxi_zones` | TLC CloudFront — `taxi_zone_lookup.csv` (~265 rows, static) | `bronze_lakehouse.bronze_taxi_zones` | — |
 
 ---
 
@@ -64,7 +66,7 @@ Taxi files read file-by-file to handle INT32/INT64 schema drift across TLC Parqu
 
 | Item | Input | Output | Parameters |
 |------|-------|--------|------------|
-| `gold_etl` | All Silver tables | `FactTaxiDaily`, `FactAirQualityDaily`, `DimDate`, `DimZone`, `DimFX`, `DimGDP` | `year_start` (int), `year_end` (int) |
+| `gold_etl` | All Silver tables + `bronze_taxi_zones` (for DimZone) | `FactTaxiDaily`, `FactAirQualityDaily`, `DimDate`, `DimZone`, `DimFX`, `DimGDP` | `year_start` (int), `year_end` (int) |
 
 Star schema in `gold_warehouse` (T-SQL / SQL analytics endpoint). Written via `synapsesql`.
 

@@ -89,6 +89,20 @@ Ingested by: Dataflow Gen2 `df_ecb_fx`
 
 ---
 
+### `bronze_taxi_zones`
+Source: TLC Zone Lookup CSV — https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv
+Ingested by: Notebook `bronze_ingest_taxi_zones`
+Note: static reference data (~265 rows), rarely changes; downloaded once per notebook run.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| location_id | string | TLC zone ID (1–265) — renamed from `LocationID` |
+| borough | string | Manhattan / Brooklyn / Queens / Bronx / Staten Island / EWR — renamed from `Borough` |
+| zone | string | Zone name (e.g., "JFK Airport") — renamed from `Zone` |
+| service_zone | string | Boro Zone / Yellow Zone / Airports |
+
+---
+
 ### `bronze_weather` — Phase 7 (not yet implemented)
 Source: Open-Meteo API — https://api.open-meteo.com
 
@@ -283,7 +297,7 @@ Grain: one row per calendar day
 ---
 
 ### `DimZone`
-Source: TLC Zone Lookup CSV (taxi_zone_lookup.csv)
+Source: `bronze_taxi_zones` (loaded from TLC zone lookup CSV via `bronze_ingest_taxi_zones` notebook)
 
 | Column | Type | Description |
 |--------|------|-------------|

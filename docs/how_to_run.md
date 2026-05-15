@@ -92,6 +92,13 @@ Resources created:
 3. Parse CSV, rename columns
 4. Destination: `bronze_lakehouse` → Table: `bronze_fx_rates`
 
+### 2f. TLC Taxi Zones Notebook
+
+1. Sync repo via Fabric Git integration — `bronze_ingest_taxi_zones` notebook appears in workspace
+2. Ensure `bronze_lakehouse` is the default attached lakehouse
+3. Run all cells — downloads TLC `taxi_zone_lookup.csv` → `bronze_taxi_zones` Delta table
+4. Expected: ~265 rows (static reference data, rarely changes; safe to run only on initial setup)
+
 ---
 
 ## Step 3 — Run Silver ETL Notebook
@@ -165,8 +172,9 @@ Expected tables in gold_warehouse:
    [Parallel]
      df_ecb_fx                              (Dataflow Gen2)
      df_worldbank_gdp                       (Dataflow Gen2)
+     bronze_ingest_taxi_zones               (Notebook, no parameters)
      bronze_ingest_openaq_locations         (Notebook, pass openaq_api_key)
-     bronze_ingest_openaq_measurements      (Notebook, pass year_start/year_end)
+       → bronze_ingest_openaq_measurements  (Notebook, depends on locations; pass year_start/year_end)
      ForEach year/month → pl_ingest_nyc_taxi (Pipeline, dynamic URL/filename)
    [Then]
      silver_etl                             (Notebook, pass year_start/year_end)
@@ -280,12 +288,13 @@ great_expectations checkpoint run silver_taxi_checkpoint
 ```
 1. Run df_ecb_fx                                  → bronze_fx_rates
 2. Run df_worldbank_gdp                           → bronze_gdp
-3. Run bronze_ingest_openaq_locations             → bronze_openaq_locations
-4. Run bronze_ingest_openaq_measurements          → bronze_openaq_measurements
-5. Run pl_ingest_nyc_taxi (per year/month)        → Files/raw/taxi/
-6. Run silver_etl notebook                        → silver_* tables
-7. Run gold_etl notebook                          → Fact/Dim tables in Warehouse
-8. Refresh Power BI                               → Reports update
+3. Run bronze_ingest_taxi_zones                   → bronze_taxi_zones
+4. Run bronze_ingest_openaq_locations             → bronze_openaq_locations
+5. Run bronze_ingest_openaq_measurements          → bronze_openaq_measurements
+6. Run pl_ingest_nyc_taxi (per year/month)        → Files/raw/taxi/
+7. Run silver_etl notebook                        → silver_* tables
+8. Run gold_etl notebook                          → Fact/Dim tables in Warehouse
+9. Refresh Power BI                               → Reports update
 --- Phase 7 additions ---
 8. python jobs/weather_ingest.py → bronze_weather + InfluxDB
 9. Run silver_etl notebook (weather) → silver_weather (+ GE validation)
