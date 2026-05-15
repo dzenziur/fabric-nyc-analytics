@@ -109,7 +109,7 @@ Source: Open-Meteo API — https://api.open-meteo.com
 
 ### `silver_taxi_trips`
 Transformations: columns renamed to snake_case, year/month added for partitioning,
-invalid trips filtered (trip_distance > 0, fare_amount > 0), deduped by
+invalid trips filtered (trip_distance > 0 and <= 100 mi, fare_amount > 0), deduped by
 (pickup_datetime, dropoff_datetime, pu_location_id, do_location_id, fare_amount).
 Partitioned by: `year`, `month`.
 
@@ -119,7 +119,7 @@ Partitioned by: `year`, `month`.
 | pickup_datetime | timestamp | Trip start | Renamed from tpep_pickup_datetime |
 | dropoff_datetime | timestamp | Trip end | Renamed from tpep_dropoff_datetime |
 | passenger_count | int | Number of passengers | Unchanged |
-| trip_distance | float | Distance in miles | Unchanged; filtered > 0 |
+| trip_distance | float | Distance in miles | Filtered: > 0 and <= 100 (trips above 100 mi are physically implausible for NYC) |
 | ratecode_id | int | Rate code | Renamed from RatecodeID |
 | store_and_fwd_flag | string | Trip stored in vehicle memory before send | Unchanged |
 | pu_location_id | int | Pickup TLC zone ID | Renamed from PULocationID |

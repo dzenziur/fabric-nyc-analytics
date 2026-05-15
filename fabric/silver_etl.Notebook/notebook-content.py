@@ -265,6 +265,7 @@ df_silver = (
         & col("pu_location_id").isNotNull()
         & col("do_location_id").isNotNull()
         & (col("trip_distance") > 0)
+        & (col("trip_distance") <= 100)
         & (col("fare_amount") > 0)
         & col("year").between(year_start, year_end)
     )
