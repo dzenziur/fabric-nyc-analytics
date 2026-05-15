@@ -175,6 +175,12 @@
             "dependencyConditions": [
               "Succeeded"
             ]
+          },
+          {
+            "activity": "bronze_ingest_taxi_zones",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
           }
         ]
       },
@@ -240,6 +246,22 @@
           "secureOutput": false
         },
         "name": "bronze_ingest_openaq_locations",
+        "dependsOn": []
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "0c73857f-a745-b23c-416b-b8993d9e5df0",
+          "workspaceId": "00000000-0000-0000-0000-000000000000"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "bronze_ingest_taxi_zones",
         "dependsOn": []
       }
     ],
