@@ -66,6 +66,7 @@ from pyspark.sql.functions import (
     avg, max, min, count, sum as spark_sum,
     round as spark_round, row_number, unix_timestamp
 )
+from pyspark.sql.utils import AnalysisException
 from pyspark.sql.window import Window
 
 # METADATA ********************
@@ -117,7 +118,8 @@ def write_gold(df_new, table: str, exclude_filter: str = None) -> None:
         try:
             df_existing = spark.read.synapsesql(f"{GOLD}.dbo.{table}")
             df_final = df_existing.filter(exclude_filter).unionByName(df_new)
-        except Exception:
+        except AnalysisException:
+            print(f"[{table}] not found (first run), creating fresh")
             df_final = df_new
     else:
         df_final = df_new
@@ -147,7 +149,8 @@ try:
     ).collect()[0]
     _dim_year_start = _row["min_y"] if _row["min_y"] < YEAR_START else YEAR_START
     _dim_year_end   = _row["max_y"] if _row["max_y"] > YEAR_END   else YEAR_END
-except Exception:
+except AnalysisException:
+    print("DimDate not found (first run), using parameter range")
     _dim_year_start = YEAR_START
     _dim_year_end   = YEAR_END
 
