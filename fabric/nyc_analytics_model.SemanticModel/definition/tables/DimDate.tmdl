@@ -15,7 +15,7 @@ table DimDate
 
 	column date
 		dataType: dateTime
-		formatString: mmmm d
+		formatString: mmmm d, yyyy
 		sourceProviderType: date
 		lineageTag: 2865639c-9081-4a41-be9e-863213caf4ce
 		sourceLineageTag: date
@@ -26,7 +26,7 @@ table DimDate
 
 		annotation SummarizationSetBy = Automatic
 
-		annotation PBI_FormatHint = {"isDateTimeCustom":true}
+		annotation PBI_FormatHint = {"isCustom":true}
 
 	column year
 		dataType: int64
@@ -74,6 +74,9 @@ table DimDate
 		sourceLineageTag: month_name
 		summarizeBy: none
 		sourceColumn: month_name
+		sortByColumn: month
+
+		changedProperty = SortByColumn
 
 		annotation SummarizationSetBy = Automatic
 
