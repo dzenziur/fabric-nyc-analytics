@@ -47,6 +47,8 @@ openaq_api_key = ""
 import requests
 import pandas as pd
 from pyspark.sql.functions import col
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # METADATA ********************
 
@@ -66,6 +68,8 @@ BRONZE_OPENAQ_LOCATIONS = f"{BRONZE}.bronze_openaq_locations"
 
 BASE_URL = "https://api.openaq.org/v3/locations"
 PAGE_LIMIT = 1000
+PAGE_CAP = 500
+REQUEST_TIMEOUT = 30
 
 # METADATA ********************
 
@@ -77,22 +81,38 @@ PAGE_LIMIT = 1000
 # MARKDOWN ********************
 
 # ## Fetch
+# Paginated fetch with retries on transient errors (5xx, 429, network).
+# Hard page cap prevents runaway loops; WARNING logged if cap is hit with a full last page.
 
 # CELL ********************
 
+session = requests.Session()
+session.mount("https://", HTTPAdapter(max_retries=Retry(
+    total=3,
+    backoff_factor=2,
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods=["GET"],
+)))
+
 headers = {"X-API-Key": openaq_api_key}
 records = []
+last_page_size = 0
 
-for page in range(1, 101):
-    resp = requests.get(BASE_URL, params={"limit": PAGE_LIMIT, "page": page}, headers=headers)
+for page in range(1, PAGE_CAP + 1):
+    resp = session.get(BASE_URL, params={"limit": PAGE_LIMIT, "page": page},
+                       headers=headers, timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
     results = resp.json().get("results", [])
     if not results:
         break
     records.extend(results)
+    last_page_size = len(results)
     print(f"Page {page}: {len(results)} locations fetched")
     if len(results) < PAGE_LIMIT:
         break
+else:
+    if last_page_size == PAGE_LIMIT:
+        print(f"WARNING: hit hard page cap of {PAGE_CAP} with a full last page — data may be truncated; increase PAGE_CAP")
 
 print(f"Total locations fetched: {len(records)}")
 
