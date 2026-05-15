@@ -65,7 +65,7 @@ from pyspark.sql.functions import (
     avg, max, min, count, sum as spark_sum,
     round as spark_round, row_number, unix_timestamp
 )
-from pyspark.sql.utils import AnalysisException
+from py4j.protocol import Py4JJavaError
 from pyspark.sql.window import Window
 
 # METADATA ********************
@@ -116,9 +116,12 @@ def write_gold(df_new, table: str, exclude_filter: str = None) -> None:
         try:
             df_existing = spark.read.synapsesql(f"{GOLD}.dbo.{table}")
             df_final = df_existing.filter(exclude_filter).unionByName(df_new)
-        except AnalysisException:
-            print(f"[{table}] not found (first run), creating fresh")
-            df_final = df_new
+        except Py4JJavaError as e:
+            if "source is invalid" in str(e) or "read access" in str(e):
+                print(f"[{table}] not found (first run), creating fresh")
+                df_final = df_new
+            else:
+                raise
     else:
         df_final = df_new
     print(f"[{table}] rows before write: {df_final.count()}")
@@ -147,10 +150,13 @@ try:
     ).collect()[0]
     _dim_year_start = _row["min_y"] if _row["min_y"] < YEAR_START else YEAR_START
     _dim_year_end   = _row["max_y"] if _row["max_y"] > YEAR_END   else YEAR_END
-except AnalysisException:
-    print("DimDate not found (first run), using parameter range")
-    _dim_year_start = YEAR_START
-    _dim_year_end   = YEAR_END
+except Py4JJavaError as e:
+    if "source is invalid" in str(e) or "read access" in str(e):
+        print("DimDate not found (first run), using parameter range")
+        _dim_year_start = YEAR_START
+        _dim_year_end   = YEAR_END
+    else:
+        raise
 
 print(f"DimDate range: {_dim_year_start} - {_dim_year_end}")
 
