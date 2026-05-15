@@ -58,7 +58,6 @@ year_end = 2023
 # CELL ********************
 
 import com.microsoft.spark.fabric
-import urllib.request
 from pyspark.sql.functions import (
     col, explode, sequence, to_date,
     year, quarter, month, date_format,
@@ -89,8 +88,7 @@ GOLD   = "gold_warehouse"
 YEAR_START = year_start
 YEAR_END   = year_end
 
-_b = notebookutils.lakehouse.get(BRONZE)
-BRONZE_FILES = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.id}/Files"
+BRONZE_TAXI_ZONES           = f"{BRONZE}.bronze_taxi_zones"
 
 SILVER_TAXI_TRIPS           = f"{SILVER}.silver_taxi_trips"
 SILVER_OPENAQ_MEASUREMENTS  = f"{SILVER}.silver_openaq_measurements"
@@ -194,25 +192,18 @@ display(df_dim_date.limit(10))
 # MARKDOWN ********************
 
 # ## DimZone
-# TLC taxi zone lookup CSV → 265 rows. zone_key = LocationID (natural PK, 1–265).
-# CSV is downloaded once to bronze_lakehouse Files and read via Spark.
+# Reads from `bronze_taxi_zones` (ingested separately by `bronze_ingest_taxi_zones` notebook).
+# 265 rows. zone_key = location_id (natural PK, 1–265).
 
 # CELL ********************
 
-ZONE_CSV_URL  = "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
-ZONE_CSV_PATH = f"{BRONZE_FILES}/raw/taxi_zones/taxi_zone_lookup.csv"
-
-urllib.request.urlretrieve(ZONE_CSV_URL, "/tmp/taxi_zone_lookup.csv")
-notebookutils.fs.cp("file:///tmp/taxi_zone_lookup.csv", ZONE_CSV_PATH)
-print(f"Zone CSV written to {ZONE_CSV_PATH}")
-
 df_dim_zone = (
-    spark.read.option("header", True).csv(ZONE_CSV_PATH)
+    spark.read.table(BRONZE_TAXI_ZONES)
     .select(
-        col("LocationID").cast("int").alias("zone_key"),
-        col("LocationID").cast("int").alias("location_id"),
-        col("Zone").alias("zone_name"),
-        col("Borough").alias("borough"),
+        col("location_id").cast("int").alias("zone_key"),
+        col("location_id").cast("int").alias("location_id"),
+        col("zone").alias("zone_name"),
+        col("borough"),
         col("service_zone"),
     )
     .filter(col("zone_key").isNotNull())
