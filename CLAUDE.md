@@ -12,7 +12,7 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 ## Current Status
 
-**Active branch:** `feature/data-governance`
+**Active branch:** `feature/dashboards-and-robustness`
 **Deadline:** May 26, 2026 (defense) — target May 15 for main features
 
 ### Phase completion
@@ -20,38 +20,62 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 | Phase | Status | Notes |
 |-------|--------|-------|
 | Phase 0 — Terraform IaC | ✅ Done | workspace + bronze_lakehouse + silver_lakehouse + gold_warehouse |
-| Phase 1 — Bronze ingestion | ✅ Done | Taxi, GDP, FX, OpenAQ locations, OpenAQ measurements (S3 archive, boto3) |
+| Phase 1 — Bronze ingestion | ✅ Done | Taxi, GDP, FX, OpenAQ locations, OpenAQ measurements (S3 archive, boto3), TLC taxi zones |
 | Phase 2 — Silver ETL | ✅ Done | silver_taxi_trips, silver_gdp, silver_fx_rates, silver_openaq_locations, silver_openaq_measurements |
 | Phase 3 — Gold / star schema | ✅ Done | DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily in gold_warehouse |
 | Phase 4 — Visualizations | ✅ Done | All 4 dashboards complete; ppm normalization, location slicer, Correlation enhanced, semantic model date formats + summarizeBy fixed, Avg O3 KPI added |
 | Phase 5 — Master Orchestrator | ✅ Done | pl_master_orchestrator + parameterized silver/gold notebooks + dynamic taxi loop |
-| Phase 6 — Governance & Monitoring | 🔄 In progress | Schedules, RLS, Purview lineage |
+| Phase 6 — Governance & Monitoring | ❌ Not started | Schedules, RLS, Purview lineage — planned for `feature/governance-monitoring` |
 | Phase 7 — External Integrations | ❌ Not started | Weather + InfluxDB + Grafana, Great Expectations + Telegram bot |
 
-### Current branch goal (`feature/data-governance`)
+### Current branch goal (`feature/dashboards-and-robustness`)
 
-Phase 6 — Governance & Monitoring + notebook robustness cleanup:
+Polish, robustness, and data-quality improvements that emerged after Phase 4–5 completion.
+Originally scoped as Phase 6 governance work, but evolved into broader cleanup —
+strict governance items deferred to next branch.
+
+#### Power BI dashboards & semantic model
+- [X] Investigate Max PM2.5 = 2.18K anomaly — confirmed source data issue from OpenAQ S3 (station "State Dept of Environmental Conservation", Nov 2024, 325 bad rows up to 2175 µg/m³); replaced Max PM2.5 KPI with Avg O3 on Air Quality page
+- [X] Add year tile slicer to Air Quality page
+- [X] Add year tile slicer to Mobility page
+- [X] Investigate Avg Trip Distance = 24 mi anomaly — root cause: TLC source data has corrupt trip_distance values in low-volume zones (e.g. Great Kills: 53 trips, avg 1134 mi); fixed in silver_etl by adding `trip_distance <= 100` filter
+- [X] Fix date format on `DimDate[date]` and `DimFX[date]` from `General Date` to `mmmm d, yyyy` — eliminates "12:00:00 AM" in tooltips and shows year on multi-year charts
+- [X] `summarizeBy: none` on date components (year/quarter/month/week_of_year/day_of_month/day_of_week), avg metrics (avg_fare_usd, avg_trip_duration_min, avg_trip_distance_mi, avg_value, max_value, min_value), and `FactAirQualityDaily[location_id]` — prevents accidental aggregation when columns dragged to Values well
+- [X] `DimDate[month_name]` `sortByColumn: month` — month names sort chronologically not alphabetically on charts
+- [X] Remove `Max PM2.5` DAX measure (replaced with `Avg O3` on Air Quality page)
+- [ ] Air Quality map visual — add `latitude`/`longitude` to `FactAirQualityDaily` in gold_etl (join with `silver_openaq_locations`), then add Azure Maps bubble map (click station → filters trend chart)
+
+#### Silver ETL robustness
+- [X] Remove redundant `df.count()` at the start of each ETL section — `write_silver` already logs row count; double scan wastes resources (5 places)
+- [X] Remove `.orderBy()` before write — applied to all 4 tables (fx_rates, gdp, openaq_locations, openaq_measurements) for consistency; Delta Lake doesn't use this sort
+- [X] Add `trip_distance <= 100` filter on silver_taxi_trips — caps physically implausible TLC source data corruption (root cause of Avg Trip Distance anomaly)
+
+#### Gold ETL robustness
+- [X] Narrow `except Exception` to `AnalysisException` — applied to both `write_gold` and DimDate range lookup so network/config errors propagate instead of being silently swallowed
+- [X] Separate taxi zones ingestion into new `bronze_ingest_taxi_zones` notebook → writes to `bronze_taxi_zones` Delta table; `gold_etl` now reads from that table instead of downloading CSV from CloudFront every run
+
+#### Bronze improvements
+- [X] `bronze_ingest_openaq_locations` — page cap raised 100→500 with WARNING on cap hit; retries on transient errors (5xx/429/network) via urllib3 Retry; request timeout added
+- [X] New `bronze_ingest_taxi_zones` notebook — ingests static TLC zone reference data (~265 rows) into `bronze_taxi_zones` Delta table
+
+#### Pipeline improvements
+- [X] Add `bronze_ingest_taxi_zones` to `pl_master_orchestrator` parallel block; `silver_etl` dependency updated to include it
+- [X] Reduce activity timeouts from 12h to 1h on all `pl_master_orchestrator` activities for faster fail-fast on hung activities (retry already 0, dependency conditions already "Succeeded")
+
+### Next branch — `feature/governance-monitoring` (Phase 6)
+
+Strict governance and monitoring work, deferred from current branch:
 
 #### Schedule automation
 - [ ] Set daily schedule on `pl_master_orchestrator` for FX rates + OpenAQ refresh
 - [ ] Set monthly schedule trigger for Taxi + GDP refresh
 - [ ] Verify schedule runs correctly in Fabric workspace
 
-#### Notebook robustness (silver_etl)
-- [ ] Remove redundant `df.count()` at the start of each ETL section — `write_silver` already logs row count; double scan wastes resources
-- [ ] Remove `.orderBy()` before write on `silver_openaq_measurements` and `silver_openaq_locations` — Delta Lake uses partition pruning; full sort adds cost with no benefit
-
-#### Notebook robustness (gold_etl)
-- [ ] Narrow `except Exception` in `write_gold` to `AnalysisException` (table not found) so network/config errors are not silently swallowed
-
-#### Notebook robustness (bronze)
-- [ ] `bronze_ingest_openaq_locations` — raise hard page cap from 100 to a higher value (e.g. 500); after the last page check if it was full (`len(page) == limit`) and log a WARNING if so — prevents silent truncation when station count exceeds cap
+#### Row-Level Security
+- [ ] Configure RLS in `nyc_analytics_model` — restrict data visibility by role
 
 #### Optional
-- [X] Investigate Max PM2.5 = 2.18K anomaly — confirmed source data issue from OpenAQ S3 (station "State Dept of Environmental Conservation", Nov 2024, 325 bad rows up to 2175 µg/m³); replaced Max PM2.5 KPI with Avg O3 on Air Quality page
-- [ ] Air Quality map visual — add `latitude`/`longitude` to `FactAirQualityDaily` in gold_etl (join with `silver_openaq_locations`), then add Azure Maps bubble map (click station → filters trend chart)
-- [ ] Row-Level Security in Power BI (optional)
-- [ ] `gold_etl` DimZone — download `taxi_zone_lookup.csv` once to `bronze_lakehouse/Files/raw/taxi_zones/` instead of re-downloading from CloudFront on every run
+- [ ] Microsoft Purview lineage integration
 
 ## Backlog
 
@@ -64,8 +88,6 @@ Items confirmed as needed but not yet scheduled. Claude reads this at the start 
   - Correlation: trips vs PM2.5 overlay observation, caveat about 2023+ data
   - Economic Impact: revenue growth 2021→2025, EUR/USD gap explanation, GDP scale context
 
-### Notebook performance & robustness
-- [ ] `bronze_ingest_openaq_locations` — add retry logic on transient API failures (separate from page cap fix which is in current branch)
 
 ### Docs accuracy
 - [ ] Audit all column types in `docs/data_dictionary.md` against actual Spark schemas — run `printSchema()` for each Bronze and Silver table and compare. Found first discrepancy: `bronze_openaq_measurements.datetime` is `string` in practice, `timestamp` in docs (already fixed).
@@ -104,9 +126,10 @@ spec/         Original project specification (PDF)
 
 ## Development workflow
 
-| Branch | Phase |
-|--------|-------|
-| `feature/data-governance` | Phase 6 — Governance, scheduling, notebook robustness (current) |
+| Branch | Phase | Status |
+|--------|-------|--------|
+| `feature/dashboards-and-robustness` | Dashboard polish + notebook/pipeline robustness + data quality | Active |
+| `feature/governance-monitoring` | Phase 6 — Governance & monitoring (schedules, RLS, Purview) | Planned |
 
 ## Data sources
 
