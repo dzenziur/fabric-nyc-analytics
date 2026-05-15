@@ -42,6 +42,8 @@ table DimZone
 		summarizeBy: none
 		sourceColumn: borough
 
+		changedProperty = IsHidden
+
 		annotation SummarizationSetBy = Automatic
 
 	column service_zone
