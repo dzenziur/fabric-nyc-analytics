@@ -23,9 +23,9 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 | Phase 1 — Bronze ingestion | ✅ Done | Taxi, GDP, FX, OpenAQ locations, OpenAQ measurements (S3 archive, boto3) |
 | Phase 2 — Silver ETL | ✅ Done | silver_taxi_trips, silver_gdp, silver_fx_rates, silver_openaq_locations, silver_openaq_measurements |
 | Phase 3 — Gold / star schema | ✅ Done | DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily in gold_warehouse |
-| Phase 4 — Visualizations | ✅ Done | All 4 dashboards complete; ppm normalization, location slicer, Correlation enhanced, docs updated |
+| Phase 4 — Visualizations | ✅ Done | All 4 dashboards complete; ppm normalization, location slicer, Correlation enhanced, semantic model date formats + summarizeBy fixed, Avg O3 KPI added |
 | Phase 5 — Master Orchestrator | ✅ Done | pl_master_orchestrator + parameterized silver/gold notebooks + dynamic taxi loop |
-| Phase 6 — Governance & Monitoring | ❌ Not started | Schedules, RLS, Purview lineage |
+| Phase 6 — Governance & Monitoring | 🔄 In progress | Schedules, RLS, Purview lineage |
 | Phase 7 — External Integrations | ❌ Not started | Weather + InfluxDB + Grafana, Great Expectations + Telegram bot |
 
 ### Current branch goal (`feature/data-governance`)
@@ -48,6 +48,8 @@ Phase 6 — Governance & Monitoring + notebook robustness cleanup:
 - [ ] `bronze_ingest_openaq_locations` — raise hard page cap from 100 to a higher value (e.g. 500); after the last page check if it was full (`len(page) == limit`) and log a WARNING if so — prevents silent truncation when station count exceeds cap
 
 #### Optional
+- [X] Investigate Max PM2.5 = 2.18K anomaly — confirmed source data issue from OpenAQ S3 (station "State Dept of Environmental Conservation", Nov 2024, 325 bad rows up to 2175 µg/m³); replaced Max PM2.5 KPI with Avg O3 on Air Quality page
+- [ ] Air Quality map visual — add `latitude`/`longitude` to `FactAirQualityDaily` in gold_etl (join with `silver_openaq_locations`), then add Azure Maps bubble map (click station → filters trend chart)
 - [ ] Row-Level Security in Power BI (optional)
 - [ ] `gold_etl` DimZone — download `taxi_zone_lookup.csv` once to `bronze_lakehouse/Files/raw/taxi_zones/` instead of re-downloading from CloudFront on every run
 

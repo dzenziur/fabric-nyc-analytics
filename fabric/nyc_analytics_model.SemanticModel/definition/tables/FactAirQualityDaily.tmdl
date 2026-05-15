@@ -40,10 +40,12 @@ table FactAirQualityDaily
 		sourceProviderType: bigint
 		lineageTag: a2ef0721-e1c5-4db4-a313-2e70d8330fb3
 		sourceLineageTag: location_id
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: location_id
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
 
 	column city
 		dataType: string
