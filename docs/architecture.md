@@ -137,14 +137,14 @@
   - `FactAirQualityDaily[date_key]` → `DimDate[date_key]` (Many:1, active)
   - `DimGDP` — no relationship (used as standalone context table)
 - **DAX measures in FactTaxiDaily:** Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD, Avg Trip Distance (mi), Avg Trip Duration (min)
-- **DAX measures in FactAirQualityDaily:** Avg PM2.5, Avg NO2, Avg O3, Max PM2.5
+- **DAX measures in FactAirQualityDaily:** Avg PM2.5, Avg NO2, Avg O3
 - **DAX measures in DimGDP:** USA GDP (USD) — `CALCULATE(MAX(DimGDP[gdp_usd]), DimGDP[country_code] = "US")`
 
 ### Power BI Report: NYC Analytics
 - **Item:** `fabric/NYC Analytics.Report/`
 - **Semantic model:** `nyc_analytics_model`
 - **Pages:**
-  - **Mobility** — KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), trips/day trend, top 10 pickup zones by trip count
+  - **Mobility** — KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), year tile slicer, trips/day trend, top 10 pickup zones by trip count
   - **Air Quality** — KPI cards (Avg NO2, Avg O3, Avg PM2.5), year tile slicer, station dropdown slicer, combined PM2.5+NO2+O3 daily trend (responds to slicer), top 10 stations by Avg PM2.5
   - **Correlation** — KPI cards (Total Trips, Avg PM2.5, Avg NO2), bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines, monthly aggregation), year tile slicer
   - **Economic Impact** — KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP 2000–present), line chart (USD/EUR exchange rate full history)

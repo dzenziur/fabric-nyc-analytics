@@ -143,13 +143,13 @@ Expected tables in gold_warehouse:
    - `FactTaxiDaily[zone_key]` → `DimZone[zone_key]` (Many:1)
    - `FactAirQualityDaily[date_key]` → `DimDate[date_key]` (Many:1)
 4. Add DAX measures to **FactTaxiDaily**: `Total Trips`, `Total Revenue USD`, `Total Revenue EUR`, `Avg Fare USD`, `Avg Trip Distance (mi)`, `Avg Trip Duration (min)`
-5. Add DAX measures to **FactAirQualityDaily**: `Avg PM2.5`, `Avg NO2`, `Avg O3`, `Max PM2.5`
+5. Add DAX measures to **FactAirQualityDaily**: `Avg PM2.5`, `Avg NO2`, `Avg O3`
 6. Sync back to Git: workspace → Source control → Commit
 
 ### 5b. Power BI Reports
 
 1. In workspace → New → **Report** → pick `nyc_analytics_model` → **Create blank report** → save as `NYC Analytics`
-2. Build **Mobility** page: KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), trips/day line chart, top 10 pickup zones bar chart
+2. Build **Mobility** page: KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), year tile slicer, trips/day line chart, top 10 pickup zones bar chart
 3. Build **Air Quality** page: KPI cards (Avg NO2, Avg O3, Avg PM2.5), year tile slicer, station dropdown slicer (`FactAirQualityDaily.city`), combined PM2.5+NO2+O3 line chart (responds to slicer), top 10 stations by Avg PM2.5 bar chart (does not respond to slicer)
 4. Build **Correlation** page: KPI cards (Total Trips, Avg PM2.5, Avg NO2), bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines by month), year tile slicer
 5. Build **Economic Impact** page: KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year from DimGDP), line chart (USD/EUR exchange rate from DimFX)
