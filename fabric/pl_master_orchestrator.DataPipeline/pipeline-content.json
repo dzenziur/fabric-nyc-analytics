@@ -17,7 +17,14 @@
           "secureOutput": false
         },
         "name": "df_ecb_fx",
-        "dependsOn": []
+        "dependsOn": [
+          {
+            "activity": "prepare_taxi_ingestion",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
       },
       {
         "type": "RefreshDataflow",
@@ -35,7 +42,14 @@
           "secureOutput": false
         },
         "name": "df_worldbank_gdp",
-        "dependsOn": []
+        "dependsOn": [
+          {
+            "activity": "prepare_taxi_ingestion",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
       },
       {
         "type": "TridentNotebook",
@@ -77,11 +91,50 @@
         ]
       },
       {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "b5d8f3a2-7c91-4e48-a1f2-9d6e8c374b25",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "year_start": {
+              "value": {
+                "value": "@pipeline().parameters.year_start",
+                "type": "Expression"
+              },
+              "type": "int"
+            },
+            "year_end": {
+              "value": {
+                "value": "@pipeline().parameters.year_end",
+                "type": "Expression"
+              },
+              "type": "int"
+            },
+            "force_refresh": {
+              "value": {
+                "value": "@pipeline().parameters.force_refresh",
+                "type": "Expression"
+              },
+              "type": "bool"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.01:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "prepare_taxi_ingestion",
+        "dependsOn": []
+      },
+      {
         "type": "ForEach",
         "typeProperties": {
           "isSequential": false,
           "items": {
-            "value": "@range(0, mul(add(sub(pipeline().parameters.year_end, pipeline().parameters.year_start), 1), 12))",
+            "value": "@json(activity('prepare_taxi_ingestion').output.result.exitValue)",
             "type": "Expression"
           },
           "activities": [
@@ -90,11 +143,11 @@
               "typeProperties": {
                 "parameters": {
                   "year": {
-                    "value": "@add(pipeline().parameters.year_start, div(item(), 12))",
+                    "value": "@item().year",
                     "type": "Expression"
                   },
                   "month": {
-                    "value": "@add(mod(item(), 12), 1)",
+                    "value": "@item().month",
                     "type": "Expression"
                   }
                 },
@@ -119,7 +172,14 @@
           ]
         },
         "name": "ForEach_taxi_months",
-        "dependsOn": []
+        "dependsOn": [
+          {
+            "activity": "prepare_taxi_ingestion",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
       },
       {
         "type": "TridentNotebook",
@@ -246,7 +306,14 @@
           "secureOutput": false
         },
         "name": "bronze_ingest_openaq_locations",
-        "dependsOn": []
+        "dependsOn": [
+          {
+            "activity": "prepare_taxi_ingestion",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
       },
       {
         "type": "TridentNotebook",
@@ -262,7 +329,14 @@
           "secureOutput": false
         },
         "name": "bronze_ingest_taxi_zones",
-        "dependsOn": []
+        "dependsOn": [
+          {
+            "activity": "prepare_taxi_ingestion",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
       }
     ],
     "parameters": {
@@ -276,6 +350,10 @@
       },
       "openaq_api_key": {
         "type": "string"
+      },
+      "force_refresh": {
+        "type": "bool",
+        "defaultValue": false
       }
     }
   }
