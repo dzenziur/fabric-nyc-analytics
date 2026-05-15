@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "bronze_ingest_taxi_zones"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "0c73857f-a745-b23c-416b-b8993d9e5df0"
+  }
+}
