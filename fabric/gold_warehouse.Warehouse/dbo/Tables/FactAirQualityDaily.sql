@@ -4,6 +4,8 @@ CREATE TABLE [dbo].[FactAirQualityDaily] (
 	[location_id] bigint NULL, 
 	[city] varchar(max) NULL, 
 	[country] varchar(max) NULL, 
+	[latitude] float NULL, 
+	[longitude] float NULL, 
 	[parameter] varchar(max) NULL, 
 	[avg_value] float NULL, 
 	[max_value] float NULL, 
