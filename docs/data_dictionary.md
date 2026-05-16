@@ -267,8 +267,10 @@ Grain: one row per day per location per pollutant
 |--------|------|-------------|
 | date_key | int | FK → DimDate.date_key |
 | location_id | int | OpenAQ sensor ID |
-| city | string | City |
+| city | string | Station name (joined from `silver_openaq_locations.location_name`) |
 | country | string | Country |
+| latitude | float | Station latitude (joined from `silver_openaq_locations`) — for map visuals |
+| longitude | float | Station longitude (joined from `silver_openaq_locations`) — for map visuals |
 | parameter | string | pm25 / no2 / o3 / etc. |
 | avg_value | float | Daily average |
 | max_value | float | Daily maximum |

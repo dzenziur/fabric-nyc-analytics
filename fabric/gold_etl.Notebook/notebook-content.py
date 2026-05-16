@@ -344,7 +344,9 @@ display(df_fact_taxi.limit(10))
 
 # CELL ********************
 
-df_loc = spark.read.table(SILVER_OPENAQ_LOCATIONS).select("location_id", "location_name", "country_name")
+df_loc = spark.read.table(SILVER_OPENAQ_LOCATIONS).select(
+    "location_id", "location_name", "country_name", "latitude", "longitude"
+)
 
 df_fact_aq = (
     spark.read.table(SILVER_OPENAQ_MEASUREMENTS)
@@ -368,6 +370,8 @@ df_fact_aq = (
         "location_id",
         col("location_name").alias("city"),
         col("country_name").alias("country"),
+        "latitude",
+        "longitude",
         "parameter",
         "avg_value",
         "max_value",
