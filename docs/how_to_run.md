@@ -157,8 +157,8 @@ Expected tables in gold_warehouse:
 
 1. In workspace → New → **Report** → pick `nyc_analytics_model` → **Create blank report** → save as `NYC Analytics`
 2. Build **Mobility** page: KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), year tile slicer, trips/day line chart, top 10 pickup zones bar chart
-3. Build **Air Quality** page: KPI cards (Avg NO2, Avg O3, Avg PM2.5), year tile slicer, station dropdown slicer (`FactAirQualityDaily.city`), combined PM2.5+NO2+O3 line chart (responds to slicer), top 10 stations by Avg PM2.5 bar chart (does not respond to slicer)
-4. Build **Correlation** page: KPI cards (Total Trips, Avg PM2.5, Avg NO2), bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines by month), year tile slicer
+3. Build **Air Quality** page: KPI cards (Avg NO2, Avg O3, Avg PM2.5) with conditional fill color based on WHO 24h limits (Rules-based: green < safe / yellow = approaching / red > limit), year tile slicer, **Azure Maps** bubble visual (latitude/longitude from `FactAirQualityDaily`, Size & gradient color by Avg PM2.5, click filters trend chart and KPI cards), combined PM2.5+NO2+O3 daily line chart with WHO threshold Constant Lines (PM2.5=15 µg/m³, NO2=25, O3=100) and zoom slider, top 10 stations by Avg PM2.5 bar chart (does not respond to map clicks)
+4. Build **Correlation** page: KPI cards (Total Trips, Avg PM2.5, Avg NO2) — PM2.5/NO2 cards share conditional fill rules with Air Quality page (use Format Painter to copy formatting), bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines by month), year tile slicer (multi-select via Ctrl+click)
 5. Build **Economic Impact** page: KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year from DimGDP), line chart (USD/EUR exchange rate from DimFX)
 
 ---

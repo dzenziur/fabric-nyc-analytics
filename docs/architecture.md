@@ -146,8 +146,8 @@
 - **Semantic model:** `nyc_analytics_model`
 - **Pages:**
   - **Mobility** — KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), year tile slicer, trips/day trend, top 10 pickup zones by trip count
-  - **Air Quality** — KPI cards (Avg NO2, Avg O3, Avg PM2.5), year tile slicer, station dropdown slicer, combined PM2.5+NO2+O3 daily trend (responds to slicer), top 10 stations by Avg PM2.5
-  - **Correlation** — KPI cards (Total Trips, Avg PM2.5, Avg NO2), bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines, monthly aggregation), year tile slicer
+  - **Air Quality** — KPI cards (Avg NO2, Avg O3, Avg PM2.5) with conditional fill color based on WHO 24h limits (green/yellow/red), year tile slicer, Azure Maps bubble visual (station coordinates, bubble size + gradient color by Avg PM2.5), combined PM2.5+NO2+O3 daily trend with WHO threshold reference lines (PM2.5=15, NO2=25, O3=100) and zoom slider, top 10 stations by Avg PM2.5
+  - **Correlation** — KPI cards (Total Trips, Avg PM2.5, Avg NO2) — PM2.5/NO2 cards use same WHO-based conditional fill as Air Quality page, bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines, monthly aggregation), year tile slicer (multi-select)
   - **Economic Impact** — KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP 2000–present), line chart (USD/EUR exchange rate full history)
 
 ### Notebooks

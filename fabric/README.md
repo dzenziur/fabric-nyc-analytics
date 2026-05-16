@@ -85,8 +85,8 @@ Star schema in `gold_warehouse` (T-SQL / SQL analytics endpoint). Written via `s
 | Page | Key visuals |
 |------|------------|
 | Mobility | KPI cards (Total Trips, Revenue USD, Avg Fare, Avg Distance), year tile slicer, trips/day trend, top 10 pickup zones |
-| Air Quality | KPI cards (Avg NO2, Avg O3, Avg PM2.5), year tile slicer, station dropdown slicer, combined PM2.5+NO2+O3 daily trend, top 10 stations by Avg PM2.5 |
-| Correlation | KPI cards (Total Trips, Avg PM2.5, Avg NO2), bar+line chart (Trips vs PM2.5+NO2 by month), year tile slicer |
+| Air Quality | KPI cards (Avg NO2/O3/PM2.5) with WHO-based conditional fill color, year tile slicer, Azure Maps bubble visual (Avg PM2.5 gradient), PM2.5+NO2+O3 daily trend with WHO threshold lines and zoom slider, top 10 stations by Avg PM2.5 |
+| Correlation | KPI cards (Total Trips, Avg PM2.5, Avg NO2) — PM2.5/NO2 with WHO-based fill color, bar+line chart (Trips vs PM2.5+NO2 by month), year tile slicer (multi-select) |
 | Economic Impact | KPI cards (Revenue USD, Revenue EUR, USA GDP), revenue by year, USA GDP trend, USD/EUR exchange rate |
 
 ---
