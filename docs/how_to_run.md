@@ -166,22 +166,28 @@ Expected tables in gold_warehouse:
 ## Step 6 — Master Orchestrator
 
 1. Sync `feature/data-orchestration` branch — `pl_master_orchestrator` pipeline appears in workspace
-2. Pipeline parameters: `year_start` (Int), `year_end` (Int)
+2. Pipeline parameters: `year_start` (Int), `year_end` (Int), `force_refresh` (Bool, default false)
 3. Activity structure:
    ```
-   [Parallel]
+   prepare_taxi_ingestion                   (Notebook — runs first, no dependencies)
+                                              · Per-month HEAD check on TLC for each (year, month) in range
+                                              · Skips months returning HTTP 403/404 (not yet published)
+                                              · Lists Files/raw/taxi/ to exclude already-downloaded files
+                                              · Outputs JSON list for ForEach via notebook exit value
+                                              · Fails only if NO months in range are available at source
+   [Parallel — all depend on prepare_taxi_ingestion Succeeded]
      df_ecb_fx                              (Dataflow Gen2)
      df_worldbank_gdp                       (Dataflow Gen2)
      bronze_ingest_taxi_zones               (Notebook, no parameters)
      bronze_ingest_openaq_locations         (Notebook, pass openaq_api_key)
        → bronze_ingest_openaq_measurements  (Notebook, depends on locations; pass year_start/year_end)
-     ForEach year/month → pl_ingest_nyc_taxi (Pipeline, dynamic URL/filename)
+     ForEach (months from prepare) → pl_ingest_nyc_taxi (Pipeline, year/month from item())
    [Then]
      silver_etl                             (Notebook, pass year_start/year_end)
    [Then]
      gold_etl                               (Notebook, pass year_start/year_end)
    ```
-4. Run with parameters `year_start=2023`, `year_end=2023` for single-year demo; `year_start=2022`, `year_end=2024` for full backfill
+4. Run with parameters `year_start=2023`, `year_end=2023` for single-year demo; `year_start=2022`, `year_end=2024` for full backfill. Use `force_refresh=true` to ignore existing taxi files and re-download everything available at TLC. Partial years are supported — running for `year_end=2026` mid-year ingests only the months TLC has published
 
 ### Typical activity durations (measured 2026-05-12)
 

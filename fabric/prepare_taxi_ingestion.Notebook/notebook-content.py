@@ -80,25 +80,34 @@ print(f"Year range: {year_start} - {year_end}, force_refresh: {force_refresh}")
 # MARKDOWN ********************
 
 # ## Pre-flight Check
-# HEAD request on the latest expected file (December of year_end) — fails fast if TLC hasn't published yet.
+# HEAD request on each month in the requested range. Months that return HTTP 403/404 (not yet published by TLC)
+# are skipped — we proceed with whatever is available. Only fails if NO months in range are available.
 
 # CELL ********************
 
-check_url = URL_TEMPLATE.format(year_end, 12)
-req = urllib.request.Request(check_url, method="HEAD")
+months_available_at_source = []
 
-try:
-    urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
-    print(f"TLC files expected available through {year_end}-12")
-except HTTPError as e:
-    if e.code == 404:
-        raise ValueError(
-            f"TLC has not published taxi file for {year_end}-12 yet "
-            f"(files have ~2-month publishing lag). "
-            f"Adjust year_end to a completed year, or wait for TLC to publish more data. "
-            f"Checked URL: {check_url}"
-        )
-    raise
+for y in range(year_start, year_end + 1):
+    for m in range(1, 13):
+        url = URL_TEMPLATE.format(y, m)
+        req = urllib.request.Request(url, method="HEAD")
+        try:
+            urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
+            months_available_at_source.append({"year": y, "month": m})
+        except HTTPError as e:
+            if e.code in (403, 404):
+                continue
+            raise
+
+total_possible = (year_end - year_start + 1) * 12
+print(f"Months available on TLC: {len(months_available_at_source)} / {total_possible}")
+
+if not months_available_at_source:
+    raise ValueError(
+        f"No taxi files available on TLC for year range {year_start}-{year_end}. "
+        f"All months returned HTTP 403/404 (TLC has ~2-month publishing lag). "
+        f"Adjust year_start/year_end to a range with completed data."
+    )
 
 # METADATA ********************
 
@@ -110,13 +119,13 @@ except HTTPError as e:
 # MARKDOWN ********************
 
 # ## Plan Ingestion
-# Determine which months need downloading by comparing requested range against existing files in bronze.
+# From available months, exclude ones already in bronze. Result is the list of files to actually download.
 
 # CELL ********************
 
 if force_refresh:
     existing_files = set()
-    print("force_refresh=True — will download all files in range")
+    print("force_refresh=True — will download all available files")
 else:
     try:
         files = notebookutils.fs.ls(TAXI_FILES_PATH)
@@ -127,14 +136,12 @@ else:
         print("No existing files (first run)")
 
 months_to_download = []
-for y in range(year_start, year_end + 1):
-    for m in range(1, 13):
-        filename = f"yellow_tripdata_{y:04d}-{m:02d}.parquet"
-        if filename not in existing_files:
-            months_to_download.append({"year": y, "month": m})
+for item in months_available_at_source:
+    filename = f"yellow_tripdata_{item['year']:04d}-{item['month']:02d}.parquet"
+    if filename not in existing_files:
+        months_to_download.append(item)
 
-total_possible = (year_end - year_start + 1) * 12
-print(f"Files to download: {len(months_to_download)} / {total_possible}")
+print(f"Files to download: {len(months_to_download)} / {len(months_available_at_source)} available")
 
 # METADATA ********************
 

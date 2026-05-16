@@ -19,6 +19,7 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 | `bronze_ingest_openaq_locations` | Notebook | Bronze | ✅ Active |
 | `bronze_ingest_openaq_measurements` | Notebook | Bronze | ✅ Active |
 | `bronze_ingest_taxi_zones` | Notebook | Bronze | ✅ Active |
+| `prepare_taxi_ingestion` | Notebook | Bronze | ✅ Active |
 | `silver_etl` | Notebook | Silver | ✅ Active |
 | `gold_etl` | Notebook | Gold | ✅ Active |
 | `nyc_analytics_model` | Semantic Model | Reporting | ✅ Active |
@@ -38,9 +39,9 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 | Item | Source | Destination | Parameters |
 |------|--------|-------------|------------|
 | `pl_ingest_nyc_taxi` | TLC CloudFront — monthly Parquet | `bronze_lakehouse/Files/raw/taxi/` | `year` (int), `month` (int) — URL and filename built dynamically |
-| `pl_master_orchestrator` | — | Triggers all ingestion + ETL | `year_start` (int), `year_end` (int) |
+| `pl_master_orchestrator` | — | Triggers all ingestion + ETL | `year_start` (int), `year_end` (int), `force_refresh` (bool) |
 
-`pl_master_orchestrator` runs in order: [Parallel] all ingestion → [Sequential] `silver_etl` → [Sequential] `gold_etl`.
+`pl_master_orchestrator` runs in order: `prepare_taxi_ingestion` (per-month source availability + missing-file planning) → [Parallel] all ingestion (depend on prepare succeeded — true fail-fast) → [Sequential] `silver_etl` → [Sequential] `gold_etl`. ForEach iterates over months returned by prepare (skips months not yet published on TLC and already-downloaded files). `force_refresh=true` ignores existing taxi files and re-downloads everything available.
 
 ### Notebooks
 | Item | Source | Destination | Parameters |
@@ -48,6 +49,7 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 | `bronze_ingest_openaq_locations` | OpenAQ API v3 `/locations` (paginated) | `bronze_lakehouse.bronze_openaq_locations` | `openaq_api_key` (string) |
 | `bronze_ingest_openaq_measurements` | OpenAQ public S3 archive (`s3://openaq-data-archive/`) via boto3 | `bronze_lakehouse.bronze_openaq_measurements` | `year_start` (int), `year_end` (int) |
 | `bronze_ingest_taxi_zones` | TLC CloudFront — `taxi_zone_lookup.csv` (~265 rows, static) | `bronze_lakehouse.bronze_taxi_zones` | — |
+| `prepare_taxi_ingestion` | TLC CloudFront (per-month HEAD across range) + `Files/raw/taxi/` (list existing) | Notebook exit value — JSON list of `{year, month}` to download (months available on TLC AND not yet in bronze) | `year_start`, `year_end`, `force_refresh` (bool) |
 
 ---
 
