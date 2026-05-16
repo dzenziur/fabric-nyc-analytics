@@ -58,7 +58,6 @@ year_end = 2023
 # CELL ********************
 
 import com.microsoft.spark.fabric
-import urllib.request
 from pyspark.sql.functions import (
     col, explode, sequence, to_date,
     year, quarter, month, date_format,
@@ -66,6 +65,7 @@ from pyspark.sql.functions import (
     avg, max, min, count, sum as spark_sum,
     round as spark_round, row_number, unix_timestamp
 )
+from py4j.protocol import Py4JJavaError
 from pyspark.sql.window import Window
 
 # METADATA ********************
@@ -88,8 +88,7 @@ GOLD   = "gold_warehouse"
 YEAR_START = year_start
 YEAR_END   = year_end
 
-_b = notebookutils.lakehouse.get(BRONZE)
-BRONZE_FILES = f"abfss://{_b.workspaceId}@onelake.dfs.fabric.microsoft.com/{_b.id}/Files"
+BRONZE_TAXI_ZONES           = f"{BRONZE}.bronze_taxi_zones"
 
 SILVER_TAXI_TRIPS           = f"{SILVER}.silver_taxi_trips"
 SILVER_OPENAQ_MEASUREMENTS  = f"{SILVER}.silver_openaq_measurements"
@@ -117,8 +116,12 @@ def write_gold(df_new, table: str, exclude_filter: str = None) -> None:
         try:
             df_existing = spark.read.synapsesql(f"{GOLD}.dbo.{table}")
             df_final = df_existing.filter(exclude_filter).unionByName(df_new)
-        except Exception:
-            df_final = df_new
+        except Py4JJavaError as e:
+            if "source is invalid" in str(e) or "read access" in str(e):
+                print(f"[{table}] not found (first run), creating fresh")
+                df_final = df_new
+            else:
+                raise
     else:
         df_final = df_new
     print(f"[{table}] rows before write: {df_final.count()}")
@@ -147,9 +150,13 @@ try:
     ).collect()[0]
     _dim_year_start = _row["min_y"] if _row["min_y"] < YEAR_START else YEAR_START
     _dim_year_end   = _row["max_y"] if _row["max_y"] > YEAR_END   else YEAR_END
-except Exception:
-    _dim_year_start = YEAR_START
-    _dim_year_end   = YEAR_END
+except Py4JJavaError as e:
+    if "source is invalid" in str(e) or "read access" in str(e):
+        print("DimDate not found (first run), using parameter range")
+        _dim_year_start = YEAR_START
+        _dim_year_end   = YEAR_END
+    else:
+        raise
 
 print(f"DimDate range: {_dim_year_start} - {_dim_year_end}")
 
@@ -191,25 +198,18 @@ display(df_dim_date.limit(10))
 # MARKDOWN ********************
 
 # ## DimZone
-# TLC taxi zone lookup CSV → 265 rows. zone_key = LocationID (natural PK, 1–265).
-# CSV is downloaded once to bronze_lakehouse Files and read via Spark.
+# Reads from `bronze_taxi_zones` (ingested separately by `bronze_ingest_taxi_zones` notebook).
+# 265 rows. zone_key = location_id (natural PK, 1–265).
 
 # CELL ********************
 
-ZONE_CSV_URL  = "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
-ZONE_CSV_PATH = f"{BRONZE_FILES}/raw/taxi_zones/taxi_zone_lookup.csv"
-
-urllib.request.urlretrieve(ZONE_CSV_URL, "/tmp/taxi_zone_lookup.csv")
-notebookutils.fs.cp("file:///tmp/taxi_zone_lookup.csv", ZONE_CSV_PATH)
-print(f"Zone CSV written to {ZONE_CSV_PATH}")
-
 df_dim_zone = (
-    spark.read.option("header", True).csv(ZONE_CSV_PATH)
+    spark.read.table(BRONZE_TAXI_ZONES)
     .select(
-        col("LocationID").cast("int").alias("zone_key"),
-        col("LocationID").cast("int").alias("location_id"),
-        col("Zone").alias("zone_name"),
-        col("Borough").alias("borough"),
+        col("location_id").cast("int").alias("zone_key"),
+        col("location_id").cast("int").alias("location_id"),
+        col("zone").alias("zone_name"),
+        col("borough"),
         col("service_zone"),
     )
     .filter(col("zone_key").isNotNull())
@@ -344,7 +344,9 @@ display(df_fact_taxi.limit(10))
 
 # CELL ********************
 
-df_loc = spark.read.table(SILVER_OPENAQ_LOCATIONS).select("location_id", "location_name", "country_name")
+df_loc = spark.read.table(SILVER_OPENAQ_LOCATIONS).select(
+    "location_id", "location_name", "country_name", "latitude", "longitude"
+)
 
 df_fact_aq = (
     spark.read.table(SILVER_OPENAQ_MEASUREMENTS)
@@ -368,6 +370,8 @@ df_fact_aq = (
         "location_id",
         col("location_name").alias("city"),
         col("country_name").alias("country"),
+        "latitude",
+        "longitude",
         "parameter",
         "avg_value",
         "max_value",

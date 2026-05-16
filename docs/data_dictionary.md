@@ -89,6 +89,20 @@ Ingested by: Dataflow Gen2 `df_ecb_fx`
 
 ---
 
+### `bronze_taxi_zones`
+Source: TLC Zone Lookup CSV — https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv
+Ingested by: Notebook `bronze_ingest_taxi_zones`
+Note: static reference data (~265 rows), rarely changes; downloaded once per notebook run.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| location_id | string | TLC zone ID (1–265) — renamed from `LocationID` |
+| borough | string | Manhattan / Brooklyn / Queens / Bronx / Staten Island / EWR — renamed from `Borough` |
+| zone | string | Zone name (e.g., "JFK Airport") — renamed from `Zone` |
+| service_zone | string | Boro Zone / Yellow Zone / Airports |
+
+---
+
 ### `bronze_weather` — Phase 7 (not yet implemented)
 Source: Open-Meteo API — https://api.open-meteo.com
 
@@ -109,7 +123,7 @@ Source: Open-Meteo API — https://api.open-meteo.com
 
 ### `silver_taxi_trips`
 Transformations: columns renamed to snake_case, year/month added for partitioning,
-invalid trips filtered (trip_distance > 0, fare_amount > 0), deduped by
+invalid trips filtered (trip_distance > 0 and <= 100 mi, fare_amount > 0), deduped by
 (pickup_datetime, dropoff_datetime, pu_location_id, do_location_id, fare_amount).
 Partitioned by: `year`, `month`.
 
@@ -119,7 +133,7 @@ Partitioned by: `year`, `month`.
 | pickup_datetime | timestamp | Trip start | Renamed from tpep_pickup_datetime |
 | dropoff_datetime | timestamp | Trip end | Renamed from tpep_dropoff_datetime |
 | passenger_count | int | Number of passengers | Unchanged |
-| trip_distance | float | Distance in miles | Unchanged; filtered > 0 |
+| trip_distance | float | Distance in miles | Filtered: > 0 and <= 100 (trips above 100 mi are physically implausible for NYC) |
 | ratecode_id | int | Rate code | Renamed from RatecodeID |
 | store_and_fwd_flag | string | Trip stored in vehicle memory before send | Unchanged |
 | pu_location_id | int | Pickup TLC zone ID | Renamed from PULocationID |
@@ -253,8 +267,10 @@ Grain: one row per day per location per pollutant
 |--------|------|-------------|
 | date_key | int | FK → DimDate.date_key |
 | location_id | int | OpenAQ sensor ID |
-| city | string | City |
+| city | string | Station name (joined from `silver_openaq_locations.location_name`) |
 | country | string | Country |
+| latitude | float | Station latitude (joined from `silver_openaq_locations`) — for map visuals |
+| longitude | float | Station longitude (joined from `silver_openaq_locations`) — for map visuals |
 | parameter | string | pm25 / no2 / o3 / etc. |
 | avg_value | float | Daily average |
 | max_value | float | Daily maximum |
@@ -283,7 +299,7 @@ Grain: one row per calendar day
 ---
 
 ### `DimZone`
-Source: TLC Zone Lookup CSV (taxi_zone_lookup.csv)
+Source: `bronze_taxi_zones` (loaded from TLC zone lookup CSV via `bronze_ingest_taxi_zones` notebook)
 
 | Column | Type | Description |
 |--------|------|-------------|

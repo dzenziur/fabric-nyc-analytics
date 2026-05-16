@@ -23,13 +23,6 @@ table FactAirQualityDaily
 
 		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
-	measure 'Max PM2.5' = CALCULATE(MAX(FactAirQualityDaily[max_value]), FactAirQualityDaily[parameter] = "pm25")
-		lineageTag: 4136f75e-d4ea-4f39-97e4-d5c0b52a4e89
-
-		changedProperty = Name
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
-
 	column date_key
 		dataType: int64
 		formatString: 0
@@ -47,10 +40,12 @@ table FactAirQualityDaily
 		sourceProviderType: bigint
 		lineageTag: a2ef0721-e1c5-4db4-a313-2e70d8330fb3
 		sourceLineageTag: location_id
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: location_id
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
 
 	column city
 		dataType: string
@@ -87,10 +82,14 @@ table FactAirQualityDaily
 		sourceProviderType: float
 		lineageTag: 97f03481-73d5-4038-97c9-9f84af7ccd96
 		sourceLineageTag: avg_value
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: avg_value
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		changedProperty = IsHidden
+
+		annotation SummarizationSetBy = User
 
 		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
@@ -99,10 +98,12 @@ table FactAirQualityDaily
 		sourceProviderType: float
 		lineageTag: 8f375bb6-08c5-46ee-baeb-d1983d2e45ae
 		sourceLineageTag: max_value
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: max_value
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
 
 		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
@@ -111,10 +112,12 @@ table FactAirQualityDaily
 		sourceProviderType: float
 		lineageTag: d1c40758-797f-4428-9639-139bd723bd58
 		sourceLineageTag: min_value
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: min_value
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
 
 		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
@@ -128,6 +131,40 @@ table FactAirQualityDaily
 		sourceColumn: measurement_count
 
 		annotation SummarizationSetBy = Automatic
+
+	column latitude
+		dataType: double
+		sourceProviderType: float
+		lineageTag: 9b3116f2-8415-421b-a5f6-239b46473ceb
+		sourceLineageTag: latitude
+		dataCategory: Latitude
+		summarizeBy: none
+		sourceColumn: latitude
+
+		changedProperty = SummarizeBy
+
+		changedProperty = DataCategory
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column longitude
+		dataType: double
+		sourceProviderType: float
+		lineageTag: baa58189-ecf9-413c-9df3-d83fbc21522c
+		sourceLineageTag: longitude
+		dataCategory: Longitude
+		summarizeBy: none
+		sourceColumn: longitude
+
+		changedProperty = DataCategory
+
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
 	partition FactAirQualityDaily = entity
 		mode: directLake

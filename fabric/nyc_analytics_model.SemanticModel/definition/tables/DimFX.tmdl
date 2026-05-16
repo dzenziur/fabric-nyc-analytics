@@ -33,14 +33,18 @@ table DimFX
 
 	column date
 		dataType: dateTime
-		formatString: General Date
+		formatString: mmmm d, yyyy
 		sourceProviderType: date
 		lineageTag: e5c042b2-7e8b-44ae-a669-f3b16411db49
 		sourceLineageTag: date
 		summarizeBy: none
 		sourceColumn: date
 
+		changedProperty = FormatString
+
 		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isCustom":true}
 
 	column usd_eur_rate
 		dataType: double

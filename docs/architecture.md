@@ -103,6 +103,7 @@
   - `bronze_openaq_measurements` — OpenAQ pollutant readings for 22 NYC stations, last 5 years, via PySpark Notebook reading public S3 archive
   - `bronze_gdp` — World Bank yearly GDP per country via Dataflow Gen2
   - `bronze_fx_rates` — ECB daily USD/EUR rates via Dataflow Gen2
+  - `bronze_taxi_zones` — TLC taxi zone lookup (~265 rows, static) via `bronze_ingest_taxi_zones` Notebook
 
 ### Lakehouse: Silver
 - **Purpose:** Cleaned, deduplicated, schema-standardized data
@@ -121,7 +122,7 @@
 
 ### Data Factory
 - **Pipeline:** `pl_ingest_nyc_taxi` — copies monthly Parquet files to Bronze; parameters: `year` (int), `month` (int); source URL and destination filename are dynamically built from parameters
-- **Pipeline:** `pl_master_orchestrator` — single-entry-point orchestrator; parameters: `year_start` (int), `year_end` (int); runs all ingestion in parallel (ForEach taxi months + notebooks + dataflows), then triggers silver_etl and gold_etl sequentially
+- **Pipeline:** `pl_master_orchestrator` — single-entry-point orchestrator; parameters: `year_start` (int), `year_end` (int), `force_refresh` (bool); first runs `prepare_taxi_ingestion` (per-month source check + missing-file planning); on success, runs all ingestion in parallel — ForEach iterates only over months returned by prepare (skips not-yet-published months at source AND files already downloaded to bronze); then triggers silver_etl and gold_etl sequentially. All parallel activities depend on `prepare_taxi_ingestion` Succeeded for true fail-fast
 - **Dataflow Gen2:** `df_worldbank_gdp` — World Bank API → `bronze_gdp`; end year is dynamic (`DateTime.LocalNow() - 1`)
 - **Dataflow Gen2:** `df_ecb_fx` — ECB CSV → `bronze_fx_rates` (full history, no date filter needed)
 
@@ -137,22 +138,24 @@
   - `FactAirQualityDaily[date_key]` → `DimDate[date_key]` (Many:1, active)
   - `DimGDP` — no relationship (used as standalone context table)
 - **DAX measures in FactTaxiDaily:** Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD, Avg Trip Distance (mi), Avg Trip Duration (min)
-- **DAX measures in FactAirQualityDaily:** Avg PM2.5, Avg NO2, Avg O3, Max PM2.5
+- **DAX measures in FactAirQualityDaily:** Avg PM2.5, Avg NO2, Avg O3
 - **DAX measures in DimGDP:** USA GDP (USD) — `CALCULATE(MAX(DimGDP[gdp_usd]), DimGDP[country_code] = "US")`
 
 ### Power BI Report: NYC Analytics
 - **Item:** `fabric/NYC Analytics.Report/`
 - **Semantic model:** `nyc_analytics_model`
 - **Pages:**
-  - **Mobility** — KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), trips/day trend, top 10 pickup zones by trip count
-  - **Air Quality** — KPI cards (Avg PM2.5, Avg NO2, Max PM2.5), station dropdown slicer, combined PM2.5+NO2+O3 daily trend (responds to slicer), top 10 stations by Avg PM2.5
-  - **Correlation** — KPI cards (Total Trips, Avg PM2.5, Avg NO2), bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines, monthly aggregation), year tile slicer
+  - **Mobility** — KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), year tile slicer, trips/day trend, top 10 pickup zones by trip count
+  - **Air Quality** — KPI cards (Avg NO2, Avg O3, Avg PM2.5) with conditional fill color based on WHO 24h limits (green/yellow/red), year tile slicer, Azure Maps bubble visual (station coordinates, bubble size + gradient color by Avg PM2.5), combined PM2.5+NO2+O3 daily trend with WHO threshold reference lines (PM2.5=15, NO2=25, O3=100) and zoom slider, top 10 stations by Avg PM2.5
+  - **Correlation** — KPI cards (Total Trips, Avg PM2.5, Avg NO2) — PM2.5/NO2 cards use same WHO-based conditional fill as Air Quality page, bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines, monthly aggregation), year tile slicer (multi-select)
   - **Economic Impact** — KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP 2000–present), line chart (USD/EUR exchange rate full history)
 
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
-- `fabric/bronze_ingest_openaq_locations.Notebook/` — fetches all OpenAQ station metadata via API v3 (paginated) → `bronze_openaq_locations`; parameter: `openaq_api_key`
-- `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for NYC stations (filtered by bounding box) → `bronze_openaq_measurements`; parameters: `year_start`, `year_end`
+- `fabric/bronze_ingest_openaq_locations.Notebook/` — fetches all OpenAQ station metadata via API v3 (paginated) → `bronze_openaq_locations`; parameter: `openaq_api_key`; retries on transient 5xx/429/network errors
+- `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for NYC stations (filtered by bounding box from `bronze_openaq_locations`) → `bronze_openaq_measurements`; parameters: `year_start`, `year_end`
+- `fabric/bronze_ingest_taxi_zones.Notebook/` — downloads TLC `taxi_zone_lookup.csv` → `bronze_taxi_zones` Delta table (~265 rows, static); no parameters
+- `fabric/prepare_taxi_ingestion.Notebook/` — pre-flight per-month HEAD check on TLC for each `(year, month)` in range + lists existing taxi files in bronze; outputs JSON list of months to download via `notebookutils.notebook.exit` for ForEach in `pl_master_orchestrator`; parameters: `year_start`, `year_end`, `force_refresh` (bool, default false). Treats HTTP 403/404 as "not yet published" and proceeds with available months; fails only if NO months in range are available at source. Enables incremental ingestion (skip already-downloaded files) and partial-year ingestion (download Jan-Mar 2026 even when later months aren't published)
 - `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 5 data sources; parameters: `year_start`, `year_end`; handles TLC Parquet schema drift (INT32/INT64) via file-by-file read with explicit casts; normalizes OpenAQ gas measurements from ppm to µg/m³
 - `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + synapsesql); parameters: `year_start`, `year_end`
 

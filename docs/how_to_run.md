@@ -92,6 +92,13 @@ Resources created:
 3. Parse CSV, rename columns
 4. Destination: `bronze_lakehouse` → Table: `bronze_fx_rates`
 
+### 2f. TLC Taxi Zones Notebook
+
+1. Sync repo via Fabric Git integration — `bronze_ingest_taxi_zones` notebook appears in workspace
+2. Ensure `bronze_lakehouse` is the default attached lakehouse
+3. Run all cells — downloads TLC `taxi_zone_lookup.csv` → `bronze_taxi_zones` Delta table
+4. Expected: ~265 rows (static reference data, rarely changes; safe to run only on initial setup)
+
 ---
 
 ## Step 3 — Run Silver ETL Notebook
@@ -143,15 +150,15 @@ Expected tables in gold_warehouse:
    - `FactTaxiDaily[zone_key]` → `DimZone[zone_key]` (Many:1)
    - `FactAirQualityDaily[date_key]` → `DimDate[date_key]` (Many:1)
 4. Add DAX measures to **FactTaxiDaily**: `Total Trips`, `Total Revenue USD`, `Total Revenue EUR`, `Avg Fare USD`, `Avg Trip Distance (mi)`, `Avg Trip Duration (min)`
-5. Add DAX measures to **FactAirQualityDaily**: `Avg PM2.5`, `Avg NO2`, `Avg O3`, `Max PM2.5`
+5. Add DAX measures to **FactAirQualityDaily**: `Avg PM2.5`, `Avg NO2`, `Avg O3`
 6. Sync back to Git: workspace → Source control → Commit
 
 ### 5b. Power BI Reports
 
 1. In workspace → New → **Report** → pick `nyc_analytics_model` → **Create blank report** → save as `NYC Analytics`
-2. Build **Mobility** page: KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), trips/day line chart, top 10 pickup zones bar chart
-3. Build **Air Quality** page: KPI cards (Avg PM2.5, Avg NO2, Max PM2.5), station dropdown slicer (`FactAirQualityDaily.city`), combined PM2.5+NO2+O3 line chart (responds to slicer), top 10 stations by Avg PM2.5 bar chart (does not respond to slicer)
-4. Build **Correlation** page: KPI cards (Total Trips, Avg PM2.5, Avg NO2), bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines by month), year tile slicer
+2. Build **Mobility** page: KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), year tile slicer, trips/day line chart, top 10 pickup zones bar chart
+3. Build **Air Quality** page: KPI cards (Avg NO2, Avg O3, Avg PM2.5) with conditional fill color based on WHO 24h limits (Rules-based: green < safe / yellow = approaching / red > limit), year tile slicer, **Azure Maps** bubble visual (latitude/longitude from `FactAirQualityDaily`, Size & gradient color by Avg PM2.5, click filters trend chart and KPI cards), combined PM2.5+NO2+O3 daily line chart with WHO threshold Constant Lines (PM2.5=15 µg/m³, NO2=25, O3=100) and zoom slider, top 10 stations by Avg PM2.5 bar chart (does not respond to map clicks)
+4. Build **Correlation** page: KPI cards (Total Trips, Avg PM2.5, Avg NO2) — PM2.5/NO2 cards share conditional fill rules with Air Quality page (use Format Painter to copy formatting), bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines by month), year tile slicer (multi-select via Ctrl+click)
 5. Build **Economic Impact** page: KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year from DimGDP), line chart (USD/EUR exchange rate from DimFX)
 
 ---
@@ -159,21 +166,28 @@ Expected tables in gold_warehouse:
 ## Step 6 — Master Orchestrator
 
 1. Sync `feature/data-orchestration` branch — `pl_master_orchestrator` pipeline appears in workspace
-2. Pipeline parameters: `year_start` (Int), `year_end` (Int)
+2. Pipeline parameters: `year_start` (Int), `year_end` (Int), `force_refresh` (Bool, default false)
 3. Activity structure:
    ```
-   [Parallel]
+   prepare_taxi_ingestion                   (Notebook — runs first, no dependencies)
+                                              · Per-month HEAD check on TLC for each (year, month) in range
+                                              · Skips months returning HTTP 403/404 (not yet published)
+                                              · Lists Files/raw/taxi/ to exclude already-downloaded files
+                                              · Outputs JSON list for ForEach via notebook exit value
+                                              · Fails only if NO months in range are available at source
+   [Parallel — all depend on prepare_taxi_ingestion Succeeded]
      df_ecb_fx                              (Dataflow Gen2)
      df_worldbank_gdp                       (Dataflow Gen2)
+     bronze_ingest_taxi_zones               (Notebook, no parameters)
      bronze_ingest_openaq_locations         (Notebook, pass openaq_api_key)
-     bronze_ingest_openaq_measurements      (Notebook, pass year_start/year_end)
-     ForEach year/month → pl_ingest_nyc_taxi (Pipeline, dynamic URL/filename)
+       → bronze_ingest_openaq_measurements  (Notebook, depends on locations; pass year_start/year_end)
+     ForEach (months from prepare) → pl_ingest_nyc_taxi (Pipeline, year/month from item())
    [Then]
      silver_etl                             (Notebook, pass year_start/year_end)
    [Then]
      gold_etl                               (Notebook, pass year_start/year_end)
    ```
-4. Run with parameters `year_start=2023`, `year_end=2023` for single-year demo; `year_start=2022`, `year_end=2024` for full backfill
+4. Run with parameters `year_start=2023`, `year_end=2023` for single-year demo; `year_start=2022`, `year_end=2024` for full backfill. Use `force_refresh=true` to ignore existing taxi files and re-download everything available at TLC. Partial years are supported — running for `year_end=2026` mid-year ingests only the months TLC has published
 
 ### Typical activity durations (measured 2026-05-12)
 
@@ -280,12 +294,13 @@ great_expectations checkpoint run silver_taxi_checkpoint
 ```
 1. Run df_ecb_fx                                  → bronze_fx_rates
 2. Run df_worldbank_gdp                           → bronze_gdp
-3. Run bronze_ingest_openaq_locations             → bronze_openaq_locations
-4. Run bronze_ingest_openaq_measurements          → bronze_openaq_measurements
-5. Run pl_ingest_nyc_taxi (per year/month)        → Files/raw/taxi/
-6. Run silver_etl notebook                        → silver_* tables
-7. Run gold_etl notebook                          → Fact/Dim tables in Warehouse
-8. Refresh Power BI                               → Reports update
+3. Run bronze_ingest_taxi_zones                   → bronze_taxi_zones
+4. Run bronze_ingest_openaq_locations             → bronze_openaq_locations
+5. Run bronze_ingest_openaq_measurements          → bronze_openaq_measurements
+6. Run pl_ingest_nyc_taxi (per year/month)        → Files/raw/taxi/
+7. Run silver_etl notebook                        → silver_* tables
+8. Run gold_etl notebook                          → Fact/Dim tables in Warehouse
+9. Refresh Power BI                               → Reports update
 --- Phase 7 additions ---
 8. python jobs/weather_ingest.py → bronze_weather + InfluxDB
 9. Run silver_etl notebook (weather) → silver_weather (+ GE validation)

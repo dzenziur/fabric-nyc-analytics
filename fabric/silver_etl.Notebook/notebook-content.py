@@ -139,7 +139,6 @@ def write_silver(df, table_name: str, partition_by: list = None, replace_where: 
 # CELL ********************
 
 df = spark.read.table(BRONZE_FX_RATES)
-print(f"[{BRONZE_FX_RATES}] rows read: {df.count()}")
 
 df_silver = (
     df
@@ -147,7 +146,6 @@ df_silver = (
     .withColumn("usd_eur_rate", col("usd_eur_rate").cast("double"))
     .dropDuplicates(["date"])
     .filter(col("usd_eur_rate").isNotNull())
-    .orderBy("date")
 )
 
 write_silver(df_silver, SILVER_FX_RATES)
@@ -168,7 +166,6 @@ display(df_silver.limit(5))
 # CELL ********************
 
 df = spark.read.table(BRONZE_GDP)
-print(f"[{BRONZE_GDP}] rows read: {df.count()}")
 
 df_silver = (
     df
@@ -176,7 +173,6 @@ df_silver = (
     .withColumn("gdp_usd", col("gdp_usd").cast("double"))
     .dropDuplicates(["country_code", "year"])
     .filter(col("country_code").isNotNull() & col("gdp_usd").isNotNull())
-    .orderBy("country_code", "year")
 )
 
 write_silver(df_silver, SILVER_GDP)
@@ -198,13 +194,11 @@ display(df_silver.limit(5))
 # CELL ********************
 
 df = spark.read.table(BRONZE_OPENAQ_LOCATIONS)
-print(f"[{BRONZE_OPENAQ_LOCATIONS}] rows read: {df.count()}")
 
 df_silver = (
     df
     .dropDuplicates(["location_id"])
     .filter(col("location_id").isNotNull() & col("country_id").isNotNull())
-    .orderBy("country_id", "location_id")
 )
 
 write_silver(df_silver, SILVER_OPENAQ_LOCATIONS)
@@ -247,8 +241,6 @@ df = dfs[0]
 for d in dfs[1:]:
     df = df.unionByName(d, allowMissingColumns=True)
 
-print(f"[{BRONZE}.taxi_files] rows read: {df.count()}")
-
 df_silver = (
     df
     .withColumnRenamed("VendorID", "vendor_id")
@@ -265,6 +257,7 @@ df_silver = (
         & col("pu_location_id").isNotNull()
         & col("do_location_id").isNotNull()
         & (col("trip_distance") > 0)
+        & (col("trip_distance") <= 100)
         & (col("fare_amount") > 0)
         & col("year").between(year_start, year_end)
     )
@@ -290,7 +283,6 @@ display(df_silver.limit(5))
 # CELL ********************
 
 df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
-print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] rows read: {df.count()}")
 
 PPM_TO_UGM3 = {
     "no2": 1882, "o3": 1962, "co": 1145,
@@ -315,7 +307,6 @@ df_silver = (
     .withColumn("year", year(col("datetime")))
     .withColumn("month", month(col("datetime")))
     .filter(col("year").between(year_start, year_end))
-    .orderBy("location_id", "parameter", "datetime")
 )
 
 write_silver(df_silver, SILVER_OPENAQ_MEASUREMENTS, partition_by=["year", "month"],

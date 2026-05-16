@@ -15,14 +15,18 @@ table DimDate
 
 	column date
 		dataType: dateTime
-		formatString: General Date
+		formatString: mmmm d, yyyy
 		sourceProviderType: date
 		lineageTag: 2865639c-9081-4a41-be9e-863213caf4ce
 		sourceLineageTag: date
 		summarizeBy: none
 		sourceColumn: date
 
+		changedProperty = FormatString
+
 		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isCustom":true}
 
 	column year
 		dataType: int64
@@ -30,10 +34,12 @@ table DimDate
 		sourceProviderType: int
 		lineageTag: 58606cd5-584a-4e7b-af85-620425d75ff4
 		sourceLineageTag: year
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: year
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
 
 	column quarter
 		dataType: int64
@@ -41,10 +47,12 @@ table DimDate
 		sourceProviderType: int
 		lineageTag: ba0e41ea-a5bc-4f00-8a67-a69767c64fc3
 		sourceLineageTag: quarter
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: quarter
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
 
 	column month
 		dataType: int64
@@ -52,10 +60,12 @@ table DimDate
 		sourceProviderType: int
 		lineageTag: 7859524b-7bd5-4dae-9161-39c136aab07c
 		sourceLineageTag: month
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: month
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
 
 	column month_name
 		dataType: string
@@ -64,6 +74,9 @@ table DimDate
 		sourceLineageTag: month_name
 		summarizeBy: none
 		sourceColumn: month_name
+		sortByColumn: month
+
+		changedProperty = SortByColumn
 
 		annotation SummarizationSetBy = Automatic
 
@@ -73,10 +86,12 @@ table DimDate
 		sourceProviderType: int
 		lineageTag: 369d6f9a-8ee8-48a7-8833-36ea245738b3
 		sourceLineageTag: week_of_year
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: week_of_year
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
 
 	column day_of_month
 		dataType: int64
@@ -84,10 +99,12 @@ table DimDate
 		sourceProviderType: int
 		lineageTag: 16a24028-ad86-41be-b199-c4d7f9979017
 		sourceLineageTag: day_of_month
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: day_of_month
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
 
 	column day_of_week
 		dataType: int64
@@ -95,10 +112,12 @@ table DimDate
 		sourceProviderType: int
 		lineageTag: 6922dd8e-2b1a-4c34-8f6d-c2cc8220e528
 		sourceLineageTag: day_of_week
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: day_of_week
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
 
 	column day_name
 		dataType: string

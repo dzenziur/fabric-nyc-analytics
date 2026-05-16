@@ -116,10 +116,12 @@ table FactTaxiDaily
 		sourceProviderType: float
 		lineageTag: a9b45c36-cfb9-43ba-8f76-ee6eb89ad55c
 		sourceLineageTag: avg_fare_usd
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: avg_fare_usd
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
 
 		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
@@ -128,10 +130,12 @@ table FactTaxiDaily
 		sourceProviderType: float
 		lineageTag: 8cdaf258-cd82-4b17-bf14-72cf7b3db985
 		sourceLineageTag: avg_trip_duration_min
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: avg_trip_duration_min
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
 
 		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
@@ -140,10 +144,12 @@ table FactTaxiDaily
 		sourceProviderType: float
 		lineageTag: 5c264753-5729-4a84-a342-ccea4bdb575d
 		sourceLineageTag: avg_trip_distance_mi
-		summarizeBy: sum
+		summarizeBy: none
 		sourceColumn: avg_trip_distance_mi
 
-		annotation SummarizationSetBy = Automatic
+		changedProperty = SummarizeBy
+
+		annotation SummarizationSetBy = User
 
 		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
