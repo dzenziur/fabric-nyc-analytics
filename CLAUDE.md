@@ -12,7 +12,7 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 ## Current Status
 
-**Active branch:** `feature/dashboards-and-robustness`
+**Active branch:** `feature/governance-monitoring`
 **Deadline:** May 26, 2026 (defense) — target May 15 for main features
 
 ### Phase completion
@@ -23,54 +23,16 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 | Phase 1 — Bronze ingestion | ✅ Done | Taxi, GDP, FX, OpenAQ locations, OpenAQ measurements (S3 archive, boto3), TLC taxi zones |
 | Phase 2 — Silver ETL | ✅ Done | silver_taxi_trips, silver_gdp, silver_fx_rates, silver_openaq_locations, silver_openaq_measurements |
 | Phase 3 — Gold / star schema | ✅ Done | DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily in gold_warehouse |
-| Phase 4 — Visualizations | ✅ Done | All 4 dashboards complete; ppm normalization, location slicer, Correlation enhanced, semantic model date formats + summarizeBy fixed, Avg O3 KPI added |
-| Phase 5 — Master Orchestrator | ✅ Done | pl_master_orchestrator + parameterized silver/gold notebooks + dynamic taxi loop |
-| Phase 6 — Governance & Monitoring | ❌ Not started | Schedules, RLS, Purview lineage — planned for `feature/governance-monitoring` |
+| Phase 4 — Visualizations | ✅ Done | 4 dashboards; Air Quality map (Azure Maps + WHO thresholds + conditional KPI fill); semantic model fixes |
+| Phase 5 — Master Orchestrator | ✅ Done | pl_master_orchestrator + parameterized silver/gold notebooks + prepare_taxi_ingestion (pre-flight + incremental) |
+| Phase 6 — Governance & Monitoring | 🔄 In progress | Schedules, RLS, Purview lineage |
 | Phase 7 — External Integrations | ❌ Not started | Weather + InfluxDB + Grafana, Great Expectations + Telegram bot |
 
-### Current branch goal (`feature/dashboards-and-robustness`)
+### Current branch goal (`feature/governance-monitoring`)
 
-Polish, robustness, and data-quality improvements that emerged after Phase 4–5 completion.
-Originally scoped as Phase 6 governance work, but evolved into broader cleanup —
-strict governance items deferred to next branch.
+Phase 6 — Governance and Monitoring. Strict scope: schedule automation, Row-Level Security, optional Purview lineage. No dashboard or ETL changes unless directly needed for scheduling.
 
-#### Power BI dashboards & semantic model
-- [X] Investigate Max PM2.5 = 2.18K anomaly — confirmed source data issue from OpenAQ S3 (station "State Dept of Environmental Conservation", Nov 2024, 325 bad rows up to 2175 µg/m³); replaced Max PM2.5 KPI with Avg O3 on Air Quality page
-- [X] Add year tile slicer to Air Quality page
-- [X] Add year tile slicer to Mobility page
-- [X] Investigate Avg Trip Distance = 24 mi anomaly — root cause: TLC source data has corrupt trip_distance values in low-volume zones (e.g. Great Kills: 53 trips, avg 1134 mi); fixed in silver_etl by adding `trip_distance <= 100` filter
-- [X] Fix date format on `DimDate[date]` and `DimFX[date]` from `General Date` to `mmmm d, yyyy` — eliminates "12:00:00 AM" in tooltips and shows year on multi-year charts
-- [X] `summarizeBy: none` on date components (year/quarter/month/week_of_year/day_of_month/day_of_week), avg metrics (avg_fare_usd, avg_trip_duration_min, avg_trip_distance_mi, avg_value, max_value, min_value), and `FactAirQualityDaily[location_id]` — prevents accidental aggregation when columns dragged to Values well
-- [X] `DimDate[month_name]` `sortByColumn: month` — month names sort chronologically not alphabetically on charts
-- [X] Remove `Max PM2.5` DAX measure (replaced with `Avg O3` on Air Quality page)
-- [X] Air Quality map visual — added `latitude`/`longitude` to `FactAirQualityDaily` in gold_etl (join with `silver_openaq_locations`); Azure Maps bubble visual on Air Quality page with gradient color by Avg PM2.5 (min light blue → mid yellow → max red), Avg PM2.5 in Size, tooltips for all 3 pollutants, click on bubble filters trend chart and KPI cards (Edit interactions); replaced station dropdown slicer
-- [X] Air Quality trend polish — WHO 24h threshold reference lines (PM2.5=15, NO2=25, O3=100) as Y-axis Constant Lines, dashed, color-matched to trend lines; series labels replace legend (per-line label at right edge); zoom slider added for time-range drill-down
-- [X] Conditional fill color on KPI cards — Rules-based (no DAX) on Air Quality Avg PM2.5 and Avg NO2 cards (pastel green/yellow/red based on WHO thresholds); Correlation page Avg PM2.5 and Avg NO2 cards updated via Format Painter for consistency
-
-#### Silver ETL robustness
-- [X] Remove redundant `df.count()` at the start of each ETL section — `write_silver` already logs row count; double scan wastes resources (5 places)
-- [X] Remove `.orderBy()` before write — applied to all 4 tables (fx_rates, gdp, openaq_locations, openaq_measurements) for consistency; Delta Lake doesn't use this sort
-- [X] Add `trip_distance <= 100` filter on silver_taxi_trips — caps physically implausible TLC source data corruption (root cause of Avg Trip Distance anomaly)
-
-#### Gold ETL robustness
-- [X] Narrow exception handling in `write_gold` and DimDate range lookup — catch `Py4JJavaError` (synapsesql connector wraps Java exceptions; `AnalysisException` doesn't apply here) with message-based filter for "source is invalid" / "read access" patterns; network/config errors now propagate instead of being silently swallowed
-- [X] Separate taxi zones ingestion into new `bronze_ingest_taxi_zones` notebook → writes to `bronze_taxi_zones` Delta table; `gold_etl` now reads from that table instead of downloading CSV from CloudFront every run
-
-#### Bronze improvements
-- [X] `bronze_ingest_openaq_locations` — page cap raised 100→500 with WARNING on cap hit; retries on transient errors (5xx/429/network) via urllib3 Retry; request timeout added
-- [X] New `bronze_ingest_taxi_zones` notebook — ingests static TLC zone reference data (~265 rows) into `bronze_taxi_zones` Delta table
-- [X] New `prepare_taxi_ingestion` notebook — per-month HEAD check on TLC for each `(year, month)` in range (treats HTTP 403/404 as "not yet published", proceeds with whatever is available) + lists existing taxi files in bronze; outputs JSON list of `{year, month}` to download (intersection of "available on TLC" and "not in bronze"); `force_refresh` parameter forces re-download; fails only if NO months in range are available at source
-
-#### Pipeline improvements
-- [X] Add `bronze_ingest_taxi_zones` to `pl_master_orchestrator` parallel block; `silver_etl` dependency updated to include it
-- [X] Reduce activity timeouts from 12h to 1h on all `pl_master_orchestrator` activities for faster fail-fast on hung activities (retry already 0, dependency conditions already "Succeeded")
-- [X] Add `prepare_taxi_ingestion` as first activity in `pl_master_orchestrator` — all other parallel activities now depend on it (true fail-fast); ForEach iterates over notebook output (missing files only) instead of hardcoded `range(0, N*12)`; new `force_refresh` pipeline parameter propagates to prepare notebook
-
-### Next branch — `feature/governance-monitoring` (Phase 6)
-
-Strict governance and monitoring work, deferred from current branch.
-
-#### Schedule automation — design decision required
+#### Schedule automation — design decision required first
 
 Per `docs/project_plan.md`, the spec requires **two distinct refresh cadences**:
 - **Daily:** ECB FX rates, OpenAQ locations + measurements
@@ -102,10 +64,29 @@ Implementation tasks (after design decision):
 - [ ] If `microsoft/fabric` Terraform provider supports schedule resources — declare them in `terraform/`; otherwise document manual UI setup
 
 #### Row-Level Security
-- [ ] Configure RLS in `nyc_analytics_model` — restrict data visibility by role (details TBD when starting this branch)
+- [ ] Configure RLS in `nyc_analytics_model` — restrict data visibility by role (e.g. borough-level access). Decide role taxonomy first (Admin / Manhattan-only / Outer-boroughs-only / etc.)
+- [ ] Document role assignments and test with "View as role" in Power BI
 
-#### Microsoft Purview lineage
-- [ ] Optional — connect Fabric workspace to Purview for automated lineage tracking (details TBD)
+#### Microsoft Purview lineage (optional)
+- [ ] Connect Fabric workspace to Microsoft Purview for automated lineage tracking
+- [ ] Verify Bronze → Silver → Gold lineage is captured automatically
+- [ ] Document setup in `docs/architecture.md`
+
+### Next branch — `feature/external-integrations` (Phase 7)
+
+External monitoring and data-quality stack — runs outside Fabric.
+
+#### Weather ingestion + InfluxDB + Grafana
+- [ ] `jobs/weather_ingest.py` — Open-Meteo API → Bronze Lakehouse + InfluxDB Cloud (hourly NYC weather)
+- [ ] Schedule weather ingest (Linux cron, Azure Function, or Railway.app — TBD)
+- [ ] Silver/Gold processing for weather: `silver_weather` table, `FactWeatherDaily` star schema entry
+- [ ] Grafana dashboard for weather time-series (InfluxDB data source) — temperature, precipitation, weather vs taxi demand
+- [ ] Document setup in `docs/how_to_run.md` (already partially scaffolded)
+
+#### Great Expectations + Telegram Bot
+- [ ] Great Expectations expectation suites for Silver tables (specs already drafted in `docs/data_dictionary.md`)
+- [ ] `bot/dq_bot.py` — Telegram bot with `/report` command → runs GE checkpoints → replies with pass/fail summary
+- [ ] Document bot setup + secrets in `.env.example` and `docs/how_to_run.md`
 
 ## Backlog
 
@@ -169,8 +150,9 @@ spec/         Original project specification (PDF)
 
 | Branch | Phase | Status |
 |--------|-------|--------|
-| `feature/dashboards-and-robustness` | Dashboard polish + notebook/pipeline robustness + data quality | Active |
-| `feature/governance-monitoring` | Phase 6 — Governance & monitoring (schedules, RLS, Purview) | Planned |
+| `feature/dashboards-and-robustness` | Dashboard polish + notebook/pipeline robustness + data quality | Merged |
+| `feature/governance-monitoring` | Phase 6 — Governance & monitoring (schedules, RLS, Purview) | Active |
+| `feature/external-integrations` | Phase 7 — Weather + InfluxDB + Grafana + GE + Telegram bot | Planned |
 
 ## Data sources
 
