@@ -43,7 +43,9 @@ strict governance items deferred to next branch.
 - [X] `summarizeBy: none` on date components (year/quarter/month/week_of_year/day_of_month/day_of_week), avg metrics (avg_fare_usd, avg_trip_duration_min, avg_trip_distance_mi, avg_value, max_value, min_value), and `FactAirQualityDaily[location_id]` — prevents accidental aggregation when columns dragged to Values well
 - [X] `DimDate[month_name]` `sortByColumn: month` — month names sort chronologically not alphabetically on charts
 - [X] Remove `Max PM2.5` DAX measure (replaced with `Avg O3` on Air Quality page)
-- [ ] Air Quality map visual — add `latitude`/`longitude` to `FactAirQualityDaily` in gold_etl (join with `silver_openaq_locations`), then add Azure Maps bubble map (click station → filters trend chart)
+- [X] Air Quality map visual — added `latitude`/`longitude` to `FactAirQualityDaily` in gold_etl (join with `silver_openaq_locations`); Azure Maps bubble visual on Air Quality page with gradient color by Avg PM2.5 (min light blue → mid yellow → max red), Avg PM2.5 in Size, tooltips for all 3 pollutants, click on bubble filters trend chart and KPI cards (Edit interactions); replaced station dropdown slicer
+- [X] Air Quality trend polish — WHO 24h threshold reference lines (PM2.5=15, NO2=25, O3=100) as Y-axis Constant Lines, dashed, color-matched to trend lines; series labels replace legend (per-line label at right edge); zoom slider added for time-range drill-down
+- [X] Conditional fill color on KPI cards — Rules-based (no DAX) on Air Quality Avg PM2.5 and Avg NO2 cards (pastel green/yellow/red based on WHO thresholds); Correlation page Avg PM2.5 and Avg NO2 cards updated via Format Painter for consistency
 
 #### Silver ETL robustness
 - [X] Remove redundant `df.count()` at the start of each ETL section — `write_silver` already logs row count; double scan wastes resources (5 places)
@@ -51,31 +53,59 @@ strict governance items deferred to next branch.
 - [X] Add `trip_distance <= 100` filter on silver_taxi_trips — caps physically implausible TLC source data corruption (root cause of Avg Trip Distance anomaly)
 
 #### Gold ETL robustness
-- [X] Narrow `except Exception` to `AnalysisException` — applied to both `write_gold` and DimDate range lookup so network/config errors propagate instead of being silently swallowed
+- [X] Narrow exception handling in `write_gold` and DimDate range lookup — catch `Py4JJavaError` (synapsesql connector wraps Java exceptions; `AnalysisException` doesn't apply here) with message-based filter for "source is invalid" / "read access" patterns; network/config errors now propagate instead of being silently swallowed
 - [X] Separate taxi zones ingestion into new `bronze_ingest_taxi_zones` notebook → writes to `bronze_taxi_zones` Delta table; `gold_etl` now reads from that table instead of downloading CSV from CloudFront every run
 
 #### Bronze improvements
 - [X] `bronze_ingest_openaq_locations` — page cap raised 100→500 with WARNING on cap hit; retries on transient errors (5xx/429/network) via urllib3 Retry; request timeout added
 - [X] New `bronze_ingest_taxi_zones` notebook — ingests static TLC zone reference data (~265 rows) into `bronze_taxi_zones` Delta table
+- [X] New `prepare_taxi_ingestion` notebook — per-month HEAD check on TLC for each `(year, month)` in range (treats HTTP 403/404 as "not yet published", proceeds with whatever is available) + lists existing taxi files in bronze; outputs JSON list of `{year, month}` to download (intersection of "available on TLC" and "not in bronze"); `force_refresh` parameter forces re-download; fails only if NO months in range are available at source
 
 #### Pipeline improvements
 - [X] Add `bronze_ingest_taxi_zones` to `pl_master_orchestrator` parallel block; `silver_etl` dependency updated to include it
 - [X] Reduce activity timeouts from 12h to 1h on all `pl_master_orchestrator` activities for faster fail-fast on hung activities (retry already 0, dependency conditions already "Succeeded")
+- [X] Add `prepare_taxi_ingestion` as first activity in `pl_master_orchestrator` — all other parallel activities now depend on it (true fail-fast); ForEach iterates over notebook output (missing files only) instead of hardcoded `range(0, N*12)`; new `force_refresh` pipeline parameter propagates to prepare notebook
 
 ### Next branch — `feature/governance-monitoring` (Phase 6)
 
-Strict governance and monitoring work, deferred from current branch:
+Strict governance and monitoring work, deferred from current branch.
 
-#### Schedule automation
-- [ ] Set daily schedule on `pl_master_orchestrator` for FX rates + OpenAQ refresh
-- [ ] Set monthly schedule trigger for Taxi + GDP refresh
-- [ ] Verify schedule runs correctly in Fabric workspace
+#### Schedule automation — design decision required
+
+Per `docs/project_plan.md`, the spec requires **two distinct refresh cadences**:
+- **Daily:** ECB FX rates, OpenAQ locations + measurements
+- **Monthly:** NYC Taxi (TLC), World Bank GDP
+
+Rationale: each data source has independent value. Air Quality dashboard refreshes from new OpenAQ measurements daily even when there's no new taxi data. Taxi files are published monthly by TLC with ~2-month lag.
+
+**Option A — Two separate orchestrators (recommended)**
+- New `pl_daily_orchestrator`: FX + OpenAQ → silver_etl (subset) → gold_etl (subset)
+- New `pl_monthly_orchestrator`: Taxi + GDP + reuses daily activities → full silver/gold rebuild
+- Each pipeline has its own schedule
+- **Pros:** clean separation, matches spec, easier to debug, no internal conditional logic
+- **Cons:** `silver_etl`/`gold_etl` may need new parameters to run partial layers (currently all-or-nothing); some duplication of activity definitions between pipelines
+
+**Option B — Single orchestrator with conditional logic**
+- Keep `pl_master_orchestrator`, schedule it daily, add `If` activities that skip taxi/GDP unless month boundary crossed (e.g. first of month, or based on `dayofmonth`)
+- **Pros:** single source of truth, no pipeline duplication
+- **Cons:** complex internal branching; daily runs still re-process current year silver/gold even when only FX/OpenAQ refreshed → wasted compute
+
+**Schedule configuration approach**
+- **Fabric UI** (Pipeline → Schedule) — quick, manual
+- **Terraform** (`microsoft/fabric` provider) — preferred per project principle "Infrastructure is code". Check provider docs for whether schedule resources are supported; if yes, schedules become declarative and reproducible.
+
+Implementation tasks (after design decision):
+- [ ] Decide Option A vs Option B
+- [ ] Implement chosen architecture (new pipeline(s) + silver/gold parameter adjustments if needed)
+- [ ] Configure schedules: daily for FX + OpenAQ, monthly for Taxi + GDP
+- [ ] Verify schedules trigger correctly in Fabric workspace
+- [ ] If `microsoft/fabric` Terraform provider supports schedule resources — declare them in `terraform/`; otherwise document manual UI setup
 
 #### Row-Level Security
-- [ ] Configure RLS in `nyc_analytics_model` — restrict data visibility by role
+- [ ] Configure RLS in `nyc_analytics_model` — restrict data visibility by role (details TBD when starting this branch)
 
-#### Optional
-- [ ] Microsoft Purview lineage integration
+#### Microsoft Purview lineage
+- [ ] Optional — connect Fabric workspace to Purview for automated lineage tracking (details TBD)
 
 ## Backlog
 
@@ -87,6 +117,17 @@ Items confirmed as needed but not yet scheduled. Claude reads this at the start 
   - Air Quality: PM2.5 seasonality, NO2 rush-hour pattern, data coverage note (2023+)
   - Correlation: trips vs PM2.5 overlay observation, caveat about 2023+ data
   - Economic Impact: revenue growth 2021→2025, EUR/USD gap explanation, GDP scale context
+
+### Power BI — signature feature per dashboard
+One "wow" feature per page, beyond the standard charts. Air Quality already has the Azure Maps station bubble visual (done). Remaining pages need their own signature:
+- [ ] **Mobility — Sankey diagram for taxi flows (pickup zone → dropoff zone)**. Requires gold_etl change: drop FactTaxiDaily and rebuild with DO_zone_key in addition to current zone_key (PU), OR create new FactTaxiFlows table aggregated by (PU, DO, year). Marketplace visual: "Sankey" by Microsoft. Maps the actual movement patterns through NYC.
+- [ ] **Correlation — Scatter plot with Play Axis animation**. Replace current bar+line monthly aggregate with daily scatter (one point per day): X=Total Trips, Y=Avg PM2.5, Play axis=year. Shows the actual correlation shape, not just monthly trend. Built-in scatter visual supports Play axis natively.
+- [ ] **Economic Impact — Forecasting on USD/EUR line chart**. Built-in Power BI feature (Analytics pane → Forecast). Forecast length 90 days with 95% confidence interval. Demonstrates predictive analytics capability without external tools. Alternative: waterfall chart for YoY revenue change.
+
+### Power BI — dashboard polish (smaller wins)
+- [ ] Export current Power BI theme as JSON and check into repo for consistency across reports (deferred — Fabric Direct Lake report theme handling not yet evaluated)
+- [ ] Smart Narrative AI visual on at least one page (e.g., Mobility) — auto-generated text insights from KPIs
+- [ ] YoY change indicators on monetary/count KPI cards (Mobility, Economic Impact) — up/down arrow + color based on previous-year comparison (where WHO-style threshold doesn't apply)
 
 
 ### Docs accuracy
