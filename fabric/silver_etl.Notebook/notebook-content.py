@@ -44,6 +44,7 @@
 
 year_start = 2023
 year_end = 2023
+incremental_mode = False
 
 # METADATA ********************
 
@@ -59,7 +60,9 @@ year_end = 2023
 
 # CELL ********************
 
-from pyspark.sql.functions import col, lit, to_date, to_timestamp, when, year, month
+from delta.tables import DeltaTable
+from pyspark.sql.functions import col, lit, to_date, to_timestamp, when, year, month, max as spark_max
+from pyspark.sql.utils import AnalysisException
 
 # METADATA ********************
 
@@ -278,11 +281,28 @@ display(df_silver.limit(5))
 
 # ## OpenAQ Measurements
 # Filter out non-positive readings, deduplicate by (location_id, parameter, datetime),
-# cast datetime, add year/month partition keys. Partitioned by year/month.
+# cast datetime, add year/month partition keys.
+# In `incremental_mode`: read only bronze rows newer than MAX(datetime) in silver, then MERGE INTO target.
+# In full mode (default): year partition overwrite (existing behavior).
 
 # CELL ********************
 
-df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
+if incremental_mode:
+    try:
+        max_dt_row = spark.read.table(SILVER_OPENAQ_MEASUREMENTS).agg(spark_max("datetime")).collect()
+        max_dt = max_dt_row[0][0] if max_dt_row and max_dt_row[0][0] is not None else None
+    except AnalysisException:
+        max_dt = None
+
+    if max_dt is None:
+        print(f"[{SILVER_OPENAQ_MEASUREMENTS}] incremental mode but no existing data — falling back to full read")
+        df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
+    else:
+        print(f"[{SILVER_OPENAQ_MEASUREMENTS}] incremental mode — watermark: {max_dt}")
+        df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS).filter(to_timestamp(col("datetime")) > lit(max_dt))
+else:
+    max_dt = None
+    df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
 
 PPM_TO_UGM3 = {
     "no2": 1882, "o3": 1962, "co": 1145,
@@ -306,11 +326,27 @@ df_silver = (
     .filter(col("location_id").isNotNull() & col("parameter").isNotNull() & col("datetime").isNotNull())
     .withColumn("year", year(col("datetime")))
     .withColumn("month", month(col("datetime")))
-    .filter(col("year").between(year_start, year_end))
 )
 
-write_silver(df_silver, SILVER_OPENAQ_MEASUREMENTS, partition_by=["year", "month"],
-             replace_where=f"year >= {year_start} AND year <= {year_end}")
+if not incremental_mode:
+    df_silver = df_silver.filter(col("year").between(year_start, year_end))
+
+if incremental_mode and max_dt is not None:
+    target = DeltaTable.forName(spark, SILVER_OPENAQ_MEASUREMENTS)
+    (
+        target.alias("t")
+        .merge(
+            df_silver.alias("s"),
+            "t.location_id = s.location_id AND t.parameter = s.parameter AND t.datetime = s.datetime"
+        )
+        .whenNotMatchedInsertAll()
+        .execute()
+    )
+    print(f"[{SILVER_OPENAQ_MEASUREMENTS}] incremental merge done")
+else:
+    write_silver(df_silver, SILVER_OPENAQ_MEASUREMENTS, partition_by=["year", "month"],
+                 replace_where=f"year >= {year_start} AND year <= {year_end}")
+
 display(df_silver.limit(5))
 
 # METADATA ********************
