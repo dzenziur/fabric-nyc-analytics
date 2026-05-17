@@ -61,7 +61,7 @@ force_refresh = False
 import com.microsoft.spark.fabric
 from datetime import date, timedelta
 from pyspark.sql.functions import (
-    col, explode, sequence, to_date,
+    col, explode, lit, sequence, to_date,
     year, quarter, month, date_format,
     weekofyear, dayofmonth, dayofweek,
     avg, max, min, count, sum as spark_sum,
