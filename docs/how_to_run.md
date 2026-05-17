@@ -183,11 +183,14 @@ Expected tables in gold_warehouse:
        → bronze_ingest_openaq_measurements  (Notebook, depends on locations; pass year_start/year_end)
      ForEach (months from prepare) → pl_ingest_nyc_taxi (Pipeline, year/month from item())
    [Then]
-     silver_etl                             (Notebook, pass year_start/year_end)
+     silver_etl                             (Notebook, pass year_start/year_end/force_refresh)
    [Then]
-     gold_etl                               (Notebook, pass year_start/year_end)
+     gold_etl                               (Notebook, pass year_start/year_end/force_refresh)
    ```
-4. Run with parameters `year_start=2023`, `year_end=2023` for single-year demo; `year_start=2022`, `year_end=2024` for full backfill. Use `force_refresh=true` to ignore existing taxi files and re-download everything available at TLC. Partial years are supported — running for `year_end=2026` mid-year ingests only the months TLC has published
+4. Run with parameters `year_start=2023`, `year_end=2023` for single-year demo; `year_start=2022`, `year_end=2024` for full backfill. The `force_refresh` parameter cascades through the entire pipeline:
+   - **`force_refresh=false` (default, used by scheduled runs)** — incremental processing throughout: `bronze_openaq_measurements` fetches only current + previous month from S3, `silver_openaq_measurements` MERGEs new rows past watermark, `silver_taxi_trips` appends only new `(year, month)` partitions, `FactAirQualityDaily`/`FactTaxiDaily` re-aggregate only last 7 days from `MAX(gold.date_key)`. Typical run: ~1-2 min total.
+   - **`force_refresh=true` (manual backfill or recovery)** — full year-range rebuild for all layers; respects `year_start`/`year_end`. Typical run: ~15-22 min for 2-year range.
+   - Partial years are supported — running for `year_end=2026` mid-year ingests only the months TLC has published (via `prepare_taxi_ingestion`).
 
 ### Typical activity durations (measured 2026-05-12)
 

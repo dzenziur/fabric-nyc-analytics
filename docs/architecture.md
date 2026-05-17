@@ -153,11 +153,11 @@
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
 - `fabric/bronze_ingest_openaq_locations.Notebook/` — fetches all OpenAQ station metadata via API v3 (paginated) → `bronze_openaq_locations`; parameter: `openaq_api_key`; retries on transient 5xx/429/network errors
-- `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for NYC stations (filtered by bounding box from `bronze_openaq_locations`) → `bronze_openaq_measurements`; parameters: `year_start`, `year_end`
+- `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for NYC stations (filtered by bounding box from `bronze_openaq_locations`) → `bronze_openaq_measurements`; parameters: `year_start`, `year_end`, `force_refresh` (bool). Default mode fetches only current + previous month from S3 (month-level prefix listing) and MERGEs into target on natural key `(location_id, sensors_id, datetime, parameter)`; `force_refresh=True` performs full year-range download with partition replacement
 - `fabric/bronze_ingest_taxi_zones.Notebook/` — downloads TLC `taxi_zone_lookup.csv` → `bronze_taxi_zones` Delta table (~265 rows, static); no parameters
 - `fabric/prepare_taxi_ingestion.Notebook/` — pre-flight per-month HEAD check on TLC for each `(year, month)` in range + lists existing taxi files in bronze; outputs JSON list of months to download via `notebookutils.notebook.exit` for ForEach in `pl_master_orchestrator`; parameters: `year_start`, `year_end`, `force_refresh` (bool, default false). Treats HTTP 403/404 as "not yet published" and proceeds with available months; fails only if NO months in range are available at source. Enables incremental ingestion (skip already-downloaded files) and partial-year ingestion (download Jan-Mar 2026 even when later months aren't published)
-- `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 5 data sources; parameters: `year_start`, `year_end`; handles TLC Parquet schema drift (INT32/INT64) via file-by-file read with explicit casts; normalizes OpenAQ gas measurements from ppm to µg/m³
-- `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + synapsesql); parameters: `year_start`, `year_end`
+- `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 5 data sources; parameters: `year_start`, `year_end`, `force_refresh` (bool). Default mode is incremental for `silver_openaq_measurements` (watermark `MAX(datetime)` + Delta `MERGE INTO`) and `silver_taxi_trips` (partition diff — append only `(year, month)` not yet in silver). `force_refresh=True` does full partition overwrite for the year range. Handles TLC Parquet schema drift (INT32/INT64) via file-by-file read with explicit casts; normalizes OpenAQ gas measurements from ppm to µg/m³
+- `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + synapsesql); parameters: `year_start`, `year_end`, `force_refresh` (bool). Default mode is incremental for `FactAirQualityDaily` and `FactTaxiDaily` — re-aggregates only dates from `MAX(gold.date_key) - LATE_ARRIVING_LOOKBACK_DAYS` (=7) forward to handle late-arriving silver data and short missed-run gaps. `force_refresh=True` does full rebuild for year range
 
 ### Weather External Job — Phase 7 (not yet implemented)
 - **Source:** Open-Meteo API (free, no key) — hourly weather for NYC (lat 40.71, lon -74.01)
@@ -197,6 +197,24 @@ initializes it. Therefore, native `spark.read.csv("s3a://...")` fails on public 
 **Solution:** `boto3` with `Config(signature_version=UNSIGNED)` runs in the Python layer,
 bypasses Spark's S3A entirely, and achieves anonymous access. Downloads are parallelized via
 `ThreadPoolExecutor`, then converted to Spark DataFrames for Delta writes.
+
+### Why `force_refresh` cascading parameter for incremental processing
+
+For high-frequency scheduled runs (twice daily), full year rebuild of silver and gold (~10-15 min) is mostly redundant — only minimal new data arrives between runs. Incremental processing reduces typical run time to ~1-2 min.
+
+**Design choice:** single `force_refresh` (bool) parameter on `pl_master_orchestrator`, cascaded to all relevant notebooks (`bronze_ingest_openaq_measurements`, `silver_etl`, `gold_etl`, `prepare_taxi_ingestion`). User-facing semantic: "I want to force a full rebuild" — default `False` = incremental (fast, schedule-friendly), `True` = full rebuild for manual backfill or recovery.
+
+**Per-table incremental strategy:**
+- `bronze_openaq_measurements` — fetch only current + previous month from S3 (month-level prefix listing), MERGE INTO on natural key
+- `silver_openaq_measurements` — watermark `MAX(datetime)` + Delta `MERGE INTO`
+- `silver_taxi_trips` — partition diff — process only files whose `(year, month)` not yet in silver, append new partitions
+- `FactAirQualityDaily` / `FactTaxiDaily` — re-aggregate dates from `MAX(gold.date_key) - 7 days` (handles late-arriving silver data + short missed-run gaps via 7-day lookback)
+- Other small tables (FX/GDP/locations/zones/all dims) — full overwrite each run (overhead exceeds savings)
+
+**Alternatives considered:**
+- Separate `incremental_mode` parameter per notebook — rejected: harder for users to reason about; force_refresh cascading is intuitive
+- Two orchestrators (daily + monthly) — rejected per spec re-read: spec says "daily/hourly" not "daily AND monthly"; one orchestrator with idempotent prepare + incremental ETL works for any frequency
+- Delta Change Data Feed (CDF) for change tracking — rejected as over-engineered for our scale
 
 ### Why Terraform for infrastructure
 - **Reproducibility:** workspace + all 3 storage layers can be destroyed and recreated in <2 minutes

@@ -30,38 +30,57 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 ### Current branch goal (`feature/governance-monitoring`)
 
-Phase 6 — Governance and Monitoring. Strict scope: schedule automation, Row-Level Security, optional Purview lineage. No dashboard or ETL changes unless directly needed for scheduling.
+Phase 6 — Governance and Monitoring per spec (`spec/Microsoft Fabric Data Engineering Project.pdf`):
+- Automate refresh schedules (daily/hourly) — **required**
+- Row-Level Security in Power BI — optional
+- Purview lineage — optional
 
-#### Schedule automation — design decision required first
+#### Schedule automation
 
-Per `docs/project_plan.md`, the spec requires **two distinct refresh cadences**:
-- **Daily:** ECB FX rates, OpenAQ locations + measurements
-- **Monthly:** NYC Taxi (TLC), World Bank GDP
+**Re-reading the spec:** the requirement is simply "Automate refresh schedules (daily/hourly)". No spec requirement for separate daily/monthly orchestrators — our previous interpretation was over-engineering. The existing `pl_master_orchestrator` is already well-suited for high-frequency scheduling because `prepare_taxi_ingestion` returns only missing files (idempotent — empty list on days TLC hasn't published).
 
-Rationale: each data source has independent value. Air Quality dashboard refreshes from new OpenAQ measurements daily even when there's no new taxi data. Taxi files are published monthly by TLC with ~2-month lag.
+**Plan:** schedule existing `pl_master_orchestrator` to run **twice daily at 06:00 and 18:00 UTC**. No pipeline duplication, no conditional logic.
 
-**Option A — Two separate orchestrators (recommended)**
-- New `pl_daily_orchestrator`: FX + OpenAQ → silver_etl (subset) → gold_etl (subset)
-- New `pl_monthly_orchestrator`: Taxi + GDP + reuses daily activities → full silver/gold rebuild
-- Each pipeline has its own schedule
-- **Pros:** clean separation, matches spec, easier to debug, no internal conditional logic
-- **Cons:** `silver_etl`/`gold_etl` may need new parameters to run partial layers (currently all-or-nothing); some duplication of activity definitions between pipelines
+Why 06:00 + 18:00 UTC:
+- 06:00 UTC catches overnight ECB FX (~16:00 CET prev day) and OpenAQ measurements
+- 18:00 UTC catches midday updates and provides afternoon refresh for dashboard users
+- Twice-daily strikes balance between freshness and compute cost
 
-**Option B — Single orchestrator with conditional logic**
-- Keep `pl_master_orchestrator`, schedule it daily, add `If` activities that skip taxi/GDP unless month boundary crossed (e.g. first of month, or based on `dayofmonth`)
-- **Pros:** single source of truth, no pipeline duplication
-- **Cons:** complex internal branching; daily runs still re-process current year silver/gold even when only FX/OpenAQ refreshed → wasted compute
+Implementation tasks:
+- [X] Confirmed `microsoft/fabric` Terraform provider supports schedule resource — `fabric_item_job_scheduler` (type=Daily, multiple times allowed). Will use Terraform per project principle "Infrastructure is code"
+- [ ] Declare two `fabric_item_job_scheduler` resources in `terraform/` for `pl_master_orchestrator` (Daily type, times=["06:00", "18:00"])
+- [ ] Verify schedules trigger correctly in Fabric workspace (let it run a few days, check monitoring)
+- [ ] Update `docs/how_to_run.md` and `docs/architecture.md` with the schedule configuration
 
-**Schedule configuration approach**
-- **Fabric UI** (Pipeline → Schedule) — quick, manual
-- **Terraform** (`microsoft/fabric` provider) — preferred per project principle "Infrastructure is code". Check provider docs for whether schedule resources are supported; if yes, schedules become declarative and reproducible.
+#### Incremental processing (force_refresh parameter)
 
-Implementation tasks (after design decision):
-- [ ] Decide Option A vs Option B
-- [ ] Implement chosen architecture (new pipeline(s) + silver/gold parameter adjustments if needed)
-- [ ] Configure schedules: daily for FX + OpenAQ, monthly for Taxi + GDP
-- [ ] Verify schedules trigger correctly in Fabric workspace
-- [ ] If `microsoft/fabric` Terraform provider supports schedule resources — declare them in `terraform/`; otherwise document manual UI setup
+Decided: implement incremental processing for 5 high-value tables to keep daily compute cost low. Unified under single `force_refresh` parameter (bool, default False) that cascades from orchestrator → notebooks. Default behavior (False) = incremental for those tables, True = full rebuild for manual backfill.
+
+**Tables scoped for incremental:**
+1. `silver_openaq_measurements` — watermark `MAX(datetime)` + Delta `MERGE INTO` on `(location_id, parameter, datetime)` ✅ **Done (Etap 1)**
+2. `silver_taxi_trips` — process only missing `(year, month)` partitions
+3. `FactAirQualityDaily` — re-aggregate only changed dates (last N days for late-arriving handling)
+4. `FactTaxiDaily` — re-aggregate only changed `(year, month)`
+5. `bronze_openaq_measurements` (optional) — fetch only missing S3 partitions
+
+Other tables (`silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, all gold dims) remain full overwrite — small size makes incremental overhead exceed savings.
+
+**Implementation order (Etaps):**
+- [X] **Etap 1** — `silver_openaq_measurements` incremental via watermark (`MAX(datetime)`) + Delta `MERGE INTO`. Parameter `force_refresh` added to silver_etl and wired through orchestrator
+- [X] **Etap 2** — `silver_taxi_trips` incremental via partition diff (skip files whose `(year, month)` already in silver; append new partitions)
+- [X] **Etap 3** — `FactAirQualityDaily` incremental via `MAX(gold.date_key) - 7 days` lookback (handles late-arriving data + short missed-run gaps); `force_refresh` parameter added to gold_etl; constant `LATE_ARRIVING_LOOKBACK_DAYS = 7`
+- [X] **Etap 4** — `FactTaxiDaily` incremental — same 7-day lookback pattern as Etap 3
+- [X] **Etap 5** — `bronze_openaq_measurements` incremental S3 fetch. Default mode fetches current + previous month only (instead of full year range) via month-level S3 prefix; uses Delta `MERGE INTO` on `(location_id, sensors_id, datetime, parameter)`. `force_refresh=True` falls back to year-range download. First-run (table missing) auto-falls-back to full mode
+
+#### Row-Level Security (optional per spec)
+- [ ] Define role taxonomy (e.g., Admin / Manhattan-only / Outer-boroughs-only) and what each role sees
+- [ ] Configure RLS in `nyc_analytics_model` — DAX filter expressions on DimZone
+- [ ] Document role assignments; test with "View as role" in Power BI
+
+#### Microsoft Purview lineage (optional per spec)
+- [ ] Connect Fabric workspace to Purview tenant (requires Purview account)
+- [ ] Verify Bronze → Silver → Gold lineage captured automatically
+- [ ] Add screenshot/note in `docs/architecture.md`
 
 #### Row-Level Security
 - [ ] Configure RLS in `nyc_analytics_model` — restrict data visibility by role (e.g. borough-level access). Decide role taxonomy first (Admin / Manhattan-only / Outer-boroughs-only / etc.)
@@ -104,6 +123,18 @@ One "wow" feature per page, beyond the standard charts. Air Quality already has 
 - [ ] **Mobility — Sankey diagram for taxi flows (pickup zone → dropoff zone)**. Requires gold_etl change: drop FactTaxiDaily and rebuild with DO_zone_key in addition to current zone_key (PU), OR create new FactTaxiFlows table aggregated by (PU, DO, year). Marketplace visual: "Sankey" by Microsoft. Maps the actual movement patterns through NYC.
 - [ ] **Correlation — Scatter plot with Play Axis animation**. Replace current bar+line monthly aggregate with daily scatter (one point per day): X=Total Trips, Y=Avg PM2.5, Play axis=year. Shows the actual correlation shape, not just monthly trend. Built-in scatter visual supports Play axis natively.
 - [ ] **Economic Impact — Forecasting on USD/EUR line chart**. Built-in Power BI feature (Analytics pane → Forecast). Forecast length 90 days with 95% confidence interval. Demonstrates predictive analytics capability without external tools. Alternative: waterfall chart for YoY revenue change.
+
+### Incremental ETL — future candidates (low priority, defer until cost matters)
+All current high-value tables now have incremental mode via `force_refresh` (Etaps 1-5 done). Remaining tables are kept as full overwrite because savings are minimal vs added complexity. Listed here for reference if compute cost ever becomes a concern:
+- [ ] `bronze_ingest_openaq_locations` — currently fetches all ~24k station records via paginated API. Could compare with current bronze and skip download if no changes (e.g., hash check or count diff). Marginal benefit — runs in ~2 min.
+- [ ] `bronze_ingest_openaq_measurements` — pre-filter `nyc_ids` by station activity window before iterating S3. Would require enriching `bronze_openaq_locations` with `datetime_first` and `datetime_last` fields from OpenAQ API. Saves S3 LIST API calls (~5-10s) for stations that didn't report in the target time window. Low priority — current "no data, skipping" handles it gracefully.
+- [ ] `silver_fx_rates` — small table (~7k rows). Could read only `date > MAX(silver.date)` from bronze and append. Saves seconds.
+- [ ] `silver_gdp` — yearly data (~6k rows), almost never changes. Could skip processing if bronze unchanged. Trivial savings.
+- [ ] `silver_openaq_locations` — small (~5k rows), rare changes. Could MERGE only updated stations. Trivial savings.
+- [ ] `DimDate`/`DimZone`/`DimFX`/`DimGDP` (gold dims) — currently full rebuild each run. Could be incremental but compute cost is already <30s combined. Not worth complexity.
+- [ ] `bronze_taxi_zones` — static (~265 rows), trivial cost. Could check ETag/Last-Modified to skip download.
+
+Pattern reference: most candidates would use either watermark + MERGE (like Etap 1) or skip-if-unchanged (idempotent no-op check before fetch).
 
 ### Power BI — dashboard polish (smaller wins)
 - [ ] Export current Power BI theme as JSON and check into repo for consistency across reports (deferred — Fabric Direct Lake report theme handling not yet evaluated)

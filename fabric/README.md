@@ -47,7 +47,7 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 | Item | Source | Destination | Parameters |
 |------|--------|-------------|------------|
 | `bronze_ingest_openaq_locations` | OpenAQ API v3 `/locations` (paginated) | `bronze_lakehouse.bronze_openaq_locations` | `openaq_api_key` (string) |
-| `bronze_ingest_openaq_measurements` | OpenAQ public S3 archive (`s3://openaq-data-archive/`) via boto3 | `bronze_lakehouse.bronze_openaq_measurements` | `year_start` (int), `year_end` (int) |
+| `bronze_ingest_openaq_measurements` | OpenAQ public S3 archive (`s3://openaq-data-archive/`) via boto3 | `bronze_lakehouse.bronze_openaq_measurements` | `year_start` (int), `year_end` (int), `force_refresh` (bool) — default mode fetches current + previous month only and MERGEs into target |
 | `bronze_ingest_taxi_zones` | TLC CloudFront — `taxi_zone_lookup.csv` (~265 rows, static) | `bronze_lakehouse.bronze_taxi_zones` | — |
 | `prepare_taxi_ingestion` | TLC CloudFront (per-month HEAD across range) + `Files/raw/taxi/` (list existing) | Notebook exit value — JSON list of `{year, month}` to download (months available on TLC AND not yet in bronze) | `year_start`, `year_end`, `force_refresh` (bool) |
 
@@ -57,7 +57,7 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 
 | Item | Input | Output | Parameters |
 |------|-------|--------|------------|
-| `silver_etl` | All Bronze tables + `Files/raw/taxi/` | `silver_taxi_trips`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_gdp`, `silver_fx_rates` | `year_start` (int), `year_end` (int) |
+| `silver_etl` | All Bronze tables + `Files/raw/taxi/` | `silver_taxi_trips`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_gdp`, `silver_fx_rates` | `year_start` (int), `year_end` (int), `force_refresh` (bool) — default mode is incremental for `silver_openaq_measurements` (MERGE on `MAX(datetime)` watermark) and `silver_taxi_trips` (partition diff append) |
 
 Transformations: snake_case rename, null filtering, deduplication, type casting, year/month partitioning. OpenAQ gas measurements (no2, o3, co, no, nox, so2) normalized from ppm to µg/m³ using EPA conversion factors at 25°C.
 Taxi files read file-by-file to handle INT32/INT64 schema drift across TLC Parquet releases; explicit casts normalize `VendorID`, `PULocationID`, `DOLocationID`, `payment_type` to `long`.
@@ -68,7 +68,7 @@ Taxi files read file-by-file to handle INT32/INT64 schema drift across TLC Parqu
 
 | Item | Input | Output | Parameters |
 |------|-------|--------|------------|
-| `gold_etl` | All Silver tables + `bronze_taxi_zones` (for DimZone) | `FactTaxiDaily`, `FactAirQualityDaily`, `DimDate`, `DimZone`, `DimFX`, `DimGDP` | `year_start` (int), `year_end` (int) |
+| `gold_etl` | All Silver tables + `bronze_taxi_zones` (for DimZone) | `FactTaxiDaily`, `FactAirQualityDaily`, `DimDate`, `DimZone`, `DimFX`, `DimGDP` | `year_start` (int), `year_end` (int), `force_refresh` (bool) — default mode is incremental for FactTaxiDaily and FactAirQualityDaily (re-aggregate `MAX(gold.date_key) - 7 days` forward) |
 
 Star schema in `gold_warehouse` (T-SQL / SQL analytics endpoint). Written via `synapsesql`.
 
