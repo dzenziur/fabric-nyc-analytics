@@ -287,15 +287,43 @@ display(df_dim_gdp.limit(10))
 
 # ## FactTaxiDaily
 # Grain: one row per day × pickup zone. FX join is left — weekend/holiday dates have no ECB rate (null fx_key).
+# Default mode (force_refresh=False): re-aggregate only dates from MAX(gold.date_key) - 7 days forward.
+#   Same 7-day lookback as FactAirQualityDaily — handles late-arriving silver data and short missed-run gaps.
+# force_refresh=True: full rebuild for YEAR_START..YEAR_END range (existing behavior).
 
 # CELL ********************
 
 df_fx   = spark.read.synapsesql(f"{GOLD}.dbo.DimFX").select("fx_key", "date", "usd_eur_rate")
 df_zone = spark.read.synapsesql(f"{GOLD}.dbo.DimZone").select("zone_key", "location_id")
 
+if force_refresh:
+    df_silver_taxi = spark.read.table(SILVER_TAXI_TRIPS).filter(col("year").between(YEAR_START, YEAR_END))
+    fact_taxi_exclude_filter = f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}"
+    print(f"[FactTaxiDaily] force_refresh=True — full rebuild for {YEAR_START}-{YEAR_END}")
+else:
+    try:
+        max_dt_key_row = spark.read.synapsesql(f"{GOLD}.dbo.FactTaxiDaily").agg(max("date_key")).collect()
+        max_dt_key = max_dt_key_row[0][0] if max_dt_key_row and max_dt_key_row[0][0] is not None else None
+    except Py4JJavaError as e:
+        if "source is invalid" in str(e) or "read access" in str(e):
+            max_dt_key = None
+        else:
+            raise
+
+    if max_dt_key is None:
+        df_silver_taxi = spark.read.table(SILVER_TAXI_TRIPS).filter(col("year").between(YEAR_START, YEAR_END))
+        fact_taxi_exclude_filter = f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}"
+        print(f"[FactTaxiDaily] no existing data — falling back to full rebuild for {YEAR_START}-{YEAR_END}")
+    else:
+        max_dt = date(max_dt_key // 10000, (max_dt_key // 100) % 100, max_dt_key % 100)
+        cutoff_dt = max_dt - timedelta(days=LATE_ARRIVING_LOOKBACK_DAYS)
+        cutoff_dt_key = int(cutoff_dt.strftime("%Y%m%d"))
+        df_silver_taxi = spark.read.table(SILVER_TAXI_TRIPS).filter(col("pickup_datetime") >= lit(cutoff_dt.strftime("%Y-%m-%d")))
+        fact_taxi_exclude_filter = f"date_key < {cutoff_dt_key}"
+        print(f"[FactTaxiDaily] incremental — gold max date_key: {max_dt_key}, re-aggregating from {cutoff_dt_key} ({LATE_ARRIVING_LOOKBACK_DAYS}-day lookback)")
+
 df_agg = (
-    spark.read.table(SILVER_TAXI_TRIPS)
-    .filter(col("year").between(YEAR_START, YEAR_END))
+    df_silver_taxi
     .withColumn("trip_date", to_date(col("pickup_datetime")))
     .withColumn("duration_min",
         (unix_timestamp(col("dropoff_datetime")) - unix_timestamp(col("pickup_datetime"))) / 60
@@ -329,8 +357,7 @@ df_fact_taxi = (
     )
 )
 
-write_gold(df_fact_taxi, "FactTaxiDaily",
-           exclude_filter=f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}")
+write_gold(df_fact_taxi, "FactTaxiDaily", exclude_filter=fact_taxi_exclude_filter)
 display(df_fact_taxi.limit(10))
 
 # METADATA ********************
