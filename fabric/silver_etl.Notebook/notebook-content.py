@@ -44,7 +44,7 @@
 
 year_start = 2023
 year_end = 2023
-incremental_mode = False
+force_refresh = False
 
 # METADATA ********************
 
@@ -282,12 +282,12 @@ display(df_silver.limit(5))
 # ## OpenAQ Measurements
 # Filter out non-positive readings, deduplicate by (location_id, parameter, datetime),
 # cast datetime, add year/month partition keys.
-# In `incremental_mode`: read only bronze rows newer than MAX(datetime) in silver, then MERGE INTO target.
-# In full mode (default): year partition overwrite (existing behavior).
+# Default mode (force_refresh=False): read only bronze rows newer than MAX(datetime) in silver, then MERGE INTO target — fast incremental processing for scheduled runs.
+# force_refresh=True: read full bronze for the year range and overwrite partitions — for manual backfill or recovery.
 
 # CELL ********************
 
-if incremental_mode:
+if not force_refresh:
     try:
         max_dt_row = spark.read.table(SILVER_OPENAQ_MEASUREMENTS).agg(spark_max("datetime")).collect()
         max_dt = max_dt_row[0][0] if max_dt_row and max_dt_row[0][0] is not None else None
@@ -295,13 +295,14 @@ if incremental_mode:
         max_dt = None
 
     if max_dt is None:
-        print(f"[{SILVER_OPENAQ_MEASUREMENTS}] incremental mode but no existing data — falling back to full read")
+        print(f"[{SILVER_OPENAQ_MEASUREMENTS}] no existing data — falling back to full read")
         df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
     else:
-        print(f"[{SILVER_OPENAQ_MEASUREMENTS}] incremental mode — watermark: {max_dt}")
+        print(f"[{SILVER_OPENAQ_MEASUREMENTS}] incremental — watermark: {max_dt}")
         df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS).filter(to_timestamp(col("datetime")) > lit(max_dt))
 else:
     max_dt = None
+    print(f"[{SILVER_OPENAQ_MEASUREMENTS}] force_refresh=True — full read for year range {year_start}-{year_end}")
     df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
 
 PPM_TO_UGM3 = {
@@ -328,10 +329,10 @@ df_silver = (
     .withColumn("month", month(col("datetime")))
 )
 
-if not incremental_mode:
+if force_refresh:
     df_silver = df_silver.filter(col("year").between(year_start, year_end))
 
-if incremental_mode and max_dt is not None:
+if not force_refresh and max_dt is not None:
     target = DeltaTable.forName(spark, SILVER_OPENAQ_MEASUREMENTS)
     (
         target.alias("t")
