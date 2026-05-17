@@ -70,6 +70,13 @@
                 "type": "Expression"
               },
               "type": "int"
+            },
+            "force_refresh": {
+              "value": {
+                "value": "@pipeline().parameters.force_refresh",
+                "type": "Expression"
+              },
+              "type": "bool"
             }
           }
         },

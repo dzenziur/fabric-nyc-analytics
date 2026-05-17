@@ -32,6 +32,7 @@
 
 year_start = 2023
 year_end = 2023
+force_refresh = False
 
 # METADATA ********************
 
@@ -64,7 +65,10 @@ import pandas as pd
 from botocore import UNSIGNED
 from botocore.client import Config
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import date
+from delta.tables import DeltaTable
 from pyspark.sql.functions import col, year, to_timestamp
+from pyspark.sql.utils import AnalysisException
 
 # METADATA ********************
 
@@ -110,10 +114,11 @@ print(f"Year range: {YEAR_START} - {YEAR_END}")
 
 # CELL ********************
 
-def list_keys(s3_client: object, bucket: str, loc_id: int, year_start: int, year_end: int) -> list:
+def list_keys(s3_client: object, bucket: str, loc_id: int, months: list) -> list:
+    """List S3 keys for given (year, month) tuples. Uses month-level prefix for narrower listing."""
     keys = []
-    for year in range(year_start, year_end + 1):
-        prefix = f"{S3_BASE}/locationid={loc_id}/year={year}/"
+    for y, m in months:
+        prefix = f"{S3_BASE}/locationid={loc_id}/year={y}/month={m:02d}/"
         paginator = s3_client.get_paginator("list_objects_v2")
         for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
             keys.extend(obj["Key"] for obj in page.get("Contents", []))
@@ -125,8 +130,8 @@ def download_file(s3_client: object, bucket: str, key: str) -> pd.DataFrame:
     return pd.read_csv(io.BytesIO(obj["Body"].read()), compression="gzip")
 
 
-def read_location(s3_client: object, bucket: str, loc_id: int, year_start: int, year_end: int) -> pd.DataFrame:
-    keys = list_keys(s3_client, bucket, loc_id, year_start, year_end)
+def read_location(s3_client: object, bucket: str, loc_id: int, months: list) -> pd.DataFrame:
+    keys = list_keys(s3_client, bucket, loc_id, months)
     if not keys:
         return pd.DataFrame()
     dfs = []
@@ -135,6 +140,21 @@ def read_location(s3_client: object, bucket: str, loc_id: int, year_start: int, 
         for future in as_completed(futures):
             dfs.append(future.result())
     return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+
+
+def months_in_year_range(year_start: int, year_end: int) -> list:
+    """Generate all (year, month) tuples for full year range."""
+    return [(y, m) for y in range(year_start, year_end + 1) for m in range(1, 13)]
+
+
+def current_and_previous_month() -> list:
+    """Return [(prev_year, prev_month), (curr_year, curr_month)] for incremental fetching."""
+    today = date.today()
+    if today.month == 1:
+        prev = (today.year - 1, 12)
+    else:
+        prev = (today.year, today.month - 1)
+    return [prev, (today.year, today.month)]
 
 # METADATA ********************
 
@@ -197,16 +217,33 @@ print(f"IDs: {sorted(nyc_ids)}")
 # MARKDOWN ********************
 
 # ## Read Measurements from S3 and Write to Bronze
-# read-filter-union-overwrite: preserves rows outside the target year range.
-# Re-running for the same range replaces only those years — idempotent.
+# Default mode (force_refresh=False): fetch only current + previous month from S3, MERGE INTO bronze on natural key.
+#   Most efficient for scheduled daily runs — historical months in S3 archive are immutable.
+# force_refresh=True: fetch full year range, replace year partitions (existing behavior). For manual backfill.
+# First run (table doesn't exist): falls back to full year range mode regardless of force_refresh.
 
 # CELL ********************
+
+# Determine which months to fetch
+try:
+    bronze_exists = spark.catalog.tableExists(BRONZE_OPENAQ_MEASUREMENTS)
+except Exception:
+    bronze_exists = False
+
+if force_refresh or not bronze_exists:
+    months_to_fetch = months_in_year_range(YEAR_START, YEAR_END)
+    use_incremental = False
+    print(f"Full mode — fetching year range {YEAR_START}-{YEAR_END} ({len(months_to_fetch)} months)")
+else:
+    months_to_fetch = current_and_previous_month()
+    use_incremental = True
+    print(f"Incremental mode — fetching months: {months_to_fetch}")
 
 dfs_new = []
 total_rows = 0
 
 for loc_id in nyc_ids:
-    df_pd = read_location(s3, S3_BUCKET, loc_id, YEAR_START, YEAR_END)
+    df_pd = read_location(s3, S3_BUCKET, loc_id, months_to_fetch)
     if df_pd.empty:
         print(f"[location {loc_id}] no data, skipping")
         continue
@@ -220,32 +257,49 @@ for loc_id in nyc_ids:
 print(f"New rows fetched from S3: {total_rows}")
 
 if not dfs_new:
-    raise ValueError(f"No data found in S3 for any NYC station in year range {YEAR_START}–{YEAR_END}. Aborting.")
+    if use_incremental:
+        print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] no new data for months {months_to_fetch} — skipping write")
+    else:
+        raise ValueError(f"No data found in S3 for any NYC station in year range {YEAR_START}–{YEAR_END}. Aborting.")
+else:
+    df_new = dfs_new[0]
+    for d in dfs_new[1:]:
+        df_new = df_new.unionByName(d, allowMissingColumns=True)
 
-df_new = dfs_new[0]
-for d in dfs_new[1:]:
-    df_new = df_new.unionByName(d, allowMissingColumns=True)
+    if use_incremental:
+        target = DeltaTable.forName(spark, BRONZE_OPENAQ_MEASUREMENTS)
+        (
+            target.alias("t")
+            .merge(
+                df_new.alias("s"),
+                "t.location_id = s.location_id AND t.sensors_id = s.sensors_id "
+                "AND t.datetime = s.datetime AND t.parameter = s.parameter"
+            )
+            .whenNotMatchedInsertAll()
+            .execute()
+        )
+        print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] incremental merge done")
+    else:
+        try:
+            df_existing = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
+            if "year" not in df_existing.columns:
+                df_existing = df_existing.withColumn("year", year(to_timestamp(col("datetime"))))
+            df_existing = df_existing.filter(
+                (col("year") < YEAR_START) | (col("year") > YEAR_END)
+            )
+            df_final = df_existing.unionByName(df_new, allowMissingColumns=True)
+        except AnalysisException:
+            df_final = df_new
 
-try:
-    df_existing = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
-    if "year" not in df_existing.columns:
-        df_existing = df_existing.withColumn("year", year(to_timestamp(col("datetime"))))
-    df_existing = df_existing.filter(
-        (col("year") < YEAR_START) | (col("year") > YEAR_END)
-    )
-    df_final = df_existing.unionByName(df_new, allowMissingColumns=True)
-except Exception:
-    df_final = df_new
-
-print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] rows before write: {df_final.count()}")
-(
-    df_final.write.format("delta")
-    .mode("overwrite")
-    .option("overwriteSchema", "true")
-    .partitionBy("year")
-    .saveAsTable(BRONZE_OPENAQ_MEASUREMENTS)
-)
-print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] write done")
+        print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] rows before write: {df_final.count()}")
+        (
+            df_final.write.format("delta")
+            .mode("overwrite")
+            .option("overwriteSchema", "true")
+            .partitionBy("year")
+            .saveAsTable(BRONZE_OPENAQ_MEASUREMENTS)
+        )
+        print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] write done")
 
 # METADATA ********************
 
