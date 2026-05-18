@@ -284,11 +284,27 @@ great_expectations checkpoint run silver_taxi_checkpoint
 
 ## Step 7c — Schedule Automation (Phase 6)
 
-1. `pl_master_orchestrator` already exists — sync `feature/data-orchestration` branch
-2. Activity structure (same as Step 5 above)
-3. Schedule:
-   - Daily at 06:00 UTC for FX + Air Quality + OpenAQ
-   - Monthly trigger for Taxi (manual or first-of-month cron)
+`pl_master_orchestrator` runs on a twice-daily schedule configured directly in Fabric UI.
+
+### Schedule configuration
+
+1. Workspace → `pl_master_orchestrator` → **Schedule** tab → **Add schedule**
+2. Set **Every day**, times: **06:00** and **18:00**, timezone: **UTC**
+3. Open **Parameters** for the schedule and set:
+   | Parameter | Type | Value |
+   |-----------|------|-------|
+   | `year_start` | Int | `2021` |
+   | `year_end` | Int | current year (update annually each January) |
+   | `openaq_api_key` | SecureString | your OpenAQ API key |
+   | `force_refresh` | Bool | `false` |
+4. Toggle **On** → Save
+
+### Why twice daily
+- **06:00 UTC** — catches overnight ECB FX updates (~16:00 CET previous day) and OpenAQ measurements
+- **18:00 UTC** — catches midday updates; provides afternoon dashboard refresh
+
+### Why static year_start=2021
+`prepare_taxi_ingestion` uses the year range only to detect *missing* bronze files — already-downloaded files are skipped (idempotent). With `force_refresh=false` all other layers (silver, gold) use incremental logic (watermarks / partition diffs / 7-day lookback) and ignore `year_start`/`year_end` entirely. Update `year_end` once per year when a new calendar year begins.
 
 ---
 

@@ -10,7 +10,7 @@ Source: NYC TLC — https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
 | VendorID | int | Taxi vendor (1 = Creative Mobile, 2 = VeriFone) |
 | tpep_pickup_datetime | timestamp | Trip start datetime |
 | tpep_dropoff_datetime | timestamp | Trip end datetime |
-| passenger_count | int | Number of passengers |
+| passenger_count | double/long | Number of passengers (type varies by TLC file generation: double in 2021–2025, long in 2026+) |
 | trip_distance | float | Distance in miles |
 | RatecodeID | int | Rate code (1=Standard, 2=JFK, 3=Newark, 4=Nassau/Westchester, 5=Negotiated, 6=Group ride) |
 | store_and_fwd_flag | string | Y/N — trip record held in vehicle memory before send |
