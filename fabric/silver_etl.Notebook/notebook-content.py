@@ -261,12 +261,18 @@ if not taxi_files:
 else:
     dfs = []
     for path in taxi_files:
+        df_f = spark.read.parquet(path)
+        # Normalise Airport_fee capitalisation introduced in 2026 TLC files
+        if "Airport_fee" in df_f.columns:
+            df_f = df_f.withColumnRenamed("Airport_fee", "airport_fee")
         df_f = (
-            spark.read.parquet(path)
-            .withColumn("VendorID",     col("VendorID").cast("long"))
-            .withColumn("PULocationID", col("PULocationID").cast("long"))
-            .withColumn("DOLocationID", col("DOLocationID").cast("long"))
-            .withColumn("payment_type", col("payment_type").cast("long"))
+            df_f
+            .withColumn("VendorID",        col("VendorID").cast("long"))
+            .withColumn("RatecodeID",      col("RatecodeID").cast("double"))
+            .withColumn("PULocationID",    col("PULocationID").cast("long"))
+            .withColumn("DOLocationID",    col("DOLocationID").cast("long"))
+            .withColumn("payment_type",    col("payment_type").cast("long"))
+            .withColumn("passenger_count", col("passenger_count").cast("double"))
         )
         dfs.append(df_f)
 
