@@ -14,6 +14,7 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 **Active branch:** `feature/governance-monitoring`
 **Deadline:** May 26, 2026 (defense) — target May 15 for main features
+**Last session:** 2026-05-18 — Phase 6 closed: RLS configured (5 roles on DimZone.service_zone), lineage documented via Fabric built-in workspace lineage view (Purview Data Map evaluated and skipped — free tier lacks lineage graph), docs synced
 
 ### Phase completion
 
@@ -21,19 +22,16 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 |-------|--------|-------|
 | Phase 0 — Terraform IaC | ✅ Done | workspace + bronze_lakehouse + silver_lakehouse + gold_warehouse |
 | Phase 1 — Bronze ingestion | ✅ Done | Taxi, GDP, FX, OpenAQ locations, OpenAQ measurements (S3 archive, boto3), TLC taxi zones |
-| Phase 2 — Silver ETL | ✅ Done | silver_taxi_trips, silver_gdp, silver_fx_rates, silver_openaq_locations, silver_openaq_measurements |
+| Phase 2 — Silver ETL | ✅ Done | silver_taxi_trips (~201M rows, incl. 2026 data), silver_gdp, silver_fx_rates, silver_openaq_locations, silver_openaq_measurements |
 | Phase 3 — Gold / star schema | ✅ Done | DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily in gold_warehouse |
 | Phase 4 — Visualizations | ✅ Done | 4 dashboards; Air Quality map (Azure Maps + WHO thresholds + conditional KPI fill); semantic model fixes |
 | Phase 5 — Master Orchestrator | ✅ Done | pl_master_orchestrator + parameterized silver/gold notebooks + prepare_taxi_ingestion (pre-flight + incremental) |
-| Phase 6 — Governance & Monitoring | 🔄 In progress | Schedules, RLS, Purview lineage |
+| Phase 6 — Governance & Monitoring | ✅ Done | Twice-daily schedule + RLS (5 roles on DimZone.service_zone) + lineage via Fabric built-in workspace view |
 | Phase 7 — External Integrations | ❌ Not started | Weather + InfluxDB + Grafana, Great Expectations + Telegram bot |
 
 ### Current branch goal (`feature/governance-monitoring`)
 
-Phase 6 — Governance and Monitoring per spec (`spec/Microsoft Fabric Data Engineering Project.pdf`):
-- Automate refresh schedules (daily/hourly) — **required**
-- Row-Level Security in Power BI — optional
-- Purview lineage — optional
+Phase 6 — Governance and Monitoring per spec (`spec/Microsoft Fabric Data Engineering Project.pdf`): Schedule ✅ (required) · RLS ✅ (optional) · Lineage ✅ (optional, via Fabric built-in lineage view — Purview Data Map skipped). Details below and in `docs/architecture.md`.
 
 #### Schedule automation
 
@@ -51,15 +49,11 @@ Single `force_refresh` (bool, default False) cascades from orchestrator → note
 
 Remaining tables (`silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, all gold dims) — full overwrite, small size makes incremental overhead exceed savings. Further candidates in Backlog → Incremental ETL.
 
-#### Row-Level Security (optional per spec, ~1–2h)
-- [ ] Define role taxonomy: Admin / Manhattan-only / Outer-boroughs-only — decide what each role sees in DimZone
-- [ ] Configure RLS in `nyc_analytics_model` — DAX filter expressions on DimZone by borough
-- [ ] Document role assignments; test with "View as role" in Power BI
+#### Row-Level Security (optional per spec)
+- [x] RLS configured in `nyc_analytics_model` — 5 roles on `DimZone[service_zone]` (Admin, Yellow Cab Dispatcher, Green Cab Dispatcher, Airports Operator, EWR Operator) mapping to real NYC TLC licensing zones; filter propagates to FactTaxiDaily via zone_key relationship. Role-to-user assignment done post-deployment in Power BI Service. See `docs/architecture.md`.
 
-#### Microsoft Purview lineage (optional per spec, ~2–3h)
-- [ ] Connect Fabric workspace to Purview tenant (requires Purview account — free trial available)
-- [ ] Verify Bronze → Silver → Gold lineage captured automatically
-- [ ] Add screenshot/note in `docs/architecture.md`
+#### Lineage (optional per spec)
+- [x] End-to-end data lineage documented via Fabric built-in workspace lineage view — covers external sources → Bronze (Dataflows + Notebooks + Pipelines) → Silver → Gold → Semantic Model → Report. Screenshot at `docs/img/workspace-lineage.png`. Microsoft Purview Data Map evaluated and skipped (paid Azure resource, not needed for single-workspace deployment — free Purview Data Catalog tier does not include lineage graph). See `docs/architecture.md` → Security & Governance.
 
 ### Next branch — `feature/external-integrations` (Phase 7)
 
@@ -125,6 +119,9 @@ Steps 1-5 done. Remaining tables are full overwrite — savings minimal vs added
 ### Notebook logging improvements
 - [ ] `silver_etl` — taxi incremental append: after append log total silver row count and delta (rows added). Pattern: `rows_before = spark.read.table(SILVER_TAXI_TRIPS).count()` before write → `rows_after = spark.read.table(SILVER_TAXI_TRIPS).count()` after → `print(f"appended {rows_after - rows_before:,} rows; silver total: {rows_after:,}")`. Currently only logs "rows before append" of the new batch, which is confusing.
 
+### Governance — lineage completeness audit
+- [ ] Verify Fabric built-in workspace lineage view (`Workspace → Lineage view`) captures all expected upstream/downstream edges. Suspected gaps: notebook → table edges may not be visible for all notebooks; external source nodes may be missing for some pipelines. Compare graph against `docs/architecture.md` → Data Flow section and document any missing edges (e.g. add manual annotations or screenshot caveats). If gaps are significant, re-evaluate Purview Data Map (free Azure tier).
+
 ### Docs accuracy
 - [ ] Audit all column types in `docs/data_dictionary.md` against actual Spark schemas — run `printSchema()` for each Bronze and Silver table and compare. Found first discrepancy: `bronze_openaq_measurements.datetime` is `string` in practice, `timestamp` in docs (already fixed).
 
@@ -155,7 +152,7 @@ fabric/       All Fabric workspace items: dataflows, pipelines, notebooks, wareh
               Synced automatically via Fabric Git integration
 jobs/         External Python jobs — run outside Fabric (added in Phase 7)
 terraform/    IaC: workspace, lakehouses, warehouse (run `make help`)
-docs/         Architecture, data dictionary, how-to-run, learning brief
+docs/         Architecture, data dictionary, how-to-run, governance screenshots (img/)
 spec/         Original project specification (PDF)
 ```
 
