@@ -349,6 +349,13 @@ pl_master_orchestrator(year_start, year_end)
 
 ## Security & Governance
 
-- **Row-Level Security:** not configured (Phase 6 — optional)
-- **Purview Lineage:** not enabled (Phase 6 — optional)
-- **Access control:** Workspace-level roles (Admin / Member / Contributor / Viewer)
+- **Access control:** Workspace-level roles (Admin / Member / Contributor / Viewer). Only `Viewer` respects RLS — Admin/Member/Contributor bypass RLS by design.
+- **Row-Level Security:** 5 static roles on `nyc_analytics_model` filtering `DimZone[service_zone]`. See [Power BI Semantic Model](#power-bi-semantic-model) section above for the full role table and rationale.
+- **Lineage:** end-to-end data flow visualised via Fabric workspace built-in lineage view (`Workspace → Lineage view`). The graph covers external sources (TLC CloudFront, ECB FX, World Bank, OpenAQ) → Bronze ingestion (Dataflows + Notebooks + Pipelines) → Silver ETL → Gold Warehouse → Semantic Model → Report. See screenshot: `docs/img/workspace-lineage.png`.
+
+  ![Workspace lineage](img/workspace-lineage.png)
+
+- **Microsoft Purview:** evaluated and not adopted. The free Purview Data Catalog (`purview.microsoft.com`) provides asset discovery and schema metadata for Fabric items but does **not** include the lineage graph in the free tier — full lineage requires a paid Azure Purview Data Map resource. For a single-workspace deployment, the built-in Fabric workspace lineage view is functionally equivalent without the additional Azure resource and provisioning cost.
+
+### Schedule and refresh
+- `pl_master_orchestrator` runs twice daily at **06:00 UTC** and **18:00 UTC** with `force_refresh=false`, `year_start=2021`, `year_end=<current year>`. See [`docs/how_to_run.md`](how_to_run.md) for full schedule setup and incremental-mode behaviour.
