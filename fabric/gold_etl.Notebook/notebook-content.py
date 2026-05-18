@@ -99,6 +99,10 @@ SILVER_OPENAQ_LOCATIONS     = f"{SILVER}.silver_openaq_locations"
 SILVER_FX_RATES             = f"{SILVER}.silver_fx_rates"
 SILVER_GDP                  = f"{SILVER}.silver_gdp"
 
+# Workaround: Spark CBO does not handle TimestampNTZType in filter estimation,
+# causing MatchError on .count() calls involving timestamp_ntz columns.
+spark.conf.set("spark.sql.cbo.joinReorder.enabled", "false")
+
 print(f"Year range: {YEAR_START} - {YEAR_END}")
 
 # METADATA ********************
