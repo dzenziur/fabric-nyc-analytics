@@ -10,7 +10,7 @@ Source: NYC TLC — https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
 | VendorID | int | Taxi vendor (1 = Creative Mobile, 2 = VeriFone) |
 | tpep_pickup_datetime | timestamp | Trip start datetime |
 | tpep_dropoff_datetime | timestamp | Trip end datetime |
-| passenger_count | int | Number of passengers |
+| passenger_count | double/long | Number of passengers (type varies by TLC file generation: double in 2021–2025, long in 2026+) |
 | trip_distance | float | Distance in miles |
 | RatecodeID | int | Rate code (1=Standard, 2=JFK, 3=Newark, 4=Nassau/Westchester, 5=Negotiated, 6=Group ride) |
 | store_and_fwd_flag | string | Y/N — trip record held in vehicle memory before send |
@@ -129,27 +129,28 @@ Partitioned by: `year`, `month`.
 
 | Column | Type | Description | Transformation |
 |--------|------|-------------|----------------|
-| vendor_id | int | Taxi vendor (1=Creative Mobile, 2=VeriFone) | Renamed from VendorID |
-| pickup_datetime | timestamp | Trip start | Renamed from tpep_pickup_datetime |
-| dropoff_datetime | timestamp | Trip end | Renamed from tpep_dropoff_datetime |
-| passenger_count | int | Number of passengers | Unchanged |
-| trip_distance | float | Distance in miles | Filtered: > 0 and <= 100 (trips above 100 mi are physically implausible for NYC) |
-| ratecode_id | int | Rate code | Renamed from RatecodeID |
+| vendor_id | long | Taxi vendor (1=Creative Mobile, 2=VeriFone) | Renamed from VendorID; cast to long |
+| pickup_datetime | timestamp_ntz | Trip start | Renamed from tpep_pickup_datetime |
+| dropoff_datetime | timestamp_ntz | Trip end | Renamed from tpep_dropoff_datetime |
+| passenger_count | double | Number of passengers | Cast to double (TLC files vary: double in 2021–2025, long/int in 2026+) |
+| trip_distance | double | Distance in miles | Filtered: > 0 and <= 100 (trips above 100 mi are physically implausible for NYC) |
+| ratecode_id | double | Rate code | Renamed from RatecodeID; cast to double (long in 2026+ files) |
 | store_and_fwd_flag | string | Trip stored in vehicle memory before send | Unchanged |
-| pu_location_id | int | Pickup TLC zone ID | Renamed from PULocationID |
-| do_location_id | int | Dropoff TLC zone ID | Renamed from DOLocationID |
-| payment_type | int | 1=Credit card, 2=Cash, 3=No charge, 4=Dispute | Unchanged |
-| fare_amount | float | Metered fare (USD); filtered > 0 | Unchanged |
-| extra | float | Extras and surcharges | Unchanged |
-| mta_tax | float | MTA tax | Unchanged |
-| tip_amount | float | Tip amount | Unchanged |
-| tolls_amount | float | Toll charges | Unchanged |
-| improvement_surcharge | float | $0.30 improvement surcharge | Unchanged |
-| total_amount | float | Total charged (USD) | Unchanged |
-| congestion_surcharge | float | NYC congestion surcharge | Unchanged |
-| airport_fee | float | JFK/LaGuardia airport fee | Unchanged |
-| year | int | Calendar year (partition key) | Derived: YEAR(pickup_datetime) |
-| month | int | Month 1–12 (partition key) | Derived: MONTH(pickup_datetime) |
+| pu_location_id | long | Pickup TLC zone ID | Renamed from PULocationID; cast to long |
+| do_location_id | long | Dropoff TLC zone ID | Renamed from DOLocationID; cast to long |
+| payment_type | long | 1=Credit card, 2=Cash, 3=No charge, 4=Dispute | Cast to long |
+| fare_amount | double | Metered fare (USD); filtered > 0 | Unchanged |
+| extra | double | Extras and surcharges | Unchanged |
+| mta_tax | double | MTA tax | Unchanged |
+| tip_amount | double | Tip amount | Unchanged |
+| tolls_amount | double | Toll charges | Unchanged |
+| improvement_surcharge | double | $0.30 improvement surcharge | Unchanged |
+| total_amount | double | Total charged (USD) | Unchanged |
+| congestion_surcharge | double | NYC congestion surcharge | Unchanged |
+| airport_fee | double | JFK/LaGuardia airport fee | Renamed from Airport_fee in 2026+ files (capitalisation drift) |
+| cbd_congestion_fee | double | NYC CBD congestion fee (introduced 2025) | Unchanged |
+| year | integer | Calendar year (partition key) | Derived: YEAR(pickup_datetime) |
+| month | integer | Month 1–12 (partition key) | Derived: MONTH(pickup_datetime) |
 
 ---
 

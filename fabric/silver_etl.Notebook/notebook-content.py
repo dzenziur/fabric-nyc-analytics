@@ -44,6 +44,7 @@
 
 year_start = 2023
 year_end = 2023
+force_refresh = False
 
 # METADATA ********************
 
@@ -59,7 +60,9 @@ year_end = 2023
 
 # CELL ********************
 
-from pyspark.sql.functions import col, lit, to_date, to_timestamp, when, year, month
+from delta.tables import DeltaTable
+from pyspark.sql.functions import col, lit, to_date, to_timestamp, when, year, month, max as spark_max
+from pyspark.sql.utils import AnalysisException
 
 # METADATA ********************
 
@@ -215,57 +218,99 @@ display(df_silver.limit(5))
 
 # ## NYC Taxi Trips
 # Rename columns to snake_case, add year/month for partitioning, filter out invalid trips.
+# Default mode (force_refresh=False): process only bronze files whose (year, month) is not yet in silver — append new partitions.
+# force_refresh=True: re-process all files in year_start..year_end range (partition overwrite).
 
 # CELL ********************
 
-taxi_files = sorted(
-    f.path for f in notebookutils.fs.ls(BRONZE_TAXI_FILES)
-    if f.name.endswith(".parquet")
-    and year_start <= int(f.name[16:20]) <= year_end
-)
+def _file_year_month(name: str) -> tuple:
+    # yellow_tripdata_YYYY-MM.parquet → (YYYY, MM)
+    return int(name[16:20]), int(name[21:23])
 
-print(f"Taxi files to read ({year_start}–{year_end}): {len(taxi_files)}")
+if force_refresh:
+    use_full_mode = True
+    existing_partitions = set()
+    print(f"[{SILVER_TAXI_TRIPS}] force_refresh=True — processing year range {year_start}-{year_end}")
+else:
+    try:
+        existing_partitions = set(
+            (row.year, row.month)
+            for row in spark.read.table(SILVER_TAXI_TRIPS).select("year", "month").distinct().collect()
+        )
+        use_full_mode = len(existing_partitions) == 0
+        if use_full_mode:
+            print(f"[{SILVER_TAXI_TRIPS}] silver is empty — falling back to full read of year range {year_start}-{year_end}")
+        else:
+            print(f"[{SILVER_TAXI_TRIPS}] incremental — {len(existing_partitions)} existing partitions in silver")
+    except AnalysisException:
+        use_full_mode = True
+        existing_partitions = set()
+        print(f"[{SILVER_TAXI_TRIPS}] table doesn't exist — falling back to full read of year range {year_start}-{year_end}")
 
-dfs = []
-for path in taxi_files:
-    df_f = (
-        spark.read.parquet(path)
-        .withColumn("VendorID",     col("VendorID").cast("long"))
-        .withColumn("PULocationID", col("PULocationID").cast("long"))
-        .withColumn("DOLocationID", col("DOLocationID").cast("long"))
-        .withColumn("payment_type", col("payment_type").cast("long"))
+all_bronze_files = [f for f in notebookutils.fs.ls(BRONZE_TAXI_FILES) if f.name.endswith(".parquet")]
+
+if use_full_mode:
+    taxi_files = sorted(f.path for f in all_bronze_files if year_start <= _file_year_month(f.name)[0] <= year_end)
+else:
+    taxi_files = sorted(f.path for f in all_bronze_files if _file_year_month(f.name) not in existing_partitions)
+
+print(f"Taxi files to process: {len(taxi_files)}")
+
+if not taxi_files:
+    print(f"[{SILVER_TAXI_TRIPS}] no files to process — skipping")
+else:
+    dfs = []
+    for path in taxi_files:
+        df_f = spark.read.parquet(path)
+        # Normalise Airport_fee capitalisation introduced in 2026 TLC files
+        if "Airport_fee" in df_f.columns:
+            df_f = df_f.withColumnRenamed("Airport_fee", "airport_fee")
+        df_f = (
+            df_f
+            .withColumn("VendorID",        col("VendorID").cast("long"))
+            .withColumn("RatecodeID",      col("RatecodeID").cast("double"))
+            .withColumn("PULocationID",    col("PULocationID").cast("long"))
+            .withColumn("DOLocationID",    col("DOLocationID").cast("long"))
+            .withColumn("payment_type",    col("payment_type").cast("long"))
+            .withColumn("passenger_count", col("passenger_count").cast("double"))
+        )
+        dfs.append(df_f)
+
+    df = dfs[0]
+    for d in dfs[1:]:
+        df = df.unionByName(d, allowMissingColumns=True)
+
+    df_silver = (
+        df
+        .withColumnRenamed("VendorID", "vendor_id")
+        .withColumnRenamed("tpep_pickup_datetime", "pickup_datetime")
+        .withColumnRenamed("tpep_dropoff_datetime", "dropoff_datetime")
+        .withColumnRenamed("RatecodeID", "ratecode_id")
+        .withColumnRenamed("PULocationID", "pu_location_id")
+        .withColumnRenamed("DOLocationID", "do_location_id")
+        .withColumn("year", year(col("pickup_datetime")))
+        .withColumn("month", month(col("pickup_datetime")))
+        .dropDuplicates(["pickup_datetime", "dropoff_datetime", "pu_location_id", "do_location_id", "fare_amount"])
+        .filter(
+            col("pickup_datetime").isNotNull()
+            & col("pu_location_id").isNotNull()
+            & col("do_location_id").isNotNull()
+            & (col("trip_distance") > 0)
+            & (col("trip_distance") <= 100)
+            & (col("fare_amount") > 0)
+        )
     )
-    dfs.append(df_f)
 
-df = dfs[0]
-for d in dfs[1:]:
-    df = df.unionByName(d, allowMissingColumns=True)
+    if use_full_mode:
+        df_silver = df_silver.filter(col("year").between(year_start, year_end))
+        write_silver(df_silver, SILVER_TAXI_TRIPS, partition_by=["year", "month"],
+                     replace_where=f"year >= {year_start} AND year <= {year_end}")
+    else:
+        print(f"[{SILVER_TAXI_TRIPS}] rows before append: {df_silver.count()}")
+        df_silver.write.format("delta").mode("append").saveAsTable(SILVER_TAXI_TRIPS)
+        print(f"[{SILVER_TAXI_TRIPS}] incremental append done")
 
-df_silver = (
-    df
-    .withColumnRenamed("VendorID", "vendor_id")
-    .withColumnRenamed("tpep_pickup_datetime", "pickup_datetime")
-    .withColumnRenamed("tpep_dropoff_datetime", "dropoff_datetime")
-    .withColumnRenamed("RatecodeID", "ratecode_id")
-    .withColumnRenamed("PULocationID", "pu_location_id")
-    .withColumnRenamed("DOLocationID", "do_location_id")
-    .withColumn("year", year(col("pickup_datetime")))
-    .withColumn("month", month(col("pickup_datetime")))
-    .dropDuplicates(["pickup_datetime", "dropoff_datetime", "pu_location_id", "do_location_id", "fare_amount"])
-    .filter(
-        col("pickup_datetime").isNotNull()
-        & col("pu_location_id").isNotNull()
-        & col("do_location_id").isNotNull()
-        & (col("trip_distance") > 0)
-        & (col("trip_distance") <= 100)
-        & (col("fare_amount") > 0)
-        & col("year").between(year_start, year_end)
-    )
-)
-
-write_silver(df_silver, SILVER_TAXI_TRIPS, partition_by=["year", "month"],
-             replace_where=f"year >= {year_start} AND year <= {year_end}")
-display(df_silver.limit(5))
+    display(df_silver.limit(5))
 
 # METADATA ********************
 
@@ -278,11 +323,29 @@ display(df_silver.limit(5))
 
 # ## OpenAQ Measurements
 # Filter out non-positive readings, deduplicate by (location_id, parameter, datetime),
-# cast datetime, add year/month partition keys. Partitioned by year/month.
+# cast datetime, add year/month partition keys.
+# Default mode (force_refresh=False): read only bronze rows newer than MAX(datetime) in silver, then MERGE INTO target — fast incremental processing for scheduled runs.
+# force_refresh=True: read full bronze for the year range and overwrite partitions — for manual backfill or recovery.
 
 # CELL ********************
 
-df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
+if not force_refresh:
+    try:
+        max_dt_row = spark.read.table(SILVER_OPENAQ_MEASUREMENTS).agg(spark_max("datetime")).collect()
+        max_dt = max_dt_row[0][0] if max_dt_row and max_dt_row[0][0] is not None else None
+    except AnalysisException:
+        max_dt = None
+
+    if max_dt is None:
+        print(f"[{SILVER_OPENAQ_MEASUREMENTS}] no existing data — falling back to full read")
+        df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
+    else:
+        print(f"[{SILVER_OPENAQ_MEASUREMENTS}] incremental — watermark: {max_dt}")
+        df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS).filter(to_timestamp(col("datetime")) > lit(max_dt))
+else:
+    max_dt = None
+    print(f"[{SILVER_OPENAQ_MEASUREMENTS}] force_refresh=True — full read for year range {year_start}-{year_end}")
+    df = spark.read.table(BRONZE_OPENAQ_MEASUREMENTS)
 
 PPM_TO_UGM3 = {
     "no2": 1882, "o3": 1962, "co": 1145,
@@ -306,11 +369,27 @@ df_silver = (
     .filter(col("location_id").isNotNull() & col("parameter").isNotNull() & col("datetime").isNotNull())
     .withColumn("year", year(col("datetime")))
     .withColumn("month", month(col("datetime")))
-    .filter(col("year").between(year_start, year_end))
 )
 
-write_silver(df_silver, SILVER_OPENAQ_MEASUREMENTS, partition_by=["year", "month"],
-             replace_where=f"year >= {year_start} AND year <= {year_end}")
+if force_refresh:
+    df_silver = df_silver.filter(col("year").between(year_start, year_end))
+
+if not force_refresh and max_dt is not None:
+    target = DeltaTable.forName(spark, SILVER_OPENAQ_MEASUREMENTS)
+    (
+        target.alias("t")
+        .merge(
+            df_silver.alias("s"),
+            "t.location_id = s.location_id AND t.parameter = s.parameter AND t.datetime = s.datetime"
+        )
+        .whenNotMatchedInsertAll()
+        .execute()
+    )
+    print(f"[{SILVER_OPENAQ_MEASUREMENTS}] incremental merge done")
+else:
+    write_silver(df_silver, SILVER_OPENAQ_MEASUREMENTS, partition_by=["year", "month"],
+                 replace_where=f"year >= {year_start} AND year <= {year_end}")
+
 display(df_silver.limit(5))
 
 # METADATA ********************

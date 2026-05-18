@@ -12,8 +12,9 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 ## Current Status
 
-**Active branch:** `feature/dashboards-and-robustness`
+**Active branch:** `feature/governance-monitoring`
 **Deadline:** May 26, 2026 (defense) — target May 15 for main features
+**Last session:** 2026-05-18 — Phase 6 closed: RLS configured (5 roles on DimZone.service_zone), lineage documented via Fabric built-in workspace lineage view (Purview Data Map evaluated and skipped — free tier lacks lineage graph), docs synced
 
 ### Phase completion
 
@@ -21,91 +22,54 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 |-------|--------|-------|
 | Phase 0 — Terraform IaC | ✅ Done | workspace + bronze_lakehouse + silver_lakehouse + gold_warehouse |
 | Phase 1 — Bronze ingestion | ✅ Done | Taxi, GDP, FX, OpenAQ locations, OpenAQ measurements (S3 archive, boto3), TLC taxi zones |
-| Phase 2 — Silver ETL | ✅ Done | silver_taxi_trips, silver_gdp, silver_fx_rates, silver_openaq_locations, silver_openaq_measurements |
+| Phase 2 — Silver ETL | ✅ Done | silver_taxi_trips (~201M rows, incl. 2026 data), silver_gdp, silver_fx_rates, silver_openaq_locations, silver_openaq_measurements |
 | Phase 3 — Gold / star schema | ✅ Done | DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily in gold_warehouse |
-| Phase 4 — Visualizations | ✅ Done | All 4 dashboards complete; ppm normalization, location slicer, Correlation enhanced, semantic model date formats + summarizeBy fixed, Avg O3 KPI added |
-| Phase 5 — Master Orchestrator | ✅ Done | pl_master_orchestrator + parameterized silver/gold notebooks + dynamic taxi loop |
-| Phase 6 — Governance & Monitoring | ❌ Not started | Schedules, RLS, Purview lineage — planned for `feature/governance-monitoring` |
+| Phase 4 — Visualizations | ✅ Done | 4 dashboards; Air Quality map (Azure Maps + WHO thresholds + conditional KPI fill); semantic model fixes |
+| Phase 5 — Master Orchestrator | ✅ Done | pl_master_orchestrator + parameterized silver/gold notebooks + prepare_taxi_ingestion (pre-flight + incremental) |
+| Phase 6 — Governance & Monitoring | ✅ Done | Twice-daily schedule + RLS (5 roles on DimZone.service_zone) + lineage via Fabric built-in workspace view |
 | Phase 7 — External Integrations | ❌ Not started | Weather + InfluxDB + Grafana, Great Expectations + Telegram bot |
 
-### Current branch goal (`feature/dashboards-and-robustness`)
+### Current branch goal (`feature/governance-monitoring`)
 
-Polish, robustness, and data-quality improvements that emerged after Phase 4–5 completion.
-Originally scoped as Phase 6 governance work, but evolved into broader cleanup —
-strict governance items deferred to next branch.
+Phase 6 — Governance and Monitoring per spec (`spec/Microsoft Fabric Data Engineering Project.pdf`): Schedule ✅ (required) · RLS ✅ (optional) · Lineage ✅ (optional, via Fabric built-in lineage view — Purview Data Map skipped). Details below and in `docs/architecture.md`.
 
-#### Power BI dashboards & semantic model
-- [X] Investigate Max PM2.5 = 2.18K anomaly — confirmed source data issue from OpenAQ S3 (station "State Dept of Environmental Conservation", Nov 2024, 325 bad rows up to 2175 µg/m³); replaced Max PM2.5 KPI with Avg O3 on Air Quality page
-- [X] Add year tile slicer to Air Quality page
-- [X] Add year tile slicer to Mobility page
-- [X] Investigate Avg Trip Distance = 24 mi anomaly — root cause: TLC source data has corrupt trip_distance values in low-volume zones (e.g. Great Kills: 53 trips, avg 1134 mi); fixed in silver_etl by adding `trip_distance <= 100` filter
-- [X] Fix date format on `DimDate[date]` and `DimFX[date]` from `General Date` to `mmmm d, yyyy` — eliminates "12:00:00 AM" in tooltips and shows year on multi-year charts
-- [X] `summarizeBy: none` on date components (year/quarter/month/week_of_year/day_of_month/day_of_week), avg metrics (avg_fare_usd, avg_trip_duration_min, avg_trip_distance_mi, avg_value, max_value, min_value), and `FactAirQualityDaily[location_id]` — prevents accidental aggregation when columns dragged to Values well
-- [X] `DimDate[month_name]` `sortByColumn: month` — month names sort chronologically not alphabetically on charts
-- [X] Remove `Max PM2.5` DAX measure (replaced with `Avg O3` on Air Quality page)
-- [X] Air Quality map visual — added `latitude`/`longitude` to `FactAirQualityDaily` in gold_etl (join with `silver_openaq_locations`); Azure Maps bubble visual on Air Quality page with gradient color by Avg PM2.5 (min light blue → mid yellow → max red), Avg PM2.5 in Size, tooltips for all 3 pollutants, click on bubble filters trend chart and KPI cards (Edit interactions); replaced station dropdown slicer
-- [X] Air Quality trend polish — WHO 24h threshold reference lines (PM2.5=15, NO2=25, O3=100) as Y-axis Constant Lines, dashed, color-matched to trend lines; series labels replace legend (per-line label at right edge); zoom slider added for time-range drill-down
-- [X] Conditional fill color on KPI cards — Rules-based (no DAX) on Air Quality Avg PM2.5 and Avg NO2 cards (pastel green/yellow/red based on WHO thresholds); Correlation page Avg PM2.5 and Avg NO2 cards updated via Format Painter for consistency
+#### Schedule automation
 
-#### Silver ETL robustness
-- [X] Remove redundant `df.count()` at the start of each ETL section — `write_silver` already logs row count; double scan wastes resources (5 places)
-- [X] Remove `.orderBy()` before write — applied to all 4 tables (fx_rates, gdp, openaq_locations, openaq_measurements) for consistency; Delta Lake doesn't use this sort
-- [X] Add `trip_distance <= 100` filter on silver_taxi_trips — caps physically implausible TLC source data corruption (root cause of Avg Trip Distance anomaly)
+- [x] `pl_master_orchestrator` scheduled twice daily — 06:00 and 18:00 UTC, `force_refresh=false`, `year_start=2021`, `year_end=2026`. See `docs/how_to_run.md` for details.
 
-#### Gold ETL robustness
-- [X] Narrow exception handling in `write_gold` and DimDate range lookup — catch `Py4JJavaError` (synapsesql connector wraps Java exceptions; `AnalysisException` doesn't apply here) with message-based filter for "source is invalid" / "read access" patterns; network/config errors now propagate instead of being silently swallowed
-- [X] Separate taxi zones ingestion into new `bronze_ingest_taxi_zones` notebook → writes to `bronze_taxi_zones` Delta table; `gold_etl` now reads from that table instead of downloading CSV from CloudFront every run
+#### Incremental processing (force_refresh parameter)
 
-#### Bronze improvements
-- [X] `bronze_ingest_openaq_locations` — page cap raised 100→500 with WARNING on cap hit; retries on transient errors (5xx/429/network) via urllib3 Retry; request timeout added
-- [X] New `bronze_ingest_taxi_zones` notebook — ingests static TLC zone reference data (~265 rows) into `bronze_taxi_zones` Delta table
-- [X] New `prepare_taxi_ingestion` notebook — per-month HEAD check on TLC for each `(year, month)` in range (treats HTTP 403/404 as "not yet published", proceeds with whatever is available) + lists existing taxi files in bronze; outputs JSON list of `{year, month}` to download (intersection of "available on TLC" and "not in bronze"); `force_refresh` parameter forces re-download; fails only if NO months in range are available at source
+Single `force_refresh` (bool, default False) cascades from orchestrator → notebooks. `False` = incremental (schedule-friendly), `True` = full rebuild for manual backfill.
 
-#### Pipeline improvements
-- [X] Add `bronze_ingest_taxi_zones` to `pl_master_orchestrator` parallel block; `silver_etl` dependency updated to include it
-- [X] Reduce activity timeouts from 12h to 1h on all `pl_master_orchestrator` activities for faster fail-fast on hung activities (retry already 0, dependency conditions already "Succeeded")
-- [X] Add `prepare_taxi_ingestion` as first activity in `pl_master_orchestrator` — all other parallel activities now depend on it (true fail-fast); ForEach iterates over notebook output (missing files only) instead of hardcoded `range(0, N*12)`; new `force_refresh` pipeline parameter propagates to prepare notebook
+- [x] **Step 1** — `silver_openaq_measurements`: watermark `MAX(datetime)` + Delta `MERGE INTO`
+- [x] **Step 2** — `silver_taxi_trips`: partition diff — append only `(year, month)` not yet in silver
+- [x] **Step 3** — `FactAirQualityDaily`: `MAX(gold.date_key) - 7 days` lookback (`LATE_ARRIVING_LOOKBACK_DAYS = 7`)
+- [x] **Step 4** — `FactTaxiDaily`: same 7-day lookback pattern as Step 3
+- [x] **Step 5** — `bronze_openaq_measurements`: current + previous month from S3; Delta `MERGE INTO`; `force_refresh=True` falls back to year-range
 
-### Next branch — `feature/governance-monitoring` (Phase 6)
+Remaining tables (`silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, all gold dims) — full overwrite, small size makes incremental overhead exceed savings. Further candidates in Backlog → Incremental ETL.
 
-Strict governance and monitoring work, deferred from current branch.
+#### Row-Level Security (optional per spec)
+- [x] RLS configured in `nyc_analytics_model` — 5 roles on `DimZone[service_zone]` (Admin, Yellow Cab Dispatcher, Green Cab Dispatcher, Airports Operator, EWR Operator) mapping to real NYC TLC licensing zones; filter propagates to FactTaxiDaily via zone_key relationship. Role-to-user assignment done post-deployment in Power BI Service. See `docs/architecture.md`.
 
-#### Schedule automation — design decision required
+#### Lineage (optional per spec)
+- [x] End-to-end data lineage documented via Fabric built-in workspace lineage view — covers external sources → Bronze (Dataflows + Notebooks + Pipelines) → Silver → Gold → Semantic Model → Report. Screenshot at `docs/img/workspace-lineage.png`. Microsoft Purview Data Map evaluated and skipped (paid Azure resource, not needed for single-workspace deployment — free Purview Data Catalog tier does not include lineage graph). See `docs/architecture.md` → Security & Governance.
 
-Per `docs/project_plan.md`, the spec requires **two distinct refresh cadences**:
-- **Daily:** ECB FX rates, OpenAQ locations + measurements
-- **Monthly:** NYC Taxi (TLC), World Bank GDP
+### Next branch — `feature/external-integrations` (Phase 7)
 
-Rationale: each data source has independent value. Air Quality dashboard refreshes from new OpenAQ measurements daily even when there's no new taxi data. Taxi files are published monthly by TLC with ~2-month lag.
+External monitoring and data-quality stack — runs outside Fabric.
 
-**Option A — Two separate orchestrators (recommended)**
-- New `pl_daily_orchestrator`: FX + OpenAQ → silver_etl (subset) → gold_etl (subset)
-- New `pl_monthly_orchestrator`: Taxi + GDP + reuses daily activities → full silver/gold rebuild
-- Each pipeline has its own schedule
-- **Pros:** clean separation, matches spec, easier to debug, no internal conditional logic
-- **Cons:** `silver_etl`/`gold_etl` may need new parameters to run partial layers (currently all-or-nothing); some duplication of activity definitions between pipelines
+#### Weather ingestion + InfluxDB + Grafana
+- [ ] `jobs/weather_ingest.py` — Open-Meteo API → Bronze Lakehouse + InfluxDB Cloud (hourly NYC weather)
+- [ ] Schedule weather ingest (Linux cron, Azure Function, or Railway.app — TBD)
+- [ ] Silver/Gold processing for weather: `silver_weather` table, `FactWeatherDaily` star schema entry
+- [ ] Grafana dashboard for weather time-series (InfluxDB data source) — temperature, precipitation, weather vs taxi demand
+- [ ] Document setup in `docs/how_to_run.md` (already partially scaffolded)
 
-**Option B — Single orchestrator with conditional logic**
-- Keep `pl_master_orchestrator`, schedule it daily, add `If` activities that skip taxi/GDP unless month boundary crossed (e.g. first of month, or based on `dayofmonth`)
-- **Pros:** single source of truth, no pipeline duplication
-- **Cons:** complex internal branching; daily runs still re-process current year silver/gold even when only FX/OpenAQ refreshed → wasted compute
-
-**Schedule configuration approach**
-- **Fabric UI** (Pipeline → Schedule) — quick, manual
-- **Terraform** (`microsoft/fabric` provider) — preferred per project principle "Infrastructure is code". Check provider docs for whether schedule resources are supported; if yes, schedules become declarative and reproducible.
-
-Implementation tasks (after design decision):
-- [ ] Decide Option A vs Option B
-- [ ] Implement chosen architecture (new pipeline(s) + silver/gold parameter adjustments if needed)
-- [ ] Configure schedules: daily for FX + OpenAQ, monthly for Taxi + GDP
-- [ ] Verify schedules trigger correctly in Fabric workspace
-- [ ] If `microsoft/fabric` Terraform provider supports schedule resources — declare them in `terraform/`; otherwise document manual UI setup
-
-#### Row-Level Security
-- [ ] Configure RLS in `nyc_analytics_model` — restrict data visibility by role (details TBD when starting this branch)
-
-#### Microsoft Purview lineage
-- [ ] Optional — connect Fabric workspace to Purview for automated lineage tracking (details TBD)
+#### Great Expectations + Telegram Bot
+- [ ] Great Expectations expectation suites for Silver tables (specs already drafted in `docs/data_dictionary.md`)
+- [ ] `bot/dq_bot.py` — Telegram bot with `/report` command → runs GE checkpoints → replies with pass/fail summary
+- [ ] Document bot setup + secrets in `.env.example` and `docs/how_to_run.md`
 
 ## Backlog
 
@@ -124,11 +88,39 @@ One "wow" feature per page, beyond the standard charts. Air Quality already has 
 - [ ] **Correlation — Scatter plot with Play Axis animation**. Replace current bar+line monthly aggregate with daily scatter (one point per day): X=Total Trips, Y=Avg PM2.5, Play axis=year. Shows the actual correlation shape, not just monthly trend. Built-in scatter visual supports Play axis natively.
 - [ ] **Economic Impact — Forecasting on USD/EUR line chart**. Built-in Power BI feature (Analytics pane → Forecast). Forecast length 90 days with 95% confidence interval. Demonstrates predictive analytics capability without external tools. Alternative: waterfall chart for YoY revenue change.
 
+### Incremental ETL — future candidates
+Steps 1-5 done. Remaining tables are full overwrite — savings minimal vs added complexity. Implement if compute cost becomes a concern:
+- [ ] `bronze_ingest_openaq_locations` — ~24k records via paginated API; skip if no changes (hash/count diff). ~2 min run.
+- [ ] `bronze_ingest_openaq_measurements` — pre-filter `nyc_ids` by station activity window (`datetime_first`/`datetime_last` from OpenAQ API). Saves S3 LIST calls for inactive stations.
+- [ ] `silver_fx_rates` — ~7k rows; read only `date > MAX(silver.date)` from bronze, append.
+- [ ] `silver_gdp` — ~6k rows, yearly data, rarely changes; skip if bronze unchanged.
+- [ ] `silver_openaq_locations` — ~5k rows, rare changes; MERGE only updated stations.
+- [ ] `DimDate`/`DimZone`/`DimFX`/`DimGDP` — full rebuild <30s combined; not worth complexity.
+- [ ] `bronze_taxi_zones` — 265 rows, static; check ETag/Last-Modified to skip download.
+
 ### Power BI — dashboard polish (smaller wins)
 - [ ] Export current Power BI theme as JSON and check into repo for consistency across reports (deferred — Fabric Direct Lake report theme handling not yet evaluated)
 - [ ] Smart Narrative AI visual on at least one page (e.g., Mobility) — auto-generated text insights from KPIs
 - [ ] YoY change indicators on monetary/count KPI cards (Mobility, Economic Impact) — up/down arrow + color based on previous-year comparison (where WHO-style threshold doesn't apply)
 
+
+### Pipeline correctness
+- [ ] Audit activity dependencies in `pl_master_orchestrator` — verify correct execution order (bronze → silver → gold), no missing or redundant dependency links between activities.
+
+### Notebook markdown clarity — year_start/year_end parameter semantics
+- [ ] Update the top-of-notebook header Markdown cell in each notebook to explicitly state when `year_start`/`year_end` are used vs. ignored:
+  - `prepare_taxi_ingestion` — **always uses** year range (determines which TLC months to check/download); critical for schedule correctness
+  - `bronze_ingest_openaq_measurements` — **ignores** year range when `force_refresh=False` (fetches current+prev month only); used only with `force_refresh=True`
+  - `silver_etl` taxi section — **ignores** year range when `force_refresh=False` (partition diff); used only with `force_refresh=True`
+  - `silver_etl` OpenAQ section — **ignores** year range when `force_refresh=False` (watermark); used only with `force_refresh=True`
+  - `gold_etl` FactTaxiDaily/FactAirQualityDaily — **ignores** year range when `force_refresh=False` (7-day lookback); used only with `force_refresh=True`
+  - `gold_etl` DimDate — **uses** year range as a floor/ceiling, expanded by actual data min/max
+
+### Notebook logging improvements
+- [ ] `silver_etl` — taxi incremental append: after append log total silver row count and delta (rows added). Pattern: `rows_before = spark.read.table(SILVER_TAXI_TRIPS).count()` before write → `rows_after = spark.read.table(SILVER_TAXI_TRIPS).count()` after → `print(f"appended {rows_after - rows_before:,} rows; silver total: {rows_after:,}")`. Currently only logs "rows before append" of the new batch, which is confusing.
+
+### Governance — lineage completeness audit
+- [ ] Verify Fabric built-in workspace lineage view (`Workspace → Lineage view`) captures all expected upstream/downstream edges. Suspected gaps: notebook → table edges may not be visible for all notebooks; external source nodes may be missing for some pipelines. Compare graph against `docs/architecture.md` → Data Flow section and document any missing edges (e.g. add manual annotations or screenshot caveats). If gaps are significant, re-evaluate Purview Data Map (free Azure tier).
 
 ### Docs accuracy
 - [ ] Audit all column types in `docs/data_dictionary.md` against actual Spark schemas — run `printSchema()` for each Bronze and Silver table and compare. Found first discrepancy: `bronze_openaq_measurements.datetime` is `string` in practice, `timestamp` in docs (already fixed).
@@ -139,7 +131,7 @@ One "wow" feature per page, beyond the standard charts. Air Quality already has 
 ### Known data limitations
 - **OpenAQ historical coverage** — NYC stations in the S3 archive have data for 2021–2025, but with coverage gaps: mid-2022 (May–Sep) shows near-zero measurements for many stations. Not a pipeline issue — reflects actual S3 archive availability.
 - **Multi-pollutant station coverage** — not all OpenAQ stations measure all pollutants; some stations have gaps in NO2/O3 data. Known data limitation from OpenAQ source.
-- **TLC parquet schema drift** — files pre/post mid-2023 have INT32 vs INT64 for location columns; handled in `silver_etl` via file-by-file read + explicit cast.
+- **TLC parquet schema drift** — files pre/post mid-2023 have INT32 vs INT64 for location columns; 2026+ files additionally changed `passenger_count` (long vs double) and `RatecodeID` (long vs double) and renamed `airport_fee` → `Airport_fee` (capitalisation). Handled in `silver_etl` via per-file normalisation: rename `Airport_fee`→`airport_fee` if present, then cast `VendorID`/`PULocationID`/`DOLocationID`/`payment_type` → long, `passenger_count`/`RatecodeID` → double.
 - **OpenAQ gas units** — NO2, O3, CO, NO, NOx, SO2 are stored in ppm in the S3 archive; PM2.5/PM1/PM10 in µg/m³. `silver_etl` normalizes all gas parameters to µg/m³ using EPA conversion factors at 25°C.
 
 ### Key reference docs
@@ -149,7 +141,6 @@ One "wow" feature per page, beyond the standard charts. Air Quality already has 
 | Table schemas / columns | `docs/data_dictionary.md` |
 | Components, decisions, data flow | `docs/architecture.md` |
 | Run order, setup steps | `docs/how_to_run.md` |
-| Phase breakdown, tech stack | `docs/project_plan.md` |
 | Fabric workspace items, pipelines, notebooks | `fabric/README.md` |
 
 ---
@@ -161,7 +152,7 @@ fabric/       All Fabric workspace items: dataflows, pipelines, notebooks, wareh
               Synced automatically via Fabric Git integration
 jobs/         External Python jobs — run outside Fabric (added in Phase 7)
 terraform/    IaC: workspace, lakehouses, warehouse (run `make help`)
-docs/         Architecture, data dictionary, how-to-run
+docs/         Architecture, data dictionary, how-to-run, governance screenshots (img/)
 spec/         Original project specification (PDF)
 ```
 
@@ -169,15 +160,15 @@ spec/         Original project specification (PDF)
 
 | Branch | Phase | Status |
 |--------|-------|--------|
-| `feature/dashboards-and-robustness` | Dashboard polish + notebook/pipeline robustness + data quality | Active |
-| `feature/governance-monitoring` | Phase 6 — Governance & monitoring (schedules, RLS, Purview) | Planned |
+| `feature/governance-monitoring` | Phase 6 — Governance & monitoring (schedules, RLS, Purview) | Active |
+| `feature/external-integrations` | Phase 7 — Weather + InfluxDB + Grafana + GE + Telegram bot | Planned |
 
 ## Data sources
 
 | Source | Format | Ingestion tool |
 |--------|--------|----------------|
 | NYC Taxi (TLC) | Parquet, monthly | Data Factory Pipeline |
-| OpenAQ Air Quality | JSON API, paginated | Dataflow Gen2 |
+| OpenAQ Air Quality | JSON API + S3 archive | PySpark Notebook |
 | World Bank GDP | JSON API | Dataflow Gen2 |
 | ECB FX rates | CSV API | Dataflow Gen2 |
 | Open-Meteo Weather | JSON API | Python job (Phase 7) |
@@ -185,14 +176,6 @@ spec/         Original project specification (PDF)
 ## Quick start
 
 ```bash
-pip install -r requirements.txt
-```
-
-```bash
-# Provision / update infrastructure
-make -C terraform plan
-make -C terraform apply
-
 # Fabric Git sync — push branch, then in Fabric UI:
 # Workspace → Source control → Update all
 ```
@@ -202,19 +185,16 @@ Architecture decisions: see [docs/architecture.md](docs/architecture.md)
 
 ## Environment
 
-Required env vars are documented in `.env.example`.
+Phase 7 env vars (not yet needed):
 
-| Variable | Phase | Purpose |
-|----------|-------|---------|
-| `OPENAQ_API_KEY` | Phase 1 | OpenAQ v3 API — passed as parameter to `bronze_ingest_openaq_locations` notebook |
-| `INFLUXDB_URL/TOKEN/ORG/BUCKET` | Phase 7 | InfluxDB Cloud — weather time-series (add when starting Phase 7) |
-| `TELEGRAM_BOT_TOKEN/CHAT_ID` | Phase 7 | Telegram / Discord Bot — DQ alerts (add when starting Phase 7) |
+| Variable | Purpose |
+|----------|---------|
+| `INFLUXDB_URL/TOKEN/ORG/BUCKET` | InfluxDB Cloud — weather time-series |
+| `TELEGRAM_BOT_TOKEN/CHAT_ID` | Telegram / Discord Bot — DQ alerts |
 
 ## Key principles
 
 - **Bronze is immutable** — raw data is never modified after landing; re-run ingestion if you need to fix it.
 - **Silver owns the cleaning logic** — all deduplication, null handling, and schema normalization happens in `silver_etl`; Gold only aggregates.
 - **Fail loudly** — pipelines should raise errors, not silently skip bad records; data quality failures are surfaced to the user.
-- **Parameterize everything** — pipelines use parameters for dates/sources so backfills are trivial.
 - **Document decisions** — every non-obvious architectural choice has a "Why" entry in `docs/architecture.md`.
-- **Infrastructure is code** — if a Fabric resource can be managed via Terraform, it must be. Never create workspace, lakehouses, or warehouse through the UI. Run `make -C terraform apply`.

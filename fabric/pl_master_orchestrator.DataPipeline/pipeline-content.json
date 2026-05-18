@@ -70,6 +70,13 @@
                 "type": "Expression"
               },
               "type": "int"
+            },
+            "force_refresh": {
+              "value": {
+                "value": "@pipeline().parameters.force_refresh",
+                "type": "Expression"
+              },
+              "type": "bool"
             }
           }
         },
@@ -200,6 +207,13 @@
                 "type": "Expression"
               },
               "type": "int"
+            },
+            "force_refresh": {
+              "value": {
+                "value": "@pipeline().parameters.force_refresh",
+                "type": "Expression"
+              },
+              "type": "bool"
             }
           }
         },
@@ -263,6 +277,13 @@
                 "type": "Expression"
               },
               "type": "int"
+            },
+            "force_refresh": {
+              "value": {
+                "value": "@pipeline().parameters.force_refresh",
+                "type": "Expression"
+              },
+              "type": "bool"
             }
           }
         },
@@ -342,14 +363,18 @@
     "parameters": {
       "year_start": {
         "type": "int",
-        "defaultValue": 2023
+        "defaultValue": 2021
       },
       "year_end": {
         "type": "int",
-        "defaultValue": 2023
+        "defaultValue": 2026
       },
       "openaq_api_key": {
-        "type": "string"
+        "type": "securestring",
+        "defaultValue": {
+          "type": "SecureString",
+          "value": "**********"
+        }
       },
       "force_refresh": {
         "type": "bool",

@@ -122,7 +122,7 @@
 
 ### Data Factory
 - **Pipeline:** `pl_ingest_nyc_taxi` — copies monthly Parquet files to Bronze; parameters: `year` (int), `month` (int); source URL and destination filename are dynamically built from parameters
-- **Pipeline:** `pl_master_orchestrator` — single-entry-point orchestrator; parameters: `year_start` (int), `year_end` (int), `force_refresh` (bool); first runs `prepare_taxi_ingestion` (per-month source check + missing-file planning); on success, runs all ingestion in parallel — ForEach iterates only over months returned by prepare (skips not-yet-published months at source AND files already downloaded to bronze); then triggers silver_etl and gold_etl sequentially. All parallel activities depend on `prepare_taxi_ingestion` Succeeded for true fail-fast
+- **Pipeline:** `pl_master_orchestrator` — single-entry-point orchestrator; parameters: `year_start` (int), `year_end` (int), `force_refresh` (bool); first runs `prepare_taxi_ingestion` (per-month source check + missing-file planning); on success, runs all ingestion in parallel — ForEach iterates only over months returned by prepare (skips not-yet-published months at source AND files already downloaded to bronze); then triggers silver_etl and gold_etl sequentially. All parallel activities depend on `prepare_taxi_ingestion` Succeeded for true fail-fast. **Schedule:** twice daily at 06:00 UTC and 18:00 UTC with `force_refresh=false`, `year_start=2021`, `year_end=<current year>` (update annually each January)
 - **Dataflow Gen2:** `df_worldbank_gdp` — World Bank API → `bronze_gdp`; end year is dynamic (`DateTime.LocalNow() - 1`)
 - **Dataflow Gen2:** `df_ecb_fx` — ECB CSV → `bronze_fx_rates` (full history, no date filter needed)
 
@@ -140,6 +140,15 @@
 - **DAX measures in FactTaxiDaily:** Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD, Avg Trip Distance (mi), Avg Trip Duration (min)
 - **DAX measures in FactAirQualityDaily:** Avg PM2.5, Avg NO2, Avg O3
 - **DAX measures in DimGDP:** USA GDP (USD) — `CALCULATE(MAX(DimGDP[gdp_usd]), DimGDP[country_code] = "US")`
+- **Row-Level Security (RLS):** 5 static roles filtering `DimZone[service_zone]`, mapped to real NYC TLC licensing zones. Filter propagates to `FactTaxiDaily` via the existing `zone_key` relationship (single-direction). `FactAirQualityDaily` is not filtered (no zone relationship — air quality is station-based). All roles use `modelPermission: read`; workspace permissions (Admin/Member/Contributor bypass RLS — only Viewer respects it). Role-to-user assignment is done in Power BI Service after deployment.
+
+  | Role | DAX filter on DimZone | Business context |
+  |------|------------------------|------------------|
+  | `Admin` | — (no filter) | Data team, leadership — full visibility |
+  | `Yellow Cab Dispatcher` | `[service_zone] = "Yellow Zone"` | Manhattan medallion taxi operations |
+  | `Green Cab Dispatcher` | `[service_zone] = "Boro Zone"` | Outer-borough green-cab operations |
+  | `Airports Operator` | `[service_zone] = "Airports"` | JFK + LaGuardia airport team |
+  | `EWR Operator` | `[service_zone] = "EWR"` | Newark (NJ) airport team |
 
 ### Power BI Report: NYC Analytics
 - **Item:** `fabric/NYC Analytics.Report/`
@@ -153,11 +162,11 @@
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
 - `fabric/bronze_ingest_openaq_locations.Notebook/` — fetches all OpenAQ station metadata via API v3 (paginated) → `bronze_openaq_locations`; parameter: `openaq_api_key`; retries on transient 5xx/429/network errors
-- `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for NYC stations (filtered by bounding box from `bronze_openaq_locations`) → `bronze_openaq_measurements`; parameters: `year_start`, `year_end`
+- `fabric/bronze_ingest_openaq_measurements.Notebook/` — reads OpenAQ public S3 archive for NYC stations (filtered by bounding box from `bronze_openaq_locations`) → `bronze_openaq_measurements`; parameters: `year_start`, `year_end`, `force_refresh` (bool). Default mode fetches only current + previous month from S3 (month-level prefix listing) and MERGEs into target on natural key `(location_id, sensors_id, datetime, parameter)`; `force_refresh=True` performs full year-range download with partition replacement
 - `fabric/bronze_ingest_taxi_zones.Notebook/` — downloads TLC `taxi_zone_lookup.csv` → `bronze_taxi_zones` Delta table (~265 rows, static); no parameters
 - `fabric/prepare_taxi_ingestion.Notebook/` — pre-flight per-month HEAD check on TLC for each `(year, month)` in range + lists existing taxi files in bronze; outputs JSON list of months to download via `notebookutils.notebook.exit` for ForEach in `pl_master_orchestrator`; parameters: `year_start`, `year_end`, `force_refresh` (bool, default false). Treats HTTP 403/404 as "not yet published" and proceeds with available months; fails only if NO months in range are available at source. Enables incremental ingestion (skip already-downloaded files) and partial-year ingestion (download Jan-Mar 2026 even when later months aren't published)
-- `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 5 data sources; parameters: `year_start`, `year_end`; handles TLC Parquet schema drift (INT32/INT64) via file-by-file read with explicit casts; normalizes OpenAQ gas measurements from ppm to µg/m³
-- `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + synapsesql); parameters: `year_start`, `year_end`
+- `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 5 data sources; parameters: `year_start`, `year_end`, `force_refresh` (bool). Default mode is incremental for `silver_openaq_measurements` (watermark `MAX(datetime)` + Delta `MERGE INTO`) and `silver_taxi_trips` (partition diff — append only `(year, month)` not yet in silver). `force_refresh=True` does full partition overwrite for the year range. Handles TLC Parquet schema drift via per-file normalisation: `Airport_fee` → `airport_fee` rename (capitalisation changed in 2026 files); explicit casts `VendorID`/`PULocationID`/`DOLocationID`/`payment_type` → long, `passenger_count`/`RatecodeID` → double (types changed across TLC file generations). Normalizes OpenAQ gas measurements from ppm to µg/m³
+- `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + synapsesql); parameters: `year_start`, `year_end`, `force_refresh` (bool). Default mode is incremental for `FactAirQualityDaily` and `FactTaxiDaily` — re-aggregates only dates from `MAX(gold.date_key) - LATE_ARRIVING_LOOKBACK_DAYS` (=7) forward to handle late-arriving silver data and short missed-run gaps. `force_refresh=True` does full rebuild for year range. **Note:** silver timestamp columns (`pickup_datetime`, `datetime`) are cast from `timestamp_ntz` to `timestamp` on read — workaround for a Spark CBO bug (`FilterEstimation` does not handle `TimestampNTZType`) that causes `MatchError` during query planning when Delta column statistics are present
 
 ### Weather External Job — Phase 7 (not yet implemented)
 - **Source:** Open-Meteo API (free, no key) — hourly weather for NYC (lat 40.71, lon -74.01)
@@ -197,6 +206,24 @@ initializes it. Therefore, native `spark.read.csv("s3a://...")` fails on public 
 **Solution:** `boto3` with `Config(signature_version=UNSIGNED)` runs in the Python layer,
 bypasses Spark's S3A entirely, and achieves anonymous access. Downloads are parallelized via
 `ThreadPoolExecutor`, then converted to Spark DataFrames for Delta writes.
+
+### Why `force_refresh` cascading parameter for incremental processing
+
+For high-frequency scheduled runs (twice daily), full year rebuild of silver and gold (~10-15 min) is mostly redundant — only minimal new data arrives between runs. Incremental processing reduces typical run time to ~1-2 min.
+
+**Design choice:** single `force_refresh` (bool) parameter on `pl_master_orchestrator`, cascaded to all relevant notebooks (`bronze_ingest_openaq_measurements`, `silver_etl`, `gold_etl`, `prepare_taxi_ingestion`). User-facing semantic: "I want to force a full rebuild" — default `False` = incremental (fast, schedule-friendly), `True` = full rebuild for manual backfill or recovery.
+
+**Per-table incremental strategy:**
+- `bronze_openaq_measurements` — fetch only current + previous month from S3 (month-level prefix listing), MERGE INTO on natural key
+- `silver_openaq_measurements` — watermark `MAX(datetime)` + Delta `MERGE INTO`
+- `silver_taxi_trips` — partition diff — process only files whose `(year, month)` not yet in silver, append new partitions
+- `FactAirQualityDaily` / `FactTaxiDaily` — re-aggregate dates from `MAX(gold.date_key) - 7 days` (handles late-arriving silver data + short missed-run gaps via 7-day lookback)
+- Other small tables (FX/GDP/locations/zones/all dims) — full overwrite each run (overhead exceeds savings)
+
+**Alternatives considered:**
+- Separate `incremental_mode` parameter per notebook — rejected: harder for users to reason about; force_refresh cascading is intuitive
+- Two orchestrators (daily + monthly) — rejected per spec re-read: spec says "daily/hourly" not "daily AND monthly"; one orchestrator with idempotent prepare + incremental ETL works for any frequency
+- Delta Change Data Feed (CDF) for change tracking — rejected as over-engineered for our scale
 
 ### Why Terraform for infrastructure
 - **Reproducibility:** workspace + all 3 storage layers can be destroyed and recreated in <2 minutes
@@ -322,6 +349,13 @@ pl_master_orchestrator(year_start, year_end)
 
 ## Security & Governance
 
-- **Row-Level Security:** not configured (Phase 6 — optional)
-- **Purview Lineage:** not enabled (Phase 6 — optional)
-- **Access control:** Workspace-level roles (Admin / Member / Contributor / Viewer)
+- **Access control:** Workspace-level roles (Admin / Member / Contributor / Viewer). Only `Viewer` respects RLS — Admin/Member/Contributor bypass RLS by design.
+- **Row-Level Security:** 5 static roles on `nyc_analytics_model` filtering `DimZone[service_zone]`. See [Power BI Semantic Model](#power-bi-semantic-model) section above for the full role table and rationale.
+- **Lineage:** end-to-end data flow visualised via Fabric workspace built-in lineage view (`Workspace → Lineage view`). The graph covers external sources (TLC CloudFront, ECB FX, World Bank, OpenAQ) → Bronze ingestion (Dataflows + Notebooks + Pipelines) → Silver ETL → Gold Warehouse → Semantic Model → Report. See screenshot: `docs/img/workspace-lineage.png`.
+
+  ![Workspace lineage](img/workspace-lineage.png)
+
+- **Microsoft Purview:** evaluated and not adopted. The free Purview Data Catalog (`purview.microsoft.com`) provides asset discovery and schema metadata for Fabric items but does **not** include the lineage graph in the free tier — full lineage requires a paid Azure Purview Data Map resource. For a single-workspace deployment, the built-in Fabric workspace lineage view is functionally equivalent without the additional Azure resource and provisioning cost.
+
+### Schedule and refresh
+- `pl_master_orchestrator` runs twice daily at **06:00 UTC** and **18:00 UTC** with `force_refresh=false`, `year_start=2021`, `year_end=<current year>`. See [`docs/how_to_run.md`](how_to_run.md) for full schedule setup and incremental-mode behaviour.
