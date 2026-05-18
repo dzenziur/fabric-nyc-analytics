@@ -82,6 +82,7 @@ Silver timestamp columns (`pickup_datetime`, `datetime`) cast from `timestamp_nt
 - Storage mode: Direct Lake on SQL (`gold_warehouse`)
 - Relationships: FactTaxiDaily → DimDate, DimZone, DimFX · FactAirQualityDaily → DimDate
 - DAX measures: Total Trips, Total Revenue USD/EUR, Avg Fare USD, Avg Trip Distance, Avg Trip Duration, Avg PM2.5, Avg NO2, Avg O3, USA GDP (USD)
+- RLS: 5 roles on `DimZone[service_zone]` — `Admin` (no filter), `Yellow Cab Dispatcher` (Yellow Zone), `Green Cab Dispatcher` (Boro Zone), `Airports Operator` (Airports), `EWR Operator` (EWR). Filter propagates to FactTaxiDaily via zone_key. See `docs/architecture.md`.
 
 ### Report — `NYC Analytics`
 | Page | Key visuals |

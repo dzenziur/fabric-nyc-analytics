@@ -20,3 +20,26 @@ ref table DimGDP
 ref table FactTaxiDaily
 ref table FactAirQualityDaily
 
+role Admin
+	modelPermission: read
+
+role 'Yellow Cab Dispatcher'
+	modelPermission: read
+
+	tablePermission DimZone = [service_zone] = "Yellow Zone"
+
+role 'Green Cab Dispatcher'
+	modelPermission: read
+
+	tablePermission DimZone = [service_zone] = "Boro Zone"
+
+role 'Airports Operator'
+	modelPermission: read
+
+	tablePermission DimZone = [service_zone] = "Airports"
+
+role 'EWR Operator'
+	modelPermission: read
+
+	tablePermission DimZone = [service_zone] = "EWR"
+

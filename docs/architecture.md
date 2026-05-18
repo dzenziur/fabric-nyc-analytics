@@ -140,6 +140,15 @@
 - **DAX measures in FactTaxiDaily:** Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD, Avg Trip Distance (mi), Avg Trip Duration (min)
 - **DAX measures in FactAirQualityDaily:** Avg PM2.5, Avg NO2, Avg O3
 - **DAX measures in DimGDP:** USA GDP (USD) — `CALCULATE(MAX(DimGDP[gdp_usd]), DimGDP[country_code] = "US")`
+- **Row-Level Security (RLS):** 5 static roles filtering `DimZone[service_zone]`, mapped to real NYC TLC licensing zones. Filter propagates to `FactTaxiDaily` via the existing `zone_key` relationship (single-direction). `FactAirQualityDaily` is not filtered (no zone relationship — air quality is station-based). All roles use `modelPermission: read`; workspace permissions (Admin/Member/Contributor bypass RLS — only Viewer respects it). Role-to-user assignment is done in Power BI Service after deployment.
+
+  | Role | DAX filter on DimZone | Business context |
+  |------|------------------------|------------------|
+  | `Admin` | — (no filter) | Data team, leadership — full visibility |
+  | `Yellow Cab Dispatcher` | `[service_zone] = "Yellow Zone"` | Manhattan medallion taxi operations |
+  | `Green Cab Dispatcher` | `[service_zone] = "Boro Zone"` | Outer-borough green-cab operations |
+  | `Airports Operator` | `[service_zone] = "Airports"` | JFK + LaGuardia airport team |
+  | `EWR Operator` | `[service_zone] = "EWR"` | Newark (NJ) airport team |
 
 ### Power BI Report: NYC Analytics
 - **Item:** `fabric/NYC Analytics.Report/`
