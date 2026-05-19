@@ -67,6 +67,9 @@ from urllib.error import HTTPError
 URL_TEMPLATE = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{:04d}-{:02d}.parquet"
 REQUEST_TIMEOUT = 15
 TAXI_FILES_PATH = "Files/raw/taxi/"
+# TLC CloudFront rejects the default `Python-urllib/*` User-Agent with HTTP 403.
+# Send a browser-style UA so HEAD probes return real 200/404 status.
+BROWSER_UA = {"User-Agent": "Mozilla/5.0"}
 
 print(f"Year range: {year_start} - {year_end}, force_refresh: {force_refresh}")
 
@@ -90,12 +93,12 @@ months_available_at_source = []
 for y in range(year_start, year_end + 1):
     for m in range(1, 13):
         url = URL_TEMPLATE.format(y, m)
-        req = urllib.request.Request(url, method="HEAD")
+        req = urllib.request.Request(url, method="HEAD", headers=BROWSER_UA)
         try:
             urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
             months_available_at_source.append({"year": y, "month": m})
         except HTTPError as e:
-            if e.code in (403, 404):
+            if e.code == 404:
                 continue
             raise
 

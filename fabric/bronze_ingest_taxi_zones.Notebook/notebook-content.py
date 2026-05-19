@@ -64,7 +64,11 @@ ZONE_CSV_TMP = "/tmp/taxi_zone_lookup.csv"
 
 # CELL ********************
 
-urllib.request.urlretrieve(ZONE_CSV_URL, ZONE_CSV_TMP)
+# TLC CloudFront rejects the default `Python-urllib/*` User-Agent with HTTP 403.
+# Send a browser-style UA to get the CSV through.
+req = urllib.request.Request(ZONE_CSV_URL, headers={"User-Agent": "Mozilla/5.0"})
+with urllib.request.urlopen(req) as resp, open(ZONE_CSV_TMP, "wb") as fh:
+    fh.write(resp.read())
 
 df = (
     spark.read.option("header", True).csv(f"file://{ZONE_CSV_TMP}")
