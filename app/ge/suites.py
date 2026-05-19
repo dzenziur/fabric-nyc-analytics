@@ -36,10 +36,10 @@ def silver_taxi_trips(conn) -> list[CheckResult]:
 
 
 def silver_openaq_measurements(conn) -> list[CheckResult]:
-    # OpenAQ co-hosts pollutants + context measurements (temperature, humidity,
-    # ultrafine particle counts in particles/cm³). Units vary by parameter, so we
-    # can't impose a global upper bound on `value` — silver_etl already enforces
-    # value > 0, which is the meaningful invariant.
+    # Units vary by parameter (µg/m³ for PM family, ppm normalised to µg/m³ for gases),
+    # so we can't impose a global upper bound on `value` — silver_etl already enforces
+    # value > 0 and restricts `parameter` to the pollutant set, which is the meaningful
+    # invariant.
     t  = "silver_openaq_measurements"
     fq = f"{SILVER}.dbo.{t}"
     return [
@@ -48,8 +48,7 @@ def silver_openaq_measurements(conn) -> list[CheckResult]:
         sql_not_null(conn, t, fq, "value"),
         sql_range  (conn, t, fq, "value", min_value=0),
         sql_in_set (conn, t, fq, "parameter",
-                    ["pm25", "pm10", "pm1", "no2", "o3", "co", "so2", "no", "nox",
-                     "um003", "temperature", "relativehumidity"]),
+                    ["pm25", "pm10", "pm1", "no2", "o3", "co", "so2", "no", "nox"]),
         sql_row_count_min(conn, t, fq, 100_000),
     ]
 

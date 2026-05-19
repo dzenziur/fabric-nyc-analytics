@@ -220,6 +220,9 @@ display(df_silver.limit(5))
 
 # ## NYC Taxi Trips
 # Rename columns to snake_case, add year/month for partitioning, filter out invalid trips.
+# Sanity filter on `fare_amount`: keep `(0, 10_000]`. TLC source occasionally publishes
+# corrupted rows with fares of $187k–$863k for short trips; real NYC taxi fares cannot
+# realistically exceed a few thousand dollars.
 # Default mode (force_refresh=False): process only bronze files whose (year, month) is not yet in silver — append new partitions.
 # force_refresh=True: re-process all files in year_start..year_end range (partition overwrite).
 
@@ -300,6 +303,7 @@ else:
             & (col("trip_distance") > 0)
             & (col("trip_distance") <= 100)
             & (col("fare_amount") > 0)
+            & (col("fare_amount") <= 10_000)
         )
     )
 
@@ -308,9 +312,10 @@ else:
         write_silver(df_silver, SILVER_TAXI_TRIPS, partition_by=["year", "month"],
                      replace_where=f"year >= {year_start} AND year <= {year_end}")
     else:
-        print(f"[{SILVER_TAXI_TRIPS}] rows before append: {df_silver.count()}")
+        rows_before = spark.read.table(SILVER_TAXI_TRIPS).count()
         df_silver.write.format("delta").mode("append").saveAsTable(SILVER_TAXI_TRIPS)
-        print(f"[{SILVER_TAXI_TRIPS}] incremental append done")
+        rows_after = spark.read.table(SILVER_TAXI_TRIPS).count()
+        print(f"[{SILVER_TAXI_TRIPS}] appended {rows_after - rows_before:,} rows; silver total: {rows_after:,}")
 
     display(df_silver.limit(5))
 
@@ -326,6 +331,10 @@ else:
 # ## OpenAQ Measurements
 # Filter out non-positive readings, deduplicate by (location_id, parameter, datetime),
 # cast datetime, add year/month partition keys.
+# Restrict to pollutant parameters only — OpenAQ co-hosts context parameters
+# (`temperature`, `relativehumidity`, `um003`) that are out of scope for this project's
+# pollution analytics; they are dropped here so downstream consumers and DQ checks
+# only see real pollutants.
 # Default mode (force_refresh=False): read only bronze rows newer than MAX(datetime) in silver, then MERGE INTO target — fast incremental processing for scheduled runs.
 # force_refresh=True: read full bronze for the year range and overwrite partitions — for manual backfill or recovery.
 
@@ -354,6 +363,8 @@ PPM_TO_UGM3 = {
     "no": 1227,  "nox": 1882, "so2": 2619,
 }
 
+POLLUTANTS = ["pm25", "pm10", "pm1", "no2", "o3", "co", "so2", "no", "nox"]
+
 value_expr = col("value")
 for param, factor in PPM_TO_UGM3.items():
     value_expr = when(
@@ -363,6 +374,7 @@ for param, factor in PPM_TO_UGM3.items():
 
 df_silver = (
     df
+    .filter(col("parameter").isin(POLLUTANTS))
     .filter(col("value") > 0)
     .withColumn("value", value_expr)
     .withColumn("units", when(col("units") == "ppm", lit("µg/m³")).otherwise(col("units")))
