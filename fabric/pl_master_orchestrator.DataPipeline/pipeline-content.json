@@ -255,6 +255,12 @@
             "dependencyConditions": [
               "Succeeded"
             ]
+          },
+          {
+            "activity": "bronze_ingest_weather",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
           }
         ]
       },
@@ -350,6 +356,52 @@
           "secureOutput": false
         },
         "name": "bronze_ingest_taxi_zones",
+        "dependsOn": [
+          {
+            "activity": "prepare_taxi_ingestion",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "a4f2c8e1-7b3d-4f6a-8c9e-1d2b3a4c5d6e",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "year_start": {
+              "value": {
+                "value": "@pipeline().parameters.year_start",
+                "type": "Expression"
+              },
+              "type": "int"
+            },
+            "year_end": {
+              "value": {
+                "value": "@pipeline().parameters.year_end",
+                "type": "Expression"
+              },
+              "type": "int"
+            },
+            "force_refresh": {
+              "value": {
+                "value": "@pipeline().parameters.force_refresh",
+                "type": "Expression"
+              },
+              "type": "bool"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.01:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "bronze_ingest_weather",
         "dependsOn": [
           {
             "activity": "prepare_taxi_ingestion",
