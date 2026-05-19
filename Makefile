@@ -42,6 +42,9 @@ logs:  ## Tail logs from all services (Ctrl+C to exit)
 logs-sync:  ## Tail logs from app-weather-sync only
 	$(COMPOSE) logs -f --tail=200 app-weather-sync
 
+logs-bot:  ## Tail logs from app-bot only
+	$(COMPOSE) logs -f --tail=200 app-bot
+
 logs-influx:  ## Tail logs from InfluxDB only
 	$(COMPOSE) logs -f --tail=200 influxdb
 

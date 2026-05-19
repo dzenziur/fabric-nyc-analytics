@@ -64,6 +64,19 @@ services:
       influxdb:
         condition: service_healthy
 
+  app-bot:
+    image: nyc-analytics-app:latest
+    container_name: nyc-app-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["python", "-m", "app", "bot"]
+    # Reuses the image built by app-weather-sync; depends_on ensures the build
+    # has happened (`docker compose up` builds before starting the bot).
+    depends_on:
+      app-weather-sync:
+        condition: service_started
+
 volumes:
   influxdb_data:
   influxdb_config:

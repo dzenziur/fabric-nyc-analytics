@@ -3,6 +3,7 @@
 Usage:
     python -m app weather-sync   # Pull silver_weather from Fabric -> push to InfluxDB
     python -m app ge-report      # Run DQ checks on Silver + Gold, print report to stdout
+    python -m app bot            # Start Telegram bot in long-polling mode
 
 Environment knobs:
     WEATHER_SYNC_INTERVAL_SECONDS   If set and > 0, weather-sync loops with this delay
@@ -41,6 +42,9 @@ def main() -> None:
     elif cmd == "ge-report":
         from app.ge import run_report
         print(run_report())
+    elif cmd == "bot":
+        from app.bot import run
+        run()
     else:
         print(f"Unknown command: {cmd}")
         print(__doc__)

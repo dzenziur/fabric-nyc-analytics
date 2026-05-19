@@ -24,3 +24,24 @@ INFLUXDB_URL    = os.getenv("INFLUXDB_URL", "")
 INFLUXDB_TOKEN  = os.getenv("INFLUXDB_TOKEN", "")
 INFLUXDB_ORG    = os.getenv("INFLUXDB_ORG", "")
 INFLUXDB_BUCKET = os.getenv("INFLUXDB_BUCKET", "weather_nyc")
+
+
+# Telegram bot (long-polling mode — no webhook)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+
+
+def _parse_chat_ids(raw: str) -> list[int]:
+    """Comma-separated chat IDs. Skip invalid tokens with a warning."""
+    result: list[int] = []
+    for token in raw.split(","):
+        token = token.strip()
+        if not token:
+            continue
+        try:
+            result.append(int(token))
+        except ValueError:
+            print(f"[config] ignoring invalid TELEGRAM_ALLOWED_CHAT_IDS entry: {token!r}")
+    return result
+
+
+TELEGRAM_ALLOWED_CHAT_IDS = _parse_chat_ids(os.getenv("TELEGRAM_ALLOWED_CHAT_IDS", ""))
