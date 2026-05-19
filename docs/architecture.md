@@ -178,17 +178,17 @@ Two integrations layered on top of the medallion: (1) weather data flowing out o
 
 **Implemented**
 - **Weather flow inside Fabric** — `bronze_ingest_weather` Notebook (Open-Meteo Archive + Forecast → `bronze_weather`, NYC single point, hourly), `silver_etl` `## Weather` section (datetime cast, enriched column renames with explicit unit suffixes, derived `is_rainy` flag, partitioned by year/month, MERGE on watermark), `pl_master_orchestrator` runs weather as parallel ingestion and `silver_etl` depends on its success.
-- **External app scaffold** — `app/` package: single Docker image (`python:3.11-slim` + MS ODBC Driver 18), multi-entry CLI (`python -m app {weather-sync,bot,ge-report}`), `config.py` (env vars), `fabric_client.py` (pyodbc + Entra ID Service Principal auth). `requirements.txt` covers `influxdb-client`, `python-telegram-bot`, `great-expectations`, `pyodbc`, `sqlalchemy`, `requests`, `python-dotenv`.
-
-**In progress**
-- **Entra ID Service Principal** — registered app with Read access on `silver_lakehouse` SQL endpoint and `gold_warehouse`.
-- `app/weather_sync.py` — reads new rows from `silver_weather` via Fabric Lakehouse SQL endpoint (watermark-based incremental), pushes to InfluxDB. Schedules itself via an internal sleep loop (hourly).
+- **Entra ID Service Principal** — `nyc-analytics-app` registered; tenant setting "Service principals can call Fabric APIs" enabled; SP added to workspace as Viewer (covers Read on `silver_lakehouse` SQL endpoint and `gold_warehouse`).
+- **External app** — `app/` package: `__main__.py` CLI dispatcher with `WEATHER_SYNC_INTERVAL_SECONDS` scheduler loop, `config.py` (env vars), `fabric_client.py` (pyodbc + SP auth), `influx_client.py`, `weather_sync.py`. Single Docker image (`python:3.11-slim` + MS ODBC Driver 18). `requirements.txt` covers `influxdb-client`, `pyodbc`, `python-dotenv` (GE + Telegram deps will be re-added when those features land).
+- **`app/weather_sync.py`** — watermark from InfluxDB `last(_time)` of `weather` measurement, T-SQL incremental `WHERE datetime > watermark` against `silver_weather`, single batched write of Points (tag `location=nyc`, fields temperature_c / feels_like_c / precipitation_mm / wind_speed_kmh / humidity_pct / weather_code / is_rainy). Verified end-to-end: 47,112 historical hourly Points written to bucket `weather_nyc`.
+- **`docker-compose.yml`** — services `influxdb` (OSS 2.7, persistent volume, `DOCKER_INFLUXDB_INIT_*` bootstrap, unlimited retention, `influx ping` healthcheck), `grafana` (OSS 11.2, waits on influxdb healthy, mounts `grafana/provisioning/` read-only), `app-weather-sync` (builds local Dockerfile, env_file `.env`, `WEATHER_SYNC_INTERVAL_SECONDS=3600` for hourly loop).
+- **`grafana/provisioning/`** — `datasources/influxdb.yml` (uid=`influxdb`, Flux mode, secure token from env) + `dashboards/dashboards.yml` (file provider) + `dashboards/weather.json` (4-panel NYC Weather: temperature, precipitation, wind, humidity). Auto-loaded at Grafana start.
+- **`Makefile`** — compose lifecycle (up / up-data / down / restart / stop / clean), build / rebuild, ps + per-service logs, `weather-sync-once` for ad-hoc sync runs.
 
 **Pending**
-- `app/ge/` — Great Expectations suites for Silver + Gold tables (per-table nulls, value ranges, FK integrity, row-count ranges, distribution checks). Bronze suites in backlog (low ROI).
-- `app/bot.py` — Telegram bot via `python-telegram-bot` in long-polling mode; `/report` runs GE checkpoint and replies with pass/fail summary. No public URL required.
-- `docker-compose.yml` — services: `influxdb` (InfluxData OSS 2.x, named volume for persistence), `grafana` (OSS, datasource + dashboard auto-provisioned from `grafana/provisioning/`), `app-bot` (long-running container), `app-weather-sync` (sidecar with internal scheduler).
-- `grafana/provisioning/` — `datasources/influxdb.yml` and `dashboards/weather.json` for one-shot bootstrap.
+- `app/ge/` — Great Expectations suites for Silver + Gold tables (per-table nulls, value ranges, FK integrity, row-count ranges, distribution checks). Bronze suites in backlog (low ROI). Will re-add `great-expectations` + `sqlalchemy` to `requirements.txt` when implementing.
+- `app/bot.py` — Telegram bot via `python-telegram-bot` in long-polling mode; `/report` runs GE checkpoint and replies with pass/fail summary. No public URL required. Will re-add `python-telegram-bot` to `requirements.txt` and `app-bot` service to `docker-compose.yml`.
+- `docs/how_to_run.md` — Phase 7 setup section (SP registration, `.env` fill, `make build` + `make up`, Grafana access on `localhost:3000`).
 
 ---
 
