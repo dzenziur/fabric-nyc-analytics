@@ -8,13 +8,13 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 **Infrastructure as Code:** Terraform with `microsoft/fabric` provider — manages workspace + lakehouses + warehouse declaratively. See `terraform/`.
 
-**External stack** (Phase 7): InfluxDB Cloud (weather time-series), Grafana (weather dashboard), Great Expectations (data quality), Telegram / Discord Bot (DQ alerts).
+**External stack** (Phase 7): InfluxDB OSS (weather time-series, persistent volume), Grafana OSS (weather dashboard, auto-provisioned datasource), Great Expectations (data quality), Telegram bot with `/report` (DQ reports on demand, long-polling mode). All services run as Docker containers orchestrated by `docker-compose.yml` — local-first deployment, no cloud account dependencies beyond Fabric itself.
 
 ## Current Status
 
-**Active branch:** `feature/governance-monitoring`
-**Deadline:** May 26, 2026 (defense) — target May 15 for main features
-**Last session:** 2026-05-18 — Phase 6 closed: RLS configured (5 roles on DimZone.service_zone), lineage documented via Fabric built-in workspace lineage view (Purview Data Map evaluated and skipped — free tier lacks lineage graph), docs synced
+**Active branch:** `feature/external-integrations`
+**Deadline:** May 21, 2026. Defense on May 26 but all artefacts must be ready by 21.
+**Last session:** 2026-05-19 — Phase 7 complete end-to-end. On top of the weather pipeline (Fabric → app/weather_sync → InfluxDB → Grafana), added `app/ge/` Great Expectations runner (56 expectations across 12 Silver + Gold tables, hybrid: GE PandasDataset for small tables + SQL aggregates for large), `app/bot.py` Telegram long-polling bot (`/report` → `asyncio.to_thread(run_report)` → reply as HTML `<pre>` block), `app-bot` service in compose, `docs/how_to_run.md § Step 7` setup walkthrough. End-to-end smoke test: `/report` in Telegram returns 55/56 passing checks (one legitimate DQ finding: 13 rows with `fare_amount > $10k` from corrupted TLC upstream data). Phase 7 ready for PR + merge to main.
 
 ### Phase completion
 
@@ -27,49 +27,34 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 | Phase 4 — Visualizations | ✅ Done | 4 dashboards; Air Quality map (Azure Maps + WHO thresholds + conditional KPI fill); semantic model fixes |
 | Phase 5 — Master Orchestrator | ✅ Done | pl_master_orchestrator + parameterized silver/gold notebooks + prepare_taxi_ingestion (pre-flight + incremental) |
 | Phase 6 — Governance & Monitoring | ✅ Done | Twice-daily schedule + RLS (5 roles on DimZone.service_zone) + lineage via Fabric built-in workspace view |
-| Phase 7 — External Integrations | ❌ Not started | Weather + InfluxDB + Grafana, Great Expectations + Telegram bot |
+| Phase 7 — External Integrations | ✅ Done | Weather pipeline (Fabric→InfluxDB→Grafana) + Great Expectations runner (56 checks, Silver + Gold) + Telegram bot `/report` (long-polling) + docker-compose stack + Makefile + how_to_run docs |
 
-### Current branch goal (`feature/governance-monitoring`)
+### Current branch goal (`feature/external-integrations`)
 
-Phase 6 — Governance and Monitoring per spec (`spec/Microsoft Fabric Data Engineering Project.pdf`): Schedule ✅ (required) · RLS ✅ (optional) · Lineage ✅ (optional, via Fabric built-in lineage view — Purview Data Map skipped). Details below and in `docs/architecture.md`.
+Phase 7 — External Integrations per spec section 7. Two integrations: (1) Weather → time-series DB → Grafana, (2) Great Expectations → Telegram bot `/report`. Fabric is the single source of truth; the external job reads enriched data **from Fabric** and pushes it to InfluxDB. **Status: ready for PR + merge to main.**
 
-#### Schedule automation
+#### Weather flow inside Fabric
+- [x] `bronze_ingest_weather` notebook — Open-Meteo Archive + Forecast APIs → `bronze_lakehouse.bronze_weather`. Parameters: `year_start`, `year_end`, `force_refresh`. NYC single point (Manhattan); multi-point in backlog. Default `force_refresh=False` uses Forecast API `past_days=2` and MERGEs on `(lat, lon, datetime)`; `force_refresh=True` or first run uses Archive API for full year range + partition overwrite.
+- [x] `silver_etl` — new `## Weather` section: cast datetime, enriched renames (`temperature_2m → temperature_c`, `apparent_temperature → feels_like_c`, `precipitation → precipitation_mm`, `wind_speed_10m → wind_speed_kmh`, `relative_humidity_2m → humidity_pct`), derived `is_rainy` flag, partition by year/month → `silver_lakehouse.silver_weather`. Incremental via `MAX(datetime)` watermark + MERGE (with `whenMatchedUpdateAll` because Open-Meteo retroactively refines recent data).
+- [x] `pl_master_orchestrator` — `bronze_ingest_weather` added as parallel ingestion (depends on `prepare_taxi_ingestion` succeeded); `silver_etl` now depends on it succeeding (true fail-fast). Full pipeline run verified end-to-end (10/10 activities).
+- [x] **No Gold / Power BI for weather** — Grafana on InfluxDB satisfies the visualisation requirement; a `FactWeatherDaily` with no downstream consumer would be dead code, so the medallion stops at Silver for weather.
 
-- [x] `pl_master_orchestrator` scheduled twice daily — 06:00 and 18:00 UTC, `force_refresh=false`, `year_start=2021`, `year_end=2026`. See `docs/how_to_run.md` for details.
-
-#### Incremental processing (force_refresh parameter)
-
-Single `force_refresh` (bool, default False) cascades from orchestrator → notebooks. `False` = incremental (schedule-friendly), `True` = full rebuild for manual backfill.
-
-- [x] **Step 1** — `silver_openaq_measurements`: watermark `MAX(datetime)` + Delta `MERGE INTO`
-- [x] **Step 2** — `silver_taxi_trips`: partition diff — append only `(year, month)` not yet in silver
-- [x] **Step 3** — `FactAirQualityDaily`: `MAX(gold.date_key) - 7 days` lookback (`LATE_ARRIVING_LOOKBACK_DAYS = 7`)
-- [x] **Step 4** — `FactTaxiDaily`: same 7-day lookback pattern as Step 3
-- [x] **Step 5** — `bronze_openaq_measurements`: current + previous month from S3; Delta `MERGE INTO`; `force_refresh=True` falls back to year-range
-
-Remaining tables (`silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, all gold dims) — full overwrite, small size makes incremental overhead exceed savings. Further candidates in Backlog → Incremental ETL.
-
-#### Row-Level Security (optional per spec)
-- [x] RLS configured in `nyc_analytics_model` — 5 roles on `DimZone[service_zone]` (Admin, Yellow Cab Dispatcher, Green Cab Dispatcher, Airports Operator, EWR Operator) mapping to real NYC TLC licensing zones; filter propagates to FactTaxiDaily via zone_key relationship. Role-to-user assignment done post-deployment in Power BI Service. See `docs/architecture.md`.
-
-#### Lineage (optional per spec)
-- [x] End-to-end data lineage documented via Fabric built-in workspace lineage view — covers external sources → Bronze (Dataflows + Notebooks + Pipelines) → Silver → Gold → Semantic Model → Report. Screenshot at `docs/img/workspace-lineage.png`. Microsoft Purview Data Map evaluated and skipped (paid Azure resource, not needed for single-workspace deployment — free Purview Data Catalog tier does not include lineage graph). See `docs/architecture.md` → Security & Governance.
-
-### Next branch — `feature/external-integrations` (Phase 7)
-
-External monitoring and data-quality stack — runs outside Fabric.
-
-#### Weather ingestion + InfluxDB + Grafana
-- [ ] `jobs/weather_ingest.py` — Open-Meteo API → Bronze Lakehouse + InfluxDB Cloud (hourly NYC weather)
-- [ ] Schedule weather ingest (Linux cron, Azure Function, or Railway.app — TBD)
-- [ ] Silver/Gold processing for weather: `silver_weather` table, `FactWeatherDaily` star schema entry
-- [ ] Grafana dashboard for weather time-series (InfluxDB data source) — temperature, precipitation, weather vs taxi demand
-- [ ] Document setup in `docs/how_to_run.md` (already partially scaffolded)
+#### Weather export to InfluxDB + Grafana
+- [x] **Entra ID Service Principal** — registered app `nyc-analytics-app`, granted Viewer on workspace (covers SQL endpoint read for `silver_lakehouse` and `gold_warehouse`). Tenant setting "Service principals can call Fabric APIs" enabled.
+- [x] **`app/` package** — `__main__.py` CLI dispatcher (commands: `weather-sync`, `ge-report`, `bot`) with `WEATHER_SYNC_INTERVAL_SECONDS` scheduler loop, `config.py`, `fabric_client.py` (pyodbc + SP auth), `influx_client.py`, `weather_sync.py`. `Dockerfile` (python:3.11-slim + MS ODBC Driver 18), `requirements.txt`, `.dockerignore`, `.env.example`.
+- [x] **`app/weather_sync.py`** — watermark from InfluxDB last `_time` of `weather` measurement, T-SQL incremental `WHERE datetime > watermark` against `silver_weather`, batched write of Points. Verified end-to-end: 47,112 historical Points written.
+- [x] **`docker-compose.yml`** — services `influxdb` (OSS 2.7, persistent volume, init bootstrap, healthcheck), `grafana` (OSS 11.2, waits on influxdb healthy, provisioning mount), `app-weather-sync` (builds local Dockerfile, hourly scheduler loop).
+- [x] **`grafana/provisioning/`** — InfluxDB datasource + `weather.json` 4-panel dashboard (temperature, precipitation, wind, humidity).
+- [x] **`Makefile`** — compose lifecycle, build/rebuild, ps + per-service logs, `weather-sync-once` and `ge-report` ad-hoc runs.
 
 #### Great Expectations + Telegram Bot
-- [ ] Great Expectations expectation suites for Silver tables (specs already drafted in `docs/data_dictionary.md`)
-- [ ] `bot/dq_bot.py` — Telegram bot with `/report` command → runs GE checkpoints → replies with pass/fail summary
-- [ ] Document bot setup + secrets in `.env.example` and `docs/how_to_run.md`
+- [x] **`app/ge/`** — 56 expectations across 12 Silver + Gold tables (Bronze skipped — low ROI, in backlog). Hybrid execution: GE PandasDataset for small tables (locations, gdp, fx, weather, all dims), SQL aggregates for large (taxi_trips, openaq_measurements, FactTaxiDaily, FactAirQualityDaily). `result.py` `CheckResult` dataclass + `format_report()` monospace text. Per-suite try/except so one failure doesn't break the report.
+- [x] **`app/bot.py`** — Telegram bot via `python-telegram-bot` v21 in long-polling mode. `/start` welcome + `/report` placeholder-edit UX (`asyncio.to_thread(run_report)` so blocking pyodbc/pandas/GE doesn't freeze the event loop). HTML `<pre>` formatting. Optional `TELEGRAM_ALLOWED_CHAT_IDS` allowlist.
+- [x] **`app-bot` service** in `docker-compose.yml` — reuses the image, `restart: unless-stopped`.
+
+#### Docs
+- [x] `docs/how_to_run.md § Step 7` — end-to-end Phase 7 walkthrough: SP registration, BotFather, `.env` fill, `make build` + `make up`, Grafana on `localhost:3000`, `/report` in Telegram.
+- [x] `docs/architecture.md § Phase 7` — current Implemented list (no Pending items remain).
 
 ## Backlog
 
@@ -128,6 +113,15 @@ Steps 1-5 done. Remaining tables are full overwrite — savings minimal vs added
 ### Power BI — semantic model field naming
 - [ ] Audit and rename misnamed fields in `nyc_analytics_model` — `FactAirQualityDaily.city` actually contains station names (OpenAQ `location_name`), not city names; rename to `station_name` in the semantic model and update all visuals that reference it. Do a full pass of all column display names across all tables to ensure they match what the data actually contains.
 
+### Silver — taxi fare_amount outlier filter
+- [ ] `silver_taxi_trips` contains ~13 rows from TLC source with `fare_amount` between $187k and $863k for trips of 1.2-21.3 miles — clearly corrupted upstream data (real NYC taxi fares cannot exceed ~$2k even in extreme cases). Currently surfaced as a real DQ finding by the GE suite. Better fix: add a sanity filter in `silver_etl` taxi section to drop rows with `fare_amount > 10_000` (alongside the existing `fare_amount > 0` filter). Then re-run silver and remove the recurring DQ failure.
+
+### Silver — OpenAQ non-pollutant parameters
+- [ ] `silver_openaq_measurements` currently contains non-pollutant parameters (`temperature`, `relativehumidity`, `um003`) that OpenAQ co-hosts with the pollutants. Surfaced by GE DQ check (parameter value_set originally listed only pollutants → ~612k rows flagged). For now value_set is broadened to include them; better fix is to either (a) filter them out in silver_etl since the project's analytical questions are about pollution only, or (b) split into a separate `silver_openaq_context` table.
+
+### Silver — TIMESTAMP_NTZ unreadable via SQL endpoint
+- [ ] `silver_taxi_trips.pickup_datetime` and `dropoff_datetime` are TIMESTAMP_NTZ in Delta and therefore invisible to the Lakehouse SQL endpoint (Fabric limitation — known issue with `timestamp_ntz` type, hidden from T-SQL surface). Same root cause as the Spark CBO bug we already work around at read time in `gold_etl` (cast `timestamp_ntz → timestamp` to avoid `FilterEstimation` MatchError when Delta column statistics are present). Current impact is narrower: GE DQ checks can't inspect those columns and any tool connecting via SQL only (e.g. Power BI in DirectQuery against the Lakehouse) won't see them. **Fix:** apply the same `timestamp_ntz → timestamp` cast at silver_etl write time, so the columns land typed as `timestamp` and become visible to the SQL endpoint. Then re-add `pickup_datetime not null` to the GE suite for `silver_taxi_trips`.
+
 ### Known data limitations
 - **OpenAQ historical coverage** — NYC stations in the S3 archive have data for 2021–2025, but with coverage gaps: mid-2022 (May–Sep) shows near-zero measurements for many stations. Not a pipeline issue — reflects actual S3 archive availability.
 - **Multi-pollutant station coverage** — not all OpenAQ stations measure all pollutants; some stations have gaps in NO2/O3 data. Known data limitation from OpenAQ source.
@@ -150,7 +144,8 @@ Steps 1-5 done. Remaining tables are full overwrite — savings minimal vs added
 ```
 fabric/       All Fabric workspace items: dataflows, pipelines, notebooks, warehouse SQL
               Synced automatically via Fabric Git integration
-jobs/         External Python jobs — run outside Fabric (added in Phase 7)
+app/          External Python app (Phase 7) — CLI dispatcher + weather_sync.
+              Single Docker image used by docker-compose service app-weather-sync.
 terraform/    IaC: workspace, lakehouses, warehouse (run `make help`)
 docs/         Architecture, data dictionary, how-to-run, governance screenshots (img/)
 spec/         Original project specification (PDF)
@@ -160,8 +155,7 @@ spec/         Original project specification (PDF)
 
 | Branch | Phase | Status |
 |--------|-------|--------|
-| `feature/governance-monitoring` | Phase 6 — Governance & monitoring (schedules, RLS, Purview) | Active |
-| `feature/external-integrations` | Phase 7 — Weather + InfluxDB + Grafana + GE + Telegram bot | Planned |
+| `feature/external-integrations` | Phase 7 — Weather + InfluxDB + Grafana + GE + Telegram bot | Active |
 
 ## Data sources
 
@@ -185,12 +179,14 @@ Architecture decisions: see [docs/architecture.md](docs/architecture.md)
 
 ## Environment
 
-Phase 7 env vars (not yet needed):
+Phase 7 env vars (used by `app/`, full list in `.env.example`):
 
 | Variable | Purpose |
 |----------|---------|
-| `INFLUXDB_URL/TOKEN/ORG/BUCKET` | InfluxDB Cloud — weather time-series |
-| `TELEGRAM_BOT_TOKEN/CHAT_ID` | Telegram / Discord Bot — DQ alerts |
+| `INFLUXDB_URL` / `INFLUXDB_TOKEN` / `INFLUXDB_ORG` / `INFLUXDB_BUCKET` | InfluxDB connection — `http://influxdb:8086` in compose network, token + org seeded at first start |
+| `INFLUXDB_INIT_USERNAME` / `INFLUXDB_INIT_PASSWORD` / `INFLUXDB_INIT_MODE` | InfluxDB bootstrap (used only on first container start) |
+| `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` | Grafana admin login |
+| `FABRIC_SQL_SERVER` / `FABRIC_SP_CLIENT_ID` / `FABRIC_SP_CLIENT_SECRET` / `SILVER_LAKEHOUSE_DB` / `GOLD_WAREHOUSE_DB` | Fabric SQL endpoint via Entra ID Service Principal — read silver_weather + (later) GE checks |
 
 ## Key principles
 
