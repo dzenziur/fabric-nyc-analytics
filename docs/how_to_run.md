@@ -211,78 +211,110 @@ Full run estimate: ~5–7 min (bronze parallel) + ~6–12 min silver + ~2–3 mi
 
 ---
 
-## Step 7 — Weather External Job + InfluxDB (Phase 7 — not yet implemented)
+## Step 7 — Phase 7 External Stack (Docker Compose)
 
-### InfluxDB Cloud setup
-1. Register at https://cloud2.influxdata.com (free tier)
-2. Create bucket: `nyc_analytics`
-3. Generate API token (All Access)
-4. Save: `INFLUXDB_URL`, `INFLUXDB_TOKEN`, `INFLUXDB_ORG`, `INFLUXDB_BUCKET`
+Phase 7 ships a local Docker Compose stack with three responsibilities:
+- **`weather_sync`** — periodically copies `silver_weather` from Fabric SQL endpoint to InfluxDB
+- **InfluxDB + Grafana** — time-series storage + dashboard for weather data
+- **Telegram bot** — on-demand `/report` runs Great Expectations on Silver + Gold and replies with a summary
 
-### Run weather ingest job
+All four containers (`influxdb`, `grafana`, `app-weather-sync`, `app-bot`) are orchestrated by `docker-compose.yml` at the repo root. The same Python image (`Dockerfile`) is reused by both app containers via a multi-entry CLI (`python -m app {weather-sync,bot,ge-report}`).
+
+### Prerequisites
+- **Docker Desktop** (or any compose-compatible runtime)
+- **GNU make** (Git Bash on Windows ships with it)
+
+### 7a. Register an Entra ID Service Principal
+
+The app reads from `silver_lakehouse` SQL endpoint and `gold_warehouse` via Microsoft Entra ID Service Principal authentication.
+
+1. [portal.azure.com](https://portal.azure.com) → **Microsoft Entra ID** → **App registrations** → **New registration**
+   - Name: `nyc-analytics-app` (any)
+   - Account types: *Single tenant*
+   - Redirect URI: leave blank → **Register**
+2. From the Overview page copy the **Application (client) ID**
+3. Sidebar → **Certificates & secrets** → **Client secrets** → **New client secret**
+   - Description: `phase-7-app`, Expires: 6 months → **Add**
+   - Immediately copy the **Value** column (shown only once)
+4. Enable the tenant setting **Service principals can call Fabric APIs**: Fabric portal → ⚙ Settings → **Admin portal** → **Tenant settings** → **Developer settings** → enable for entire org or a security group containing the SP. *(Requires Fabric admin role.)*
+5. Add the SP to the workspace: Fabric portal → workspace **Fabric NYC Analytics** → **Manage access** → **+ Add people or groups** → paste the application ID → role **Viewer** → **Add**
+6. Capture the SQL connection string: open `silver_lakehouse` → top-right toggle to **SQL analytics endpoint** → **⋯** → **Settings** → **SQL connection string**. The hostname looks like `<guid>.datawarehouse.fabric.microsoft.com`.
+
+### 7b. Create a Telegram bot
+
+1. In Telegram find **@BotFather** → `/newbot`
+2. Choose a display name (any) and a username ending in `bot` (must be globally unique)
+3. BotFather replies with an HTTP API token — copy it
+4. (Optional, recommended) restrict bot to your chat: after first `/start`, find your chat ID in `make logs-bot` and set `TELEGRAM_ALLOWED_CHAT_IDS=<id>` in `.env`
+
+### 7c. Fill `.env`
+
 ```bash
-pip install influxdb-client requests
-
-# Set env vars
-export INFLUXDB_URL="https://us-east-1-1.aws.cloud2.influxdata.com"
-export INFLUXDB_TOKEN="your_token_here"
-export INFLUXDB_ORG="your_org"
-export INFLUXDB_BUCKET="nyc_analytics"
-
-# Run once manually (script added in Phase 5)
-# python jobs/weather_ingest.py
-
-# Schedule (Linux cron, every hour):
-# 0 * * * * /usr/bin/python /path/to/jobs/weather_ingest.py
+cp .env.example .env
+# Edit .env — fill every value:
+#   FABRIC_SQL_SERVER          (from 7a step 6)
+#   FABRIC_SP_CLIENT_ID        (from 7a step 2)
+#   FABRIC_SP_CLIENT_SECRET    (from 7a step 3)
+#   INFLUXDB_TOKEN             (any 32+ char random string; will be created on first boot)
+#   INFLUXDB_INIT_PASSWORD     (admin password for the InfluxDB UI)
+#   GRAFANA_ADMIN_PASSWORD     (admin password for the Grafana UI)
+#   TELEGRAM_BOT_TOKEN         (from 7b step 3)
 ```
 
-### Grafana setup
-1. Register at https://grafana.com (free cloud) or run locally:
-   ```bash
-   docker run -d -p 3000:3000 grafana/grafana
-   ```
-2. Add data source: InfluxDB → Flux mode → paste token + org + bucket
-3. Import dashboard from `grafana/dashboards/weather_nyc.json`
+### 7d. Build and start
+
+```bash
+make build          # first build ~2-3 min (downloads python:3.11-slim + MS ODBC Driver 18 + deps)
+make up             # starts all 4 containers in background
+make ps             # verify everything is "Up" and influxdb is "Up (healthy)"
+```
+
+### 7e. Verify weather pipeline
+
+```bash
+make weather-sync-once     # runs one-shot weather sync, exits when done
+                           # output: "[weather_sync] wrote <N> points to weather_nyc"
+```
+
+Open Grafana on http://localhost:3000:
+1. Login with `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` from `.env`
+2. Sidebar → **Dashboards** → **NYC Weather**
+3. Time range top-right — pick **Last 30 days** or **Last 6 months** (default 7 days may be empty due to Open-Meteo Archive's ~5-day lag)
+4. Four panels should render: Temperature (with feels_like overlay), Precipitation (bars), Wind speed, Humidity
+
+### 7f. Verify GE + Telegram bot
+
+CLI smoke test (does not need the bot):
+```bash
+make ge-report     # runs all 12 suites, prints DQ report to stdout (~30-60 sec)
+```
+
+Bot smoke test:
+1. Find your bot in Telegram by its `@username`
+2. Send `/start` → bot replies with welcome text
+3. Send `/report` → bot replies "Running DQ checks, please wait..." → ~30-60 sec later edits that message to show the full report wrapped in a `<pre>` block
+
+The bot keeps running as long as the `app-bot` container is up (`restart: unless-stopped`). Logs: `make logs-bot`.
+
+### Useful Make targets
+
+```
+make up              # start everything detached
+make up-data         # start only influxdb + grafana (no app containers — for early smoke)
+make down            # stop and remove containers (keeps volumes)
+make clean           # stop AND delete volumes (destroys InfluxDB + Grafana data)
+make rebuild         # force --no-cache build (use after dep changes)
+make logs-bot        # tail bot logs
+make logs-sync       # tail weather-sync logs
+make weather-sync-once   # one-shot weather sync (exits on completion)
+make ge-report       # one-shot DQ report to stdout
+```
+
+Full target list: `make help`.
 
 ---
 
-## Step 7b — Great Expectations + Telegram Bot (Phase 7 — not yet implemented)
-
-### Great Expectations setup
-```bash
-pip install great-expectations
-
-# Initialize GE project (run once)
-great_expectations init
-
-# Run a checkpoint manually
-great_expectations checkpoint run silver_taxi_checkpoint
-# → generates HTML report in great_expectations/uncommitted/data_docs/
-```
-
-### Telegram Bot setup
-1. Create bot via @BotFather in Telegram → get `BOT_TOKEN`
-2. Get your chat ID: message @userinfobot
-3. Set env vars:
-   ```bash
-   export TELEGRAM_BOT_TOKEN="your_bot_token"
-   export TELEGRAM_CHAT_ID="your_chat_id"
-   ```
-4. Run bot:
-   ```bash
-   pip install python-telegram-bot
-   python bot/dq_bot.py
-   ```
-5. In Telegram: send `/report` → bot runs GE → replies with pass/fail summary
-
-### Available bot commands
-- `/report` — run all checkpoints, send summary
-- `/report silver_taxi_trips` — run specific table
-- `/status` — show last run results without re-running
-
----
-
-## Step 7c — Schedule Automation (Phase 6)
+## Step 8 — Schedule Automation (Phase 6)
 
 `pl_master_orchestrator` runs on a twice-daily schedule configured directly in Fabric UI.
 
@@ -311,20 +343,24 @@ great_expectations checkpoint run silver_taxi_checkpoint
 ## Full Run Order (Manual)
 
 ```
-1. Run df_ecb_fx                                  → bronze_fx_rates
-2. Run df_worldbank_gdp                           → bronze_gdp
-3. Run bronze_ingest_taxi_zones                   → bronze_taxi_zones
-4. Run bronze_ingest_openaq_locations             → bronze_openaq_locations
-5. Run bronze_ingest_openaq_measurements          → bronze_openaq_measurements
-6. Run pl_ingest_nyc_taxi (per year/month)        → Files/raw/taxi/
-7. Run silver_etl notebook                        → silver_* tables
-8. Run gold_etl notebook                          → Fact/Dim tables in Warehouse
-9. Refresh Power BI                               → Reports update
---- Phase 7 additions ---
-8. python jobs/weather_ingest.py → bronze_weather + InfluxDB
-9. Run silver_etl notebook (weather) → silver_weather (+ GE validation)
-10. Open Grafana             → Weather dashboard live
-11. Send /report to bot      → DQ report in Telegram
+Inside Fabric (one-shot replay of the full medallion):
+  1. df_ecb_fx                              → bronze_fx_rates
+  2. df_worldbank_gdp                       → bronze_gdp
+  3. bronze_ingest_taxi_zones               → bronze_taxi_zones
+  4. bronze_ingest_openaq_locations         → bronze_openaq_locations
+  5. bronze_ingest_openaq_measurements      → bronze_openaq_measurements
+  6. bronze_ingest_weather                  → bronze_weather
+  7. pl_ingest_nyc_taxi (per year/month)    → Files/raw/taxi/
+  8. silver_etl notebook                    → all silver_* tables (incl. silver_weather)
+  9. gold_etl notebook                      → Fact/Dim tables in Warehouse
+ 10. Refresh Power BI                       → Reports update
+
+In practice all of the above is one click: run `pl_master_orchestrator` (see Step 6).
+
+External app (docker-compose, see Step 7):
+ 11. make weather-sync-once                 → silver_weather replicated to InfluxDB
+ 12. open Grafana on localhost:3000         → NYC Weather dashboard renders
+ 13. Telegram bot — /report                 → DQ report from Great Expectations
 ```
 
 ---
@@ -339,7 +375,8 @@ SELECT COUNT(*) FROM bronze_lakehouse.bronze_taxi_trips;
 SELECT COUNT(*) FROM bronze_lakehouse.bronze_openaq_locations;
 
 -- Silver: check no nulls in key columns
-SELECT COUNT(*) FROM silver_lakehouse.silver_taxi_trips WHERE pickup_datetime IS NULL;
+-- (pickup_datetime is TIMESTAMP_NTZ and not exposed by the SQL endpoint — use a SQL-visible column instead)
+SELECT COUNT(*) FROM silver_lakehouse.silver_taxi_trips WHERE pu_location_id IS NULL;
 
 -- Gold: check fact table has data for expected dates
 SELECT MIN(date_key), MAX(date_key), COUNT(*) FROM gold_warehouse.dbo.FactTaxiDaily;

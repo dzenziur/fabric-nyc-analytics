@@ -14,7 +14,7 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 **Active branch:** `feature/external-integrations`
 **Deadline:** May 21, 2026. Defense on May 26 but all artefacts must be ready by 21.
-**Last session:** 2026-05-19 — Phase 7 weather pipeline shipped end-to-end. Fabric side: `bronze_ingest_weather` notebook (47,112 hourly rows 2021–2026), `silver_etl ## Weather` section, `pl_master_orchestrator` parallel ingestion. External side: `app/` package (CLI dispatcher + `weather_sync.py` watermark-incremental from `silver_weather` → InfluxDB via pyodbc + Service Principal + `influxdb-client`), `docker-compose.yml` (InfluxDB OSS + Grafana OSS + app-weather-sync), Grafana auto-provisioned datasource + 4-panel NYC Weather dashboard, `Makefile` for compose lifecycle. End-to-end smoke test passed: 47k Points written to bucket `weather_nyc`, dashboard renders temperature/precipitation/wind/humidity correctly. GE suites + Telegram bot still pending.
+**Last session:** 2026-05-19 — Phase 7 complete end-to-end. On top of the weather pipeline (Fabric → app/weather_sync → InfluxDB → Grafana), added `app/ge/` Great Expectations runner (56 expectations across 12 Silver + Gold tables, hybrid: GE PandasDataset for small tables + SQL aggregates for large), `app/bot.py` Telegram long-polling bot (`/report` → `asyncio.to_thread(run_report)` → reply as HTML `<pre>` block), `app-bot` service in compose, `docs/how_to_run.md § Step 7` setup walkthrough. End-to-end smoke test: `/report` in Telegram returns 55/56 passing checks (one legitimate DQ finding: 13 rows with `fare_amount > $10k` from corrupted TLC upstream data). Phase 7 ready for PR + merge to main.
 
 ### Phase completion
 
@@ -27,32 +27,34 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 | Phase 4 — Visualizations | ✅ Done | 4 dashboards; Air Quality map (Azure Maps + WHO thresholds + conditional KPI fill); semantic model fixes |
 | Phase 5 — Master Orchestrator | ✅ Done | pl_master_orchestrator + parameterized silver/gold notebooks + prepare_taxi_ingestion (pre-flight + incremental) |
 | Phase 6 — Governance & Monitoring | ✅ Done | Twice-daily schedule + RLS (5 roles on DimZone.service_zone) + lineage via Fabric built-in workspace view |
-| Phase 7 — External Integrations | 🔄 In progress | Weather pipeline done end-to-end (Fabric bronze→silver→app/weather_sync→InfluxDB→Grafana dashboard); GE suites + Telegram bot + how_to_run docs pending |
+| Phase 7 — External Integrations | ✅ Done | Weather pipeline (Fabric→InfluxDB→Grafana) + Great Expectations runner (56 checks, Silver + Gold) + Telegram bot `/report` (long-polling) + docker-compose stack + Makefile + how_to_run docs |
 
 ### Current branch goal (`feature/external-integrations`)
 
-Phase 7 — External Integrations per spec section 7. Two integrations: (1) Weather → time-series DB → Grafana, (2) Great Expectations → Telegram bot `/report`. Fabric is the single source of truth; the external job reads enriched data **from Fabric** and pushes it to InfluxDB.
+Phase 7 — External Integrations per spec section 7. Two integrations: (1) Weather → time-series DB → Grafana, (2) Great Expectations → Telegram bot `/report`. Fabric is the single source of truth; the external job reads enriched data **from Fabric** and pushes it to InfluxDB. **Status: ready for PR + merge to main.**
 
-#### Weather flow inside Fabric ✅
+#### Weather flow inside Fabric
 - [x] `bronze_ingest_weather` notebook — Open-Meteo Archive + Forecast APIs → `bronze_lakehouse.bronze_weather`. Parameters: `year_start`, `year_end`, `force_refresh`. NYC single point (Manhattan); multi-point in backlog. Default `force_refresh=False` uses Forecast API `past_days=2` and MERGEs on `(lat, lon, datetime)`; `force_refresh=True` or first run uses Archive API for full year range + partition overwrite.
 - [x] `silver_etl` — new `## Weather` section: cast datetime, enriched renames (`temperature_2m → temperature_c`, `apparent_temperature → feels_like_c`, `precipitation → precipitation_mm`, `wind_speed_10m → wind_speed_kmh`, `relative_humidity_2m → humidity_pct`), derived `is_rainy` flag, partition by year/month → `silver_lakehouse.silver_weather`. Incremental via `MAX(datetime)` watermark + MERGE (with `whenMatchedUpdateAll` because Open-Meteo retroactively refines recent data).
 - [x] `pl_master_orchestrator` — `bronze_ingest_weather` added as parallel ingestion (depends on `prepare_taxi_ingestion` succeeded); `silver_etl` now depends on it succeeding (true fail-fast). Full pipeline run verified end-to-end (10/10 activities).
 - [x] **No Gold / Power BI for weather** — Grafana on InfluxDB satisfies the visualisation requirement; a `FactWeatherDaily` with no downstream consumer would be dead code, so the medallion stops at Silver for weather.
 
-#### Weather export to InfluxDB + Grafana ✅
+#### Weather export to InfluxDB + Grafana
 - [x] **Entra ID Service Principal** — registered app `nyc-analytics-app`, granted Viewer on workspace (covers SQL endpoint read for `silver_lakehouse` and `gold_warehouse`). Tenant setting "Service principals can call Fabric APIs" enabled.
-- [x] **`app/` package** — `__main__.py` CLI dispatcher with `WEATHER_SYNC_INTERVAL_SECONDS` scheduler loop, `config.py`, `fabric_client.py` (pyodbc + SP auth), `influx_client.py`, `weather_sync.py`. `Dockerfile` (python:3.11-slim + MS ODBC Driver 18), `requirements.txt` (3 deps: influxdb-client, pyodbc, python-dotenv), `.dockerignore`, `.env.example`.
-- [x] **`app/weather_sync.py`** — watermark from InfluxDB last `_time` of `weather` measurement, T-SQL incremental `WHERE datetime > watermark` against `silver_weather`, batched write of Points (tag `location=nyc`, fields temperature_c / feels_like_c / precipitation_mm / wind_speed_kmh / humidity_pct / weather_code / is_rainy). Verified end-to-end: 47,112 historical Points written.
-- [x] **`docker-compose.yml`** — services `influxdb` (OSS 2.7, persistent volume, init bootstrap, healthcheck), `grafana` (OSS 11.2, waits on influxdb healthy, provisioning mount), `app-weather-sync` (builds local Dockerfile, env_file `.env`, `WEATHER_SYNC_INTERVAL_SECONDS=3600`).
-- [x] **`grafana/provisioning/`** — `datasources/influxdb.yml` (uid=influxdb, Flux, token from env) + `dashboards/dashboards.yml` (file provider) + `dashboards/weather.json` (4-panel NYC Weather: temperature, precipitation, wind, humidity).
-- [x] **`Makefile`** — compose lifecycle (up / up-data / down / restart / clean), build / rebuild, ps + per-service logs, `weather-sync-once` for ad-hoc runs.
+- [x] **`app/` package** — `__main__.py` CLI dispatcher (commands: `weather-sync`, `ge-report`, `bot`) with `WEATHER_SYNC_INTERVAL_SECONDS` scheduler loop, `config.py`, `fabric_client.py` (pyodbc + SP auth), `influx_client.py`, `weather_sync.py`. `Dockerfile` (python:3.11-slim + MS ODBC Driver 18), `requirements.txt`, `.dockerignore`, `.env.example`.
+- [x] **`app/weather_sync.py`** — watermark from InfluxDB last `_time` of `weather` measurement, T-SQL incremental `WHERE datetime > watermark` against `silver_weather`, batched write of Points. Verified end-to-end: 47,112 historical Points written.
+- [x] **`docker-compose.yml`** — services `influxdb` (OSS 2.7, persistent volume, init bootstrap, healthcheck), `grafana` (OSS 11.2, waits on influxdb healthy, provisioning mount), `app-weather-sync` (builds local Dockerfile, hourly scheduler loop).
+- [x] **`grafana/provisioning/`** — InfluxDB datasource + `weather.json` 4-panel dashboard (temperature, precipitation, wind, humidity).
+- [x] **`Makefile`** — compose lifecycle, build/rebuild, ps + per-service logs, `weather-sync-once` and `ge-report` ad-hoc runs.
 
-#### Great Expectations + Telegram Bot (next)
-- [ ] `app/ge/` — expectation suites for Silver + Gold layers (Bronze skipped — low ROI, in backlog). Per-table checks per `docs/data_dictionary.md`: nulls, ranges, FK integrity, row count ranges, distribution checks. Connection via Fabric SQL endpoints. Re-add `great-expectations` + `sqlalchemy` to `requirements.txt` when implementing.
-- [ ] `app/bot.py` — Telegram bot, `/report` command (user → bot direction). Long-polling mode (`run_polling()`) — no public URL required, no cold-start latency. Re-add `python-telegram-bot` to `requirements.txt`. Add `app-bot` service to `docker-compose.yml`.
+#### Great Expectations + Telegram Bot
+- [x] **`app/ge/`** — 56 expectations across 12 Silver + Gold tables (Bronze skipped — low ROI, in backlog). Hybrid execution: GE PandasDataset for small tables (locations, gdp, fx, weather, all dims), SQL aggregates for large (taxi_trips, openaq_measurements, FactTaxiDaily, FactAirQualityDaily). `result.py` `CheckResult` dataclass + `format_report()` monospace text. Per-suite try/except so one failure doesn't break the report.
+- [x] **`app/bot.py`** — Telegram bot via `python-telegram-bot` v21 in long-polling mode. `/start` welcome + `/report` placeholder-edit UX (`asyncio.to_thread(run_report)` so blocking pyodbc/pandas/GE doesn't freeze the event loop). HTML `<pre>` formatting. Optional `TELEGRAM_ALLOWED_CHAT_IDS` allowlist.
+- [x] **`app-bot` service** in `docker-compose.yml` — reuses the image, `restart: unless-stopped`.
 
-#### Docs (last)
-- [ ] `docs/how_to_run.md` — Phase 7 quick start: register SP, fill `.env`, `make build`, `make up`, open Grafana on `localhost:3000`. BotFather + `/report` once bot is implemented.
+#### Docs
+- [x] `docs/how_to_run.md § Step 7` — end-to-end Phase 7 walkthrough: SP registration, BotFather, `.env` fill, `make build` + `make up`, Grafana on `localhost:3000`, `/report` in Telegram.
+- [x] `docs/architecture.md § Phase 7` — current Implemented list (no Pending items remain).
 
 ## Backlog
 
@@ -110,6 +112,15 @@ Steps 1-5 done. Remaining tables are full overwrite — savings minimal vs added
 
 ### Power BI — semantic model field naming
 - [ ] Audit and rename misnamed fields in `nyc_analytics_model` — `FactAirQualityDaily.city` actually contains station names (OpenAQ `location_name`), not city names; rename to `station_name` in the semantic model and update all visuals that reference it. Do a full pass of all column display names across all tables to ensure they match what the data actually contains.
+
+### Silver — taxi fare_amount outlier filter
+- [ ] `silver_taxi_trips` contains ~13 rows from TLC source with `fare_amount` between $187k and $863k for trips of 1.2-21.3 miles — clearly corrupted upstream data (real NYC taxi fares cannot exceed ~$2k even in extreme cases). Currently surfaced as a real DQ finding by the GE suite. Better fix: add a sanity filter in `silver_etl` taxi section to drop rows with `fare_amount > 10_000` (alongside the existing `fare_amount > 0` filter). Then re-run silver and remove the recurring DQ failure.
+
+### Silver — OpenAQ non-pollutant parameters
+- [ ] `silver_openaq_measurements` currently contains non-pollutant parameters (`temperature`, `relativehumidity`, `um003`) that OpenAQ co-hosts with the pollutants. Surfaced by GE DQ check (parameter value_set originally listed only pollutants → ~612k rows flagged). For now value_set is broadened to include them; better fix is to either (a) filter them out in silver_etl since the project's analytical questions are about pollution only, or (b) split into a separate `silver_openaq_context` table.
+
+### Silver — TIMESTAMP_NTZ unreadable via SQL endpoint
+- [ ] `silver_taxi_trips.pickup_datetime` and `dropoff_datetime` are TIMESTAMP_NTZ in Delta and therefore invisible to the Lakehouse SQL endpoint (Fabric limitation — known issue with `timestamp_ntz` type, hidden from T-SQL surface). Same root cause as the Spark CBO bug we already work around at read time in `gold_etl` (cast `timestamp_ntz → timestamp` to avoid `FilterEstimation` MatchError when Delta column statistics are present). Current impact is narrower: GE DQ checks can't inspect those columns and any tool connecting via SQL only (e.g. Power BI in DirectQuery against the Lakehouse) won't see them. **Fix:** apply the same `timestamp_ntz → timestamp` cast at silver_etl write time, so the columns land typed as `timestamp` and become visible to the SQL endpoint. Then re-add `pickup_datetime not null` to the GE suite for `silver_taxi_trips`.
 
 ### Known data limitations
 - **OpenAQ historical coverage** — NYC stations in the S3 archive have data for 2021–2025, but with coverage gaps: mid-2022 (May–Sep) shows near-zero measurements for many stations. Not a pipeline issue — reflects actual S3 archive availability.
