@@ -52,3 +52,6 @@ logs-grafana:  ## Tail logs from Grafana only
 
 weather-sync-once:  ## Run one weather sync now (overrides scheduler, exits on completion)
 	$(COMPOSE) run --rm -e WEATHER_SYNC_INTERVAL_SECONDS=0 app-weather-sync python -m app weather-sync
+
+ge-report:  ## Run Great Expectations checks and print the DQ report to stdout
+	$(COMPOSE) run --rm app-weather-sync python -m app ge-report

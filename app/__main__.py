@@ -2,6 +2,7 @@
 
 Usage:
     python -m app weather-sync   # Pull silver_weather from Fabric -> push to InfluxDB
+    python -m app ge-report      # Run DQ checks on Silver + Gold, print report to stdout
 
 Environment knobs:
     WEATHER_SYNC_INTERVAL_SECONDS   If set and > 0, weather-sync loops with this delay
@@ -37,6 +38,9 @@ def main() -> None:
 
     if cmd == "weather-sync":
         _weather_sync_loop()
+    elif cmd == "ge-report":
+        from app.ge import run_report
+        print(run_report())
     else:
         print(f"Unknown command: {cmd}")
         print(__doc__)
