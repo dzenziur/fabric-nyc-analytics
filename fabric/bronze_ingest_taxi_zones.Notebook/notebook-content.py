@@ -52,6 +52,7 @@ force_refresh = False
 # CELL ********************
 
 import urllib.request
+import requests
 
 # METADATA ********************
 
@@ -96,16 +97,24 @@ if not force_refresh:
 
 # CELL ********************
 
-# TLC CloudFront rejects the default `Python-urllib/*` User-Agent with HTTP 403.
-# Send a full realistic Chrome UA — a bare `Mozilla/5.0` is sometimes still blocked.
-BROWSER_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/120.0.0.0 Safari/537.36"
-)
-req = urllib.request.Request(ZONE_CSV_URL, headers={"User-Agent": BROWSER_UA})
-with urllib.request.urlopen(req) as resp, open(ZONE_CSV_TMP, "wb") as fh:
-    fh.write(resp.read())
+# TLC CloudFront `/misc/` path is stricter than `/trip-data/` — UA alone is not enough.
+# Send a full browser-like header set via `requests` (which also handles redirects/cookies
+# more like a real browser than `urllib`).
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/csv,application/csv,application/octet-stream,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page",
+}
+resp = requests.get(ZONE_CSV_URL, headers=BROWSER_HEADERS, timeout=30)
+resp.raise_for_status()
+with open(ZONE_CSV_TMP, "wb") as fh:
+    fh.write(resp.content)
+print(f"Downloaded {len(resp.content):,} bytes from {ZONE_CSV_URL}")
 
 df = (
     spark.read.option("header", True).csv(f"file://{ZONE_CSV_TMP}")
