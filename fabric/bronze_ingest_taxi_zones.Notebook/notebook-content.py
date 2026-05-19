@@ -97,8 +97,13 @@ if not force_refresh:
 # CELL ********************
 
 # TLC CloudFront rejects the default `Python-urllib/*` User-Agent with HTTP 403.
-# Send a browser-style UA to get the CSV through.
-req = urllib.request.Request(ZONE_CSV_URL, headers={"User-Agent": "Mozilla/5.0"})
+# Send a full realistic Chrome UA — a bare `Mozilla/5.0` is sometimes still blocked.
+BROWSER_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/120.0.0.0 Safari/537.36"
+)
+req = urllib.request.Request(ZONE_CSV_URL, headers={"User-Agent": BROWSER_UA})
 with urllib.request.urlopen(req) as resp, open(ZONE_CSV_TMP, "wb") as fh:
     fh.write(resp.read())
 

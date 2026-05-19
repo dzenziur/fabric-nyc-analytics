@@ -68,8 +68,14 @@ URL_TEMPLATE = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_
 REQUEST_TIMEOUT = 15
 TAXI_FILES_PATH = "Files/raw/taxi/"
 # TLC CloudFront rejects the default `Python-urllib/*` User-Agent with HTTP 403.
-# Send a browser-style UA so HEAD probes return real 200/404 status.
-BROWSER_UA = {"User-Agent": "Mozilla/5.0"}
+# A short `Mozilla/5.0` is sometimes still blocked, so send a full realistic Chrome UA.
+BROWSER_UA = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    )
+}
 
 print(f"Year range: {year_start} - {year_end}, force_refresh: {force_refresh}")
 
@@ -88,6 +94,24 @@ print(f"Year range: {year_start} - {year_end}, force_refresh: {force_refresh}")
 
 # CELL ********************
 
+# Reachability probe — a known-published month must return 200.
+# CloudFront origin policy returns 403 (not 404) for missing keys, so a per-month 403 is
+# ambiguous: it could mean "file not yet published" OR "anti-bot block". The probe
+# disambiguates: if a known-good URL also 403s, abort loudly; otherwise treat per-month
+# 403/404 as "month not available".
+REFERENCE_URL = URL_TEMPLATE.format(2024, 1)
+try:
+    urllib.request.urlopen(
+        urllib.request.Request(REFERENCE_URL, method="HEAD", headers=BROWSER_UA),
+        timeout=REQUEST_TIMEOUT,
+    )
+    print(f"TLC reachability OK (reference {REFERENCE_URL})")
+except HTTPError as e:
+    raise RuntimeError(
+        f"TLC CloudFront unreachable for reference URL {REFERENCE_URL} (HTTP {e.code}). "
+        f"Likely anti-bot block — update BROWSER_UA or check connectivity."
+    ) from e
+
 months_available_at_source = []
 
 for y in range(year_start, year_end + 1):
@@ -98,7 +122,7 @@ for y in range(year_start, year_end + 1):
             urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT)
             months_available_at_source.append({"year": y, "month": m})
         except HTTPError as e:
-            if e.code == 404:
+            if e.code in (403, 404):
                 continue
             raise
 
