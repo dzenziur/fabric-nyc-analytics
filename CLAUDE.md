@@ -8,13 +8,13 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 
 **Infrastructure as Code:** Terraform with `microsoft/fabric` provider — manages workspace + lakehouses + warehouse declaratively. See `terraform/`.
 
-**External stack** (Phase 7): InfluxDB Cloud (weather time-series), Grafana (weather dashboard), Great Expectations (data quality), Telegram / Discord Bot (DQ alerts).
+**External stack** (Phase 7): InfluxDB OSS (weather time-series, persistent volume), Grafana OSS (weather dashboard, auto-provisioned datasource), Great Expectations (data quality), Telegram bot with `/report` (DQ reports on demand, long-polling mode). All services run as Docker containers orchestrated by `docker-compose.yml` — local-first deployment, no cloud account dependencies beyond Fabric itself.
 
 ## Current Status
 
-**Active branch:** `feature/governance-monitoring`
-**Deadline:** May 26, 2026 (defense) — target May 15 for main features
-**Last session:** 2026-05-18 — Phase 6 closed: RLS configured (5 roles on DimZone.service_zone), lineage documented via Fabric built-in workspace lineage view (Purview Data Map evaluated and skipped — free tier lacks lineage graph), docs synced
+**Active branch:** `feature/external-integrations`
+**Deadline:** May 21, 2026. Defense on May 26 but all artefacts must be ready by 21.
+**Last session:** 2026-05-19 — Phase 7 started. Weather flow inside Fabric implemented end-to-end: `bronze_ingest_weather` notebook (Open-Meteo → bronze_weather, 47,112 rows 2021–2026), `silver_etl` extended with `## Weather` section (enriched renames + `is_rainy` derived flag + MERGE on watermark), `pl_master_orchestrator` integrated weather as parallel ingestion. Full pipeline run succeeded (10/10 activities). `app/` package scaffolded with CLI dispatcher (`python -m app {weather-sync,bot,ge-report}`), Dockerfile (python:3.11-slim + MS ODBC Driver 18), requirements.txt, `.env.example` for Phase 7 vars — bot and ge are stubs (NotImplementedError) to be filled in later tasks. Next: implement `weather_sync.py` against InfluxDB Cloud.
 
 ### Phase completion
 
@@ -27,49 +27,35 @@ Unified analytics platform on Microsoft Fabric that integrates NYC Taxi mobility
 | Phase 4 — Visualizations | ✅ Done | 4 dashboards; Air Quality map (Azure Maps + WHO thresholds + conditional KPI fill); semantic model fixes |
 | Phase 5 — Master Orchestrator | ✅ Done | pl_master_orchestrator + parameterized silver/gold notebooks + prepare_taxi_ingestion (pre-flight + incremental) |
 | Phase 6 — Governance & Monitoring | ✅ Done | Twice-daily schedule + RLS (5 roles on DimZone.service_zone) + lineage via Fabric built-in workspace view |
-| Phase 7 — External Integrations | ❌ Not started | Weather + InfluxDB + Grafana, Great Expectations + Telegram bot |
+| Phase 7 — External Integrations | 🔄 In progress | Weather flow in Fabric done (bronze_weather + silver_weather + orchestrator); app/ scaffolded; weather→InfluxDB, GE, bot, Render deploy pending |
 
-### Current branch goal (`feature/governance-monitoring`)
+### Current branch goal (`feature/external-integrations`)
 
-Phase 6 — Governance and Monitoring per spec (`spec/Microsoft Fabric Data Engineering Project.pdf`): Schedule ✅ (required) · RLS ✅ (optional) · Lineage ✅ (optional, via Fabric built-in lineage view — Purview Data Map skipped). Details below and in `docs/architecture.md`.
+Phase 7 — External Integrations per spec section 7. Two integrations: (1) Weather → time-series DB → Grafana, (2) Great Expectations → Telegram bot `/report`. Fabric is the single source of truth; the external job reads enriched data **from Fabric** and pushes it to InfluxDB.
 
-#### Schedule automation
+#### Weather flow inside Fabric ✅
+- [x] `bronze_ingest_weather` notebook — Open-Meteo Archive + Forecast APIs → `bronze_lakehouse.bronze_weather`. Parameters: `year_start`, `year_end`, `force_refresh`. NYC single point (Manhattan); multi-point in backlog. Default `force_refresh=False` uses Forecast API `past_days=2` and MERGEs on `(lat, lon, datetime)`; `force_refresh=True` or first run uses Archive API for full year range + partition overwrite.
+- [x] `silver_etl` — new `## Weather` section: cast datetime, enriched renames (`temperature_2m → temperature_c`, `apparent_temperature → feels_like_c`, `precipitation → precipitation_mm`, `wind_speed_10m → wind_speed_kmh`, `relative_humidity_2m → humidity_pct`), derived `is_rainy` flag, partition by year/month → `silver_lakehouse.silver_weather`. Incremental via `MAX(datetime)` watermark + MERGE (with `whenMatchedUpdateAll` because Open-Meteo retroactively refines recent data).
+- [x] `pl_master_orchestrator` — `bronze_ingest_weather` added as parallel ingestion (depends on `prepare_taxi_ingestion` succeeded); `silver_etl` now depends on it succeeding (true fail-fast). Full pipeline run verified end-to-end (10/10 activities).
+- [x] **No Gold / Power BI for weather** — Grafana on InfluxDB satisfies the visualisation requirement; a `FactWeatherDaily` with no downstream consumer would be dead code, so the medallion stops at Silver for weather.
 
-- [x] `pl_master_orchestrator` scheduled twice daily — 06:00 and 18:00 UTC, `force_refresh=false`, `year_start=2021`, `year_end=2026`. See `docs/how_to_run.md` for details.
+#### External app scaffold 🔄 (in progress)
+- [x] `app/` package scaffolded — CLI dispatcher (`python -m app {weather-sync,bot,ge-report}`), `config.py` (env vars via python-dotenv), `fabric_client.py` (pyodbc + Service Principal auth), `Dockerfile` (python:3.11-slim + MS ODBC Driver 18 + dependencies), `requirements.txt`, `.dockerignore`, `.env.example`. `bot.py` and `ge/__init__.py` are stubs raising `NotImplementedError` — to be filled in later tasks.
+- [ ] Entra ID Service Principal — register app, grant Read access on `silver_lakehouse` SQL endpoint and `gold_warehouse`.
 
-#### Incremental processing (force_refresh parameter)
-
-Single `force_refresh` (bool, default False) cascades from orchestrator → notebooks. `False` = incremental (schedule-friendly), `True` = full rebuild for manual backfill.
-
-- [x] **Step 1** — `silver_openaq_measurements`: watermark `MAX(datetime)` + Delta `MERGE INTO`
-- [x] **Step 2** — `silver_taxi_trips`: partition diff — append only `(year, month)` not yet in silver
-- [x] **Step 3** — `FactAirQualityDaily`: `MAX(gold.date_key) - 7 days` lookback (`LATE_ARRIVING_LOOKBACK_DAYS = 7`)
-- [x] **Step 4** — `FactTaxiDaily`: same 7-day lookback pattern as Step 3
-- [x] **Step 5** — `bronze_openaq_measurements`: current + previous month from S3; Delta `MERGE INTO`; `force_refresh=True` falls back to year-range
-
-Remaining tables (`silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, all gold dims) — full overwrite, small size makes incremental overhead exceed savings. Further candidates in Backlog → Incremental ETL.
-
-#### Row-Level Security (optional per spec)
-- [x] RLS configured in `nyc_analytics_model` — 5 roles on `DimZone[service_zone]` (Admin, Yellow Cab Dispatcher, Green Cab Dispatcher, Airports Operator, EWR Operator) mapping to real NYC TLC licensing zones; filter propagates to FactTaxiDaily via zone_key relationship. Role-to-user assignment done post-deployment in Power BI Service. See `docs/architecture.md`.
-
-#### Lineage (optional per spec)
-- [x] End-to-end data lineage documented via Fabric built-in workspace lineage view — covers external sources → Bronze (Dataflows + Notebooks + Pipelines) → Silver → Gold → Semantic Model → Report. Screenshot at `docs/img/workspace-lineage.png`. Microsoft Purview Data Map evaluated and skipped (paid Azure resource, not needed for single-workspace deployment — free Purview Data Catalog tier does not include lineage graph). See `docs/architecture.md` → Security & Governance.
-
-### Next branch — `feature/external-integrations` (Phase 7)
-
-External monitoring and data-quality stack — runs outside Fabric.
-
-#### Weather ingestion + InfluxDB + Grafana
-- [ ] `jobs/weather_ingest.py` — Open-Meteo API → Bronze Lakehouse + InfluxDB Cloud (hourly NYC weather)
-- [ ] Schedule weather ingest (Linux cron, Azure Function, or Railway.app — TBD)
-- [ ] Silver/Gold processing for weather: `silver_weather` table, `FactWeatherDaily` star schema entry
-- [ ] Grafana dashboard for weather time-series (InfluxDB data source) — temperature, precipitation, weather vs taxi demand
-- [ ] Document setup in `docs/how_to_run.md` (already partially scaffolded)
+#### Weather export to InfluxDB + Grafana
+- [ ] `app/weather_sync.py` — read new rows from `silver_weather` via Fabric SQL endpoint (watermark-based incremental), push to InfluxDB via `influxdb-client`.
+- [ ] Grafana dashboard JSON — temperature, precipitation, wind, humidity panels. Provisioned automatically from `grafana/provisioning/`.
 
 #### Great Expectations + Telegram Bot
-- [ ] Great Expectations expectation suites for Silver tables (specs already drafted in `docs/data_dictionary.md`)
-- [ ] `bot/dq_bot.py` — Telegram bot with `/report` command → runs GE checkpoints → replies with pass/fail summary
-- [ ] Document bot setup + secrets in `.env.example` and `docs/how_to_run.md`
+- [ ] `app/ge/` — expectation suites for Silver + Gold layers (Bronze skipped — low ROI, in backlog). Per-table checks per `docs/data_dictionary.md`: nulls, ranges, FK integrity, row count ranges, distribution checks. Connection via Fabric SQL endpoints.
+- [ ] `app/bot.py` — Telegram bot, `/report` command (user → bot direction). Long-polling mode (`run_polling()`) — no public URL required, no cold-start latency.
+
+#### Local Docker Compose deployment
+- [ ] `docker-compose.yml` at repo root — services: `influxdb` (OSS 2.x, persistent volume), `grafana` (OSS, datasource + dashboard auto-provisioned), `app-bot` (long-running, polling), `app-weather-sync` (sidecar with internal scheduler running hourly). Network: single bridge so app containers reach `influxdb:8086`.
+- [ ] `grafana/provisioning/datasources/influxdb.yml` — InfluxDB datasource pointing at `http://influxdb:8086`, token from env.
+- [ ] `grafana/provisioning/dashboards/weather.json` — pre-built weather dashboard.
+- [ ] `docs/how_to_run.md` — quick start: `cp .env.example .env`, fill secrets, `docker compose up -d`, open Grafana on `localhost:3000`.
 
 ## Backlog
 
@@ -150,7 +136,8 @@ Steps 1-5 done. Remaining tables are full overwrite — savings minimal vs added
 ```
 fabric/       All Fabric workspace items: dataflows, pipelines, notebooks, warehouse SQL
               Synced automatically via Fabric Git integration
-jobs/         External Python jobs — run outside Fabric (added in Phase 7)
+app/          External Python app (Phase 7) — single Docker image, multi-entry CLI
+              (weather sync, Telegram bot, GE runner). Deployed on Render.com.
 terraform/    IaC: workspace, lakehouses, warehouse (run `make help`)
 docs/         Architecture, data dictionary, how-to-run, governance screenshots (img/)
 spec/         Original project specification (PDF)
@@ -160,8 +147,7 @@ spec/         Original project specification (PDF)
 
 | Branch | Phase | Status |
 |--------|-------|--------|
-| `feature/governance-monitoring` | Phase 6 — Governance & monitoring (schedules, RLS, Purview) | Active |
-| `feature/external-integrations` | Phase 7 — Weather + InfluxDB + Grafana + GE + Telegram bot | Planned |
+| `feature/external-integrations` | Phase 7 — Weather + InfluxDB + Grafana + GE + Telegram bot | Active |
 
 ## Data sources
 
@@ -185,12 +171,13 @@ Architecture decisions: see [docs/architecture.md](docs/architecture.md)
 
 ## Environment
 
-Phase 7 env vars (not yet needed):
+Phase 7 env vars (used by `app/`, full list in `.env.example`):
 
 | Variable | Purpose |
 |----------|---------|
-| `INFLUXDB_URL/TOKEN/ORG/BUCKET` | InfluxDB Cloud — weather time-series |
-| `TELEGRAM_BOT_TOKEN/CHAT_ID` | Telegram / Discord Bot — DQ alerts |
+| `INFLUXDB_URL` / `INFLUXDB_TOKEN` / `INFLUXDB_ORG` / `INFLUXDB_BUCKET` | InfluxDB connection — `http://influxdb:8086` in compose network, token + org seeded at first start |
+| `FABRIC_SQL_SERVER` / `FABRIC_SP_CLIENT_ID` / `FABRIC_SP_CLIENT_SECRET` / `SILVER_LAKEHOUSE_DB` / `GOLD_WAREHOUSE_DB` | Fabric SQL endpoint via Entra ID Service Principal — read silver_weather + GE checks |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot auth (BotFather) — polling mode, no webhook required |
 
 ## Key principles
 

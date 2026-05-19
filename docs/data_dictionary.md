@@ -103,19 +103,24 @@ Note: static reference data (~265 rows), rarely changes; downloaded once per not
 
 ---
 
-### `bronze_weather` — Phase 7 (not yet implemented)
-Source: Open-Meteo API — https://api.open-meteo.com
+### `bronze_weather`
+Source: Open-Meteo Archive API (historical) + Forecast API (recent days) — https://open-meteo.com
+Ingested by: PySpark Notebook `bronze_ingest_weather`
+Note: single NYC point (40.7128, -74.0060); Open-Meteo snaps to its ~11 km grid so observed lat/lon in data are the grid centroid. Partitioned by `year`.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| timestamp | timestamp | Hourly timestamp (UTC) |
-| latitude | float | 40.71 (NYC) |
-| longitude | float | -74.01 (NYC) |
-| temperature_2m | float | Air temperature at 2m height (°C) |
-| precipitation | float | Precipitation amount (mm) |
-| windspeed_10m | float | Wind speed at 10m (km/h) |
-| weather_code | int | WMO weather interpretation code |
-| fetched_at | timestamp | When this record was ingested |
+| datetime | string | Hourly timestamp ISO 8601, GMT — cast to timestamp in silver_etl |
+| temperature_2m | double | Air temperature at 2 m (°C) |
+| apparent_temperature | double | Apparent ("feels like") temperature (°C) |
+| precipitation | double | Hourly precipitation total (mm) |
+| wind_speed_10m | double | Wind speed at 10 m (km/h) |
+| relative_humidity_2m | long | Relative humidity at 2 m (%) |
+| weather_code | long | WMO weather interpretation code |
+| latitude | double | Grid centroid latitude (~40.738) |
+| longitude | double | Grid centroid longitude (~-74.043) |
+| year | int | Calendar year — partition key |
+| ingestion_timestamp | timestamp | When this row was written to Bronze |
 
 ---
 
@@ -196,23 +201,25 @@ silver_etl normalizes them to µg/m³ using EPA conversion factors at 25°C
 
 ---
 
-### `silver_weather` — Phase 7 (not yet implemented)
-Transformations: validated ranges, added derived time fields
+### `silver_weather`
+Transformations: cast datetime to timestamp, null-filter (datetime + temperature_c not null), dedup on (latitude, longitude, datetime), rename Open-Meteo columns with explicit unit suffixes, derive `is_rainy` flag.
+Default mode (force_refresh=False): watermark `MAX(datetime)` + Delta `MERGE INTO` with `whenMatchedUpdateAll` (Open-Meteo retroactively refines recent observations, so updates are required). force_refresh=True: full read of bronze + partition replace.
+Partitioned by: `year`, `month`.
 
 | Column | Type | Description | Transformation |
 |--------|------|-------------|----------------|
-| weather_id | string | Synthetic key | SHA hash of timestamp + latitude + longitude |
-| measured_at_utc | timestamp | Hourly UTC datetime | = timestamp |
-| measured_date | date | Date only | DATE(timestamp) |
-| hour | int | Hour 0–23 | HOUR(timestamp) |
-| year | int | Year | YEAR(timestamp) |
-| month | int | Month 1–12 | MONTH(timestamp) |
-| temperature_c | float | Temperature (°C) | Clamped to [-40, 60] |
-| precipitation_mm | float | Precipitation (mm) | Negatives removed |
-| windspeed_kmh | float | Wind speed (km/h) | = windspeed_10m |
-| weather_code | int | WMO code | = weather_code |
-| weather_label | string | Human-readable condition | Mapped from weather_code |
-| is_rainy | boolean | True if precipitation > 0.5mm | Derived |
+| datetime | timestamp | Hourly UTC timestamp | Cast from bronze string |
+| latitude | double | Grid centroid latitude | Unchanged from bronze |
+| longitude | double | Grid centroid longitude | Unchanged from bronze |
+| temperature_c | double | Air temperature at 2 m (°C) | Renamed from `temperature_2m` |
+| feels_like_c | double | Apparent ("feels like") temperature (°C) | Renamed from `apparent_temperature` |
+| precipitation_mm | double | Hourly precipitation total (mm) | Renamed from `precipitation` |
+| wind_speed_kmh | double | Wind speed at 10 m (km/h) | Renamed from `wind_speed_10m` |
+| humidity_pct | long | Relative humidity at 2 m (%) | Renamed from `relative_humidity_2m` |
+| weather_code | long | WMO weather interpretation code | Unchanged |
+| is_rainy | boolean | True when `precipitation_mm > 0` | Derived |
+| year | int | Calendar year | Partition key — `YEAR(datetime)` |
+| month | int | Month 1–12 | Partition key — `MONTH(datetime)` |
 
 ---
 
