@@ -35,6 +35,19 @@
 # # Static CSV from TLC CloudFront (~265 rows, rarely changes).
 # # **Input:** TLC `taxi_zone_lookup.csv`
 # # **Output:** `bronze_taxi_zones`
+# # Default (force_refresh=False) skips the download entirely when the table already
+# # has rows — zones are essentially static. Pass force_refresh=True to force a re-fetch.
+
+# PARAMETERS CELL ********************
+
+force_refresh = False
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
 
 # CELL ********************
 
@@ -54,6 +67,25 @@ BRONZE_TAXI_ZONES = f"{BRONZE}.bronze_taxi_zones"
 
 ZONE_CSV_URL = "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
 ZONE_CSV_TMP = "/tmp/taxi_zone_lookup.csv"
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# Skip download when bronze already has rows and force_refresh is False.
+if not force_refresh:
+    try:
+        existing_count = spark.read.table(BRONZE_TAXI_ZONES).count()
+    except Exception:
+        existing_count = 0
+    if existing_count > 0:
+        print(f"[{BRONZE_TAXI_ZONES}] table already populated ({existing_count} rows) — skipping download. Pass force_refresh=True to override.")
+        notebookutils.notebook.exit("skipped: table populated")
 
 # METADATA ********************
 

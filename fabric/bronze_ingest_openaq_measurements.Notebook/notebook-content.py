@@ -188,23 +188,47 @@ print("S3 client ready")
 
 # ## NYC Stations
 # Read location IDs from `bronze_openaq_locations`, filter by NYC bounding box.
+# Pre-filter by station activity window — drop stations whose `[datetime_first, datetime_last]`
+# doesn't overlap the requested year range. Saves the bulk of S3 LIST calls (most NYC stations
+# came online post-2023, so 2021–2022 probes are otherwise just "no data, skipping").
+# Falls back to no filter (with a warning) if the activity columns are missing.
 
 # CELL ********************
 
+from datetime import datetime
+from pyspark.sql.functions import lit
+
 df_locations = spark.read.table(BRONZE_OPENAQ_LOCATIONS)
 
-nyc_ids = (
-    df_locations
-    .filter(
-        (col("latitude")  >= NYC_LAT_MIN) & (col("latitude")  <= NYC_LAT_MAX) &
-        (col("longitude") >= NYC_LON_MIN) & (col("longitude") <= NYC_LON_MAX)
+df_nyc = df_locations.filter(
+    (col("latitude")  >= NYC_LAT_MIN) & (col("latitude")  <= NYC_LAT_MAX) &
+    (col("longitude") >= NYC_LON_MIN) & (col("longitude") <= NYC_LON_MAX)
+)
+
+has_activity_cols = "datetime_first" in df_locations.columns and "datetime_last" in df_locations.columns
+if has_activity_cols:
+    range_start = datetime(YEAR_START, 1, 1)
+    range_end   = datetime(YEAR_END, 12, 31, 23, 59, 59)
+    df_active = df_nyc.filter(
+        (col("datetime_first").isNull() | (to_timestamp(col("datetime_first")) <= lit(range_end))) &
+        (col("datetime_last").isNull()  | (to_timestamp(col("datetime_last"))  >= lit(range_start)))
     )
+    nyc_total  = df_nyc.count()
+    nyc_active = df_active.count()
+    print(f"NYC stations in bbox: {nyc_total}; active for {YEAR_START}-{YEAR_END}: {nyc_active} (dropped {nyc_total - nyc_active} inactive)")
+    df_filtered = df_active
+else:
+    print(f"WARNING: bronze_openaq_locations is missing datetime_first/datetime_last — skipping activity pre-filter. Re-run bronze_ingest_openaq_locations to enable.")
+    df_filtered = df_nyc
+
+nyc_ids = (
+    df_filtered
     .select("location_id")
     .rdd.flatMap(lambda x: x)
     .collect()
 )
 
-print(f"NYC stations found: {len(nyc_ids)}")
+print(f"NYC stations to probe: {len(nyc_ids)}")
 print(f"IDs: {sorted(nyc_ids)}")
 
 # METADATA ********************

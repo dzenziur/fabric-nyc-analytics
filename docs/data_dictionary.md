@@ -43,6 +43,8 @@ Note: contains **location metadata only** (sensor stations), not measurements.
 | country_name | string | Full country name |
 | latitude | float | Sensor latitude |
 | longitude | float | Sensor longitude |
+| datetime_first | string | UTC ISO-8601 timestamp of the station's earliest measurement (OpenAQ `datetimeFirst.utc`); used by measurements ingestion to pre-filter inactive stations |
+| datetime_last | string | UTC ISO-8601 timestamp of the station's most recent measurement (OpenAQ `datetimeLast.utc`) |
 
 ---
 
