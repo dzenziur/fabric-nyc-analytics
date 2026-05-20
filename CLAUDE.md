@@ -12,7 +12,7 @@
 
 **Active branch:** `feature/polishing`
 **Deadline:** May 21, 2026. Defense on May 26 but all artefacts must be ready by 21.
-**Last session:** 2026-05-19 — Phase 7 merged to `main`. All eight phases shipped end-to-end; switching to polishing pass: clearing items from `## Backlog`, tightening data quality, and improving documentation before defense.
+**Last session:** 2026-05-20 — Polishing pass mid-flight. Batch 0 (bronze download caching) and three of four Batch 1 items (silver DQ filters + taxi append logging) shipped and **verified end-to-end** — `/report` returns 56/56 PASS across 12 Silver + Gold tables (screenshot in `docs/how_to_run.md § Step 7f`). Full 2021–2026 master orchestrator backfill ran green in ~31 minutes wall-clock (73 activities, screenshot in `docs/how_to_run.md § Step 6`). Two TLC CloudFront 403 gotchas resolved along the way (missing-key vs anti-bot 403, `/misc/` path-specific anti-bot rules — see `Known data limitations`).
 
 ### Phase completion
 
@@ -40,23 +40,34 @@ Items confirmed as needed but not yet scheduled. Claude reads this at the start 
 
 Work is grouped into batches — one batch = one Power BI session / one notebook re-run / one doc pass — so each round of changes can be verified end-to-end before moving on. Order reflects defense-day visibility and correctness payoff.
 
-| # | Priority | Batch | What & why |
-|---|----------|-------|-----------|
-| 1 | 🔥 P1 | **Silver data-quality fixes** | One `silver_etl` re-run, then re-run GE. Closes real DQ findings visible in `/report` demo, restores `pickup_datetime` checks, fixes a corruption surface. High correctness payoff, low touch surface. |
-| 2 | 🔥 P1 | **Power BI signature features** | Most visible at defense — what the committee actually looks at. Sankey (Mobility), Scatter+Play (Correlation), Forecast (Economic Impact). |
-| 3 | ⭐ P2 | **Power BI readability polish** | Same Power BI Desktop session — insight text boxes per page, semantic-model rename (`city` → `station_name`), Smart Narrative, YoY indicators, theme JSON. |
-| 4 | ⭐ P2 | **Pipeline + governance audits** | Verification-only work — `pl_master_orchestrator` dependency audit + Fabric lineage view completeness. Confirms platform is correct; produces a screenshot/note for defense. |
-| 5 | 💡 P3 | **Notebook & docs clarity** | `year_start/year_end` semantics headers, `silver_etl` taxi append logging, `data_dictionary.md` type audit. Reviewer/handoff polish. |
-| 6 | 🧊 P4 | **Incremental ETL — deferred** | 7 candidates already analysed as low-ROI. Keep listed for completeness but skip unless time allows. |
+| # | Priority | Status | Batch | What & why |
+|---|----------|--------|-------|-----------|
+| 0 | 🔥 P1 | 🔄 In progress | **Bronze ingestion fixes & efficiency** | Pre-backfill bronze polish. Caching (`bronze_taxi_zones` skip-if-exists, `openaq_locations` count-diff skip, `openaq_measurements` station-activity pre-filter), TLC CloudFront 403 hotfixes (UA + reachability probe), plus a new follow-up: parallelise the `openaq_measurements` outer loop (17m wall-clock bottleneck on the 2021–2026 backfill). |
+| 1 | 🔥 P1 | 🔄 In progress | **Silver data-quality fixes** | One `silver_etl` re-run, then re-run GE. Closes real DQ findings visible in `/report` demo, restores `pickup_datetime` checks, fixes a corruption surface. High correctness payoff, low touch surface. |
+| 2 | 🔥 P1 | ⬜ Not started | **Power BI signature features** | Most visible at defense — what the committee actually looks at. Sankey (Mobility), Scatter+Play (Correlation), Forecast (Economic Impact). |
+| 3 | ⭐ P2 | ⬜ Not started | **Power BI readability polish** | Same Power BI Desktop session — insight text boxes per page, semantic-model rename (`city` → `station_name`), Smart Narrative, YoY indicators, theme JSON. |
+| 4 | ⭐ P2 | 🔄 In progress | **Pipeline audits + defense screenshots** | Verification-only work + evidence captures for the defense slide deck — `pl_master_orchestrator` dependency audit, Fabric lineage view check, plus screenshots of the live external stack (`/report` in Telegram, a Power BI page, Grafana weather dashboard). |
+| 5 | 💡 P3 | ⬜ Not started | **Notebook & docs clarity** | `year_start/year_end` semantics headers, `silver_etl` taxi append logging, `data_dictionary.md` type audit. Reviewer/handoff polish. |
+| 6 | 🧊 P4 | 🧊 Deferred | **Incremental ETL — silver-side deferred** | Silver/dim full-rebuilds (FX, GDP, locations, dims). Already analysed as low-ROI; skip unless time allows. |
+
+### Batch 0 — Bronze ingestion fixes & efficiency
+
+Pre-backfill bronze polish — caching, TLC CloudFront 403 hotfixes, and one outstanding throughput optimisation. Caching items add a `force_refresh: bool = False` parameter so the orchestrator can still force a refresh on demand.
+
+- [x] **`bronze_ingest_taxi_zones` — skip if table non-empty.** Added `force_refresh: bool = False` parameter; skips download via `notebookutils.notebook.exit` when `bronze_taxi_zones` has rows.
+- [x] **`bronze_ingest_openaq_locations` — count-diff skip.** Added `force_refresh: bool = False` parameter + `limit=1` probe of `meta.found`; exits early when count matches bronze. Schema extended with `datetime_first`/`datetime_last` columns (data_dictionary.md updated).
+- [x] **`bronze_ingest_openaq_measurements` — station activity pre-filter.** NYC bbox filter now followed by `[datetime_first, datetime_last]` overlap filter against `[year_start, year_end]`; graceful fallback with warning if activity columns absent.
+- [x] **TLC CloudFront 403 hotfixes.** `bronze_ingest_taxi_zones` switched from `urllib` to `requests.get` with full browser-like headers (User-Agent + Accept + Accept-Language + Referer) because the `/misc/*` CloudFront path rejects bare UAs. `prepare_taxi_ingestion` keeps `urllib` + Chrome UA (the `/trip-data/*` path is permissive) and adds a reachability probe against a known-published month (2024-01) so missing-key 403s are disambiguated from anti-bot 403s. Full saga documented in the `Known data limitations` section below.
+- [ ] **`bronze_ingest_openaq_measurements` — parallelise outer station loop.** 2021–2026 backfill wall-clock is 17m 11s — dominant cost in the whole pipeline. Inner S3 key download is already parallel (`ThreadPoolExecutor(max_workers=50)` per station), but the outer `for loc_id in nyc_ids:` is serial. Heavy stations (location 971: 188k rows, 857: 155k, 1122: 151k, 1496: 153k) accumulate sequentially. Wrap the outer loop in another `ThreadPoolExecutor` (e.g. `max_workers=8` for stations) and consider reducing per-station inner workers to avoid total concurrency > 50–100. Expected: 2–4× speedup. Also: two stations (1236043, 1738519) still log "no data, skipping" — they have `NULL` activity windows and slip through the pre-filter; not worth tightening, the cost is now negligible.
 
 ### Batch 1 — Silver data-quality fixes (`silver_etl` notebook)
 
 Single notebook touch, re-run silver, re-run GE to verify the report goes 56/56.
 
-- [ ] **fare_amount outlier filter** — `silver_taxi_trips` contains ~13 rows from TLC source with `fare_amount` between $187k and $863k for trips of 1.2–21.3 miles. Add `fare_amount <= 10_000` alongside the existing `fare_amount > 0` filter. Then re-run silver and remove the recurring DQ failure.
-- [ ] **TIMESTAMP_NTZ → timestamp cast** — `silver_taxi_trips.pickup_datetime` and `dropoff_datetime` are TIMESTAMP_NTZ in Delta and therefore invisible to the Lakehouse SQL endpoint (Fabric limitation). Apply a cast to `timestamp` at silver write time so the columns become visible to T-SQL / Power BI DirectQuery. Then re-add `pickup_datetime not null` to the GE suite for `silver_taxi_trips`. Same root cause as the Spark CBO `FilterEstimation` MatchError we already work around at read time in `gold_etl`.
-- [ ] **OpenAQ non-pollutant filter** — `silver_openaq_measurements` carries non-pollutant parameters (`temperature`, `relativehumidity`, `um003`) that OpenAQ co-hosts with the pollutants. The project's analytical questions are about pollution only — filter these out in `silver_etl`. Then narrow the GE `parameter` value_set back to actual pollutants.
-- [ ] **Taxi append logging** — after the incremental append, log total silver row count and delta (rows added). Pattern: `rows_before = spark.read.table(SILVER_TAXI_TRIPS).count()` before write → `rows_after = ...count()` after → `print(f"appended {rows_after - rows_before:,} rows; silver total: {rows_after:,}")`. Currently only logs "rows before append" of the new batch, which is confusing.
+- [x] **fare_amount outlier filter** — added `fare_amount <= 10_000` alongside `fare_amount > 0` in `silver_etl` taxi section. Drops ~13 corrupted TLC rows ($187k–$863k fares); awaits silver re-run + GE verification.
+- [x] **OpenAQ non-pollutant filter** — `silver_etl` OpenAQ section now restricts `parameter` to the pollutant set (`pm25/pm10/pm1/no2/o3/co/so2/no/nox`); GE `parameter` value_set narrowed accordingly. Drops `temperature`, `relativehumidity`, `um003` rows.
+- [x] **Taxi append logging** — incremental append now logs `appended N rows; silver total: M` instead of just "rows before append".
+- [ ] **TIMESTAMP_NTZ → timestamp cast** — `silver_taxi_trips.pickup_datetime` and `dropoff_datetime` are TIMESTAMP_NTZ in Delta and therefore invisible to the Lakehouse SQL endpoint (Fabric limitation). Apply a cast to `timestamp` at silver write time so the columns become visible to T-SQL / Power BI DirectQuery. Then re-add `pickup_datetime not null` to the GE suite for `silver_taxi_trips`. Same root cause as the Spark CBO `FilterEstimation` MatchError we already work around at read time in `gold_etl`. **Deferred to a separate PR** — requires a full `force_refresh=True` of `silver_taxi_trips` (~201M rows) to rewrite Delta with the new column type.
 
 ### Batch 2 — Power BI signature features (`nyc_analytics_report`)
 
@@ -78,10 +89,16 @@ One "wow" feature per page beyond the standard charts. Air Quality already has t
 - [ ] **YoY change indicators** on monetary/count KPI cards (Mobility, Economic Impact) — up/down arrow + colour based on previous-year comparison (where WHO-style threshold doesn't apply).
 - [ ] **Power BI theme JSON** — export current theme and check into repo for consistency across reports (deferred — Fabric Direct Lake report theme handling not yet evaluated).
 
-### Batch 4 — Pipeline + governance audits (verification-only)
+### Batch 4 — Pipeline audits + defense screenshots
 
+Verification work and evidence captures for the defense slide deck. Screenshots land in `docs/img/` and are referenced from `docs/architecture.md` / `docs/how_to_run.md` where relevant.
+
+- [x] **`pl_master_orchestrator` full-run screenshot** — `docs/img/pl_master_orchestrator_full_run.png` (2026-05-20, 6-year backfill, 73/73 activities green). Referenced from `docs/how_to_run.md § Typical activity durations`.
 - [ ] **`pl_master_orchestrator` dependency audit** — verify correct execution order (bronze → silver → gold), no missing or redundant dependency links between activities.
 - [ ] **Fabric lineage view completeness** — verify built-in lineage (`Workspace → Lineage view`) captures all expected upstream/downstream edges. Suspected gaps: notebook → table edges may not be visible for all notebooks; external source nodes may be missing for some pipelines. Compare graph against `docs/architecture.md` → Data Flow section and document any missing edges (annotations or screenshot caveats). If gaps are significant, re-evaluate Purview Data Map (free Azure tier).
+- [x] **Telegram `/report` screenshot** — `docs/img/telegram_report.png` captured 2026-05-20: 56/56 PASS across all 12 Silver + Gold tables. Embedded in `docs/how_to_run.md § Step 7f`.
+- [ ] **Power BI dashboard screenshot** — one representative page (e.g. Mobility overview with KPIs + map). Save as `docs/img/powerbi_mobility.png`. Reference from `docs/architecture.md` (Visualizations section). Capture after Batch 2 signature features land so the screenshot reflects final state.
+- [x] **Grafana weather dashboard screenshot** — `docs/img/grafana_weather.png` captured 2026-05-20: 4-panel NYC Weather dashboard (Temperature + feels_like, Precipitation, Wind speed, Humidity) over Last 30 days. Embedded in `docs/how_to_run.md § Step 7e`.
 
 ### Batch 5 — Notebook & docs clarity (markdown-only edits)
 
@@ -94,25 +111,29 @@ One "wow" feature per page beyond the standard charts. Air Quality already has t
   - `gold_etl` DimDate — **uses** year range as a floor/ceiling, expanded by actual data min/max
 - [ ] **`docs/data_dictionary.md` type audit** — run `printSchema()` for each Bronze and Silver table and compare against the doc. First known discrepancy: `bronze_openaq_measurements.datetime` is `string` in practice, was `timestamp` in docs (already fixed).
 
-### Batch 6 — Incremental ETL (deferred)
+### Batch 6 — Incremental ETL silver-side (deferred)
 
-Steps 1–5 already done. Remaining tables are full overwrite — savings minimal vs added complexity. Implement only if compute cost becomes a concern; otherwise skip for defense.
+Bronze caching shipped in Batch 0. What remains here is silver/dim full-rebuilds — already analysed as low-ROI given the table sizes; skip for defense.
 
-- [ ] `bronze_ingest_openaq_locations` — ~24k records via paginated API; skip if no changes (hash/count diff). ~2 min run.
-- [ ] `bronze_ingest_openaq_measurements` — pre-filter `nyc_ids` by station activity window (`datetime_first`/`datetime_last` from OpenAQ API). Saves S3 LIST calls for inactive stations.
 - [ ] `silver_fx_rates` — ~7k rows; read only `date > MAX(silver.date)` from bronze, append.
 - [ ] `silver_gdp` — ~6k rows, yearly data, rarely changes; skip if bronze unchanged.
 - [ ] `silver_openaq_locations` — ~5k rows, rare changes; MERGE only updated stations.
 - [ ] `DimDate`/`DimZone`/`DimFX`/`DimGDP` — full rebuild <30s combined; not worth complexity.
-- [ ] `bronze_taxi_zones` — 265 rows, static; check ETag/Last-Modified to skip download.
 
-### Known data limitations
+## Known data limitations
+
+Upstream quirks we accept and work around — not bugs to fix on our side.
+
 - **OpenAQ historical coverage** — NYC stations in the S3 archive have data for 2021–2025, but with coverage gaps: mid-2022 (May–Sep) shows near-zero measurements for many stations. Not a pipeline issue — reflects actual S3 archive availability.
 - **Multi-pollutant station coverage** — not all OpenAQ stations measure all pollutants; some stations have gaps in NO2/O3 data. Known data limitation from OpenAQ source.
 - **TLC parquet schema drift** — files pre/post mid-2023 have INT32 vs INT64 for location columns; 2026+ files additionally changed `passenger_count` (long vs double) and `RatecodeID` (long vs double) and renamed `airport_fee` → `Airport_fee` (capitalisation). Handled in `silver_etl` via per-file normalisation: rename `Airport_fee`→`airport_fee` if present, then cast `VendorID`/`PULocationID`/`DOLocationID`/`payment_type` → long, `passenger_count`/`RatecodeID` → double.
 - **OpenAQ gas units** — NO2, O3, CO, NO, NOx, SO2 are stored in ppm in the S3 archive; PM2.5/PM1/PM10 in µg/m³. `silver_etl` normalizes all gas parameters to µg/m³ using EPA conversion factors at 25°C.
+- **TLC CloudFront 403 — two distinct problems**:
+  1. **Missing-key 403 (not 404)** — origin policy denies on miss, so a HEAD on an unpublished month returns 403, indistinguishable on the wire from an anti-bot block. `prepare_taxi_ingestion` resolves this with a reachability probe against a known-published reference month (2024-01) before iterating; if the reference also 403s the notebook aborts loudly, otherwise per-month 403/404 is silently treated as "not yet published".
+  2. **Path-specific anti-bot rules** — `/trip-data/*.parquet` is permissive (Chrome User-Agent header is enough). `/misc/taxi_zone_lookup.csv` is stricter and rejects even the full Chrome UA via `urllib`. `bronze_ingest_taxi_zones` therefore uses `requests.get` with a full browser-like header set (`User-Agent` + `Accept` + `Accept-Language` + `Referer: nyc.gov`). `prepare_taxi_ingestion` keeps `urllib` + Chrome UA because the parquet path is permissive.
+  - The Copy activity used by `ingest_taxi_month` inside `pl_ingest_nyc_taxi` is unaffected — it has its own HTTP client.
 
-### Key reference docs
+## Key reference docs
 
 | Question | Read |
 |----------|------|

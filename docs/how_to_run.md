@@ -192,22 +192,31 @@ Expected tables in gold_warehouse:
    - **`force_refresh=true` (manual backfill or recovery)** — full year-range rebuild for all layers; respects `year_start`/`year_end`. Typical run: ~15-22 min for 2-year range.
    - Partial years are supported — running for `year_end=2026` mid-year ingests only the months TLC has published (via `prepare_taxi_ingestion`).
 
-### Typical activity durations (measured 2026-05-12)
+### Typical activity durations
 
-| Activity | 1 year | 2 years |
-|----------|--------|---------|
-| ForEach_taxi_months (12 months/yr, parallel) | ~2m 54s | ~3m 30s–4m 3s |
-| Each ingest_taxi_month (Copy Data) | ~2m 3–4s | ~2m 3–4s |
-| df_worldbank_gdp | ~1m 1s | ~1m 4–17s |
-| df_ecb_fx | ~1m 2s | ~1m 17–18s |
-| bronze_ingest_openaq_locations | ~2m 18s | ~1m 49s–2m 5s |
-| bronze_ingest_openaq_measurements | ~4m 38s | ~4m 53s–8m 38s |
-| silver_etl | ~6m 9s | ~7m 8s–12m 14s |
-| gold_etl | ~2m 22s | ~2m 37s–3m 22s |
+Measured on a full historical backfill (`year_start=2021`, `year_end=2026`, `force_refresh=True`) on 2026-05-20.
 
-Note: `bronze_ingest_openaq_measurements` and `silver_etl` scale with cumulative data volume — later years (2024–2025) have more station coverage than earlier years.
+| Activity | Duration |
+|----------|----------|
+| prepare_taxi_ingestion | 49s |
+| ForEach_taxi_months (12 months/yr, parallel) | ~5m 50s |
+| Each ingest_taxi_month (Copy Data) | ~2m 0–10s |
+| bronze_ingest_taxi_zones | ~1m 6s |
+| bronze_ingest_weather | ~1m 22s |
+| df_worldbank_gdp | ~51s |
+| df_ecb_fx | ~51s |
+| bronze_ingest_openaq_locations | ~1m 52s |
+| bronze_ingest_openaq_measurements | ~17m 11s |
+| silver_etl | ~7m 41s |
+| gold_etl | ~3m 52s |
 
-Full run estimate: ~5–7 min (bronze parallel) + ~6–12 min silver + ~2–3 min gold ≈ **~15–22 min per 2-year range**.
+Notes:
+- `bronze_ingest_openaq_measurements` is the dominant cost on long backfills — it's a serial S3 sweep per NYC station × year × month. The station-activity pre-filter (Batch 0, see `CLAUDE.md`) trims inactive station/year combinations.
+- `silver_etl` and `gold_etl` scale with cumulative data volume — later years have more station/trip coverage.
+
+Wall-clock end-to-end for the 6-year backfill: prepare_taxi_ingestion 1:25:06 → gold_etl finishes 1:56:36 = **~31 minutes** (bronze ingestions run in parallel; silver waits for bronze, gold waits for silver).
+
+![pl_master_orchestrator — full 2021–2026 backfill, 73/73 activities green on 2026-05-20](img/pl_master_orchestrator_full_run.png)
 
 ---
 
@@ -234,7 +243,7 @@ The app reads from `silver_lakehouse` SQL endpoint and `gold_warehouse` via Micr
    - Redirect URI: leave blank → **Register**
 2. From the Overview page copy the **Application (client) ID**
 3. Sidebar → **Certificates & secrets** → **Client secrets** → **New client secret**
-   - Description: `phase-7-app`, Expires: 6 months → **Add**
+   - Description: `nyc-analytics-app`, Expires: 6 months → **Add**
    - Immediately copy the **Value** column (shown only once)
 4. Enable the tenant setting **Service principals can call Fabric APIs**: Fabric portal → ⚙ Settings → **Admin portal** → **Tenant settings** → **Developer settings** → enable for entire org or a security group containing the SP. *(Requires Fabric admin role.)*
 5. Add the SP to the workspace: Fabric portal → workspace **Fabric NYC Analytics** → **Manage access** → **+ Add people or groups** → paste the application ID → role **Viewer** → **Add**
@@ -282,6 +291,8 @@ Open Grafana on http://localhost:3000:
 3. Time range top-right — pick **Last 30 days** or **Last 6 months** (default 7 days may be empty due to Open-Meteo Archive's ~5-day lag)
 4. Four panels should render: Temperature (with feels_like overlay), Precipitation (bars), Wind speed, Humidity
 
+![NYC Weather dashboard — Last 30 days view showing temperature/feels-like, precipitation, wind speed, and humidity panels (2026-05-20)](img/grafana_weather.png)
+
 ### 7f. Verify GE + Telegram bot
 
 CLI smoke test (does not need the bot):
@@ -293,6 +304,8 @@ Bot smoke test:
 1. Find your bot in Telegram by its `@username`
 2. Send `/start` → bot replies with welcome text
 3. Send `/report` → bot replies "Running DQ checks, please wait..." → ~30-60 sec later edits that message to show the full report wrapped in a `<pre>` block
+
+![Telegram `/report` output — 56/56 expectations passing across 12 Silver + Gold tables (2026-05-20)](img/telegram_report.png)
 
 The bot keeps running as long as the `app-bot` container is up (`restart: unless-stopped`). Logs: `make logs-bot`.
 
@@ -310,8 +323,6 @@ make weather-sync-once   # one-shot weather sync (exits on completion)
 make ge-report       # one-shot DQ report to stdout
 ```
 
-Full target list: `make help`.
-
 ---
 
 ## Step 8 — Schedule Automation (Phase 6)
@@ -323,12 +334,10 @@ Full target list: `make help`.
 1. Workspace → `pl_master_orchestrator` → **Schedule** tab → **Add schedule**
 2. Set **Every day**, times: **06:00** and **18:00**, timezone: **UTC**
 3. Open **Parameters** for the schedule and set:
-   | Parameter | Type | Value |
-   |-----------|------|-------|
-   | `year_start` | Int | `2021` |
-   | `year_end` | Int | current year (update annually each January) |
-   | `openaq_api_key` | SecureString | your OpenAQ API key |
-   | `force_refresh` | Bool | `false` |
+   - `year_start` (Int) → `2021`
+   - `year_end` (Int) → current year (update annually each January)
+   - `openaq_api_key` (SecureString) → your OpenAQ API key
+   - `force_refresh` (Bool) → `false`
 4. Toggle **On** → Save
 
 ### Why twice daily
@@ -361,45 +370,6 @@ External app (docker-compose, see Step 7):
  11. make weather-sync-once                 → silver_weather replicated to InfluxDB
  12. open Grafana on localhost:3000         → NYC Weather dashboard renders
  13. Telegram bot — /report                 → DQ report from Great Expectations
-```
-
----
-
-## Verification Checks
-
-After each phase, run these sanity checks:
-
-```sql
--- Bronze: check row counts
-SELECT COUNT(*) FROM bronze_lakehouse.bronze_taxi_trips;
-SELECT COUNT(*) FROM bronze_lakehouse.bronze_openaq_locations;
-
--- Silver: check no nulls in key columns
--- (pickup_datetime is TIMESTAMP_NTZ and not exposed by the SQL endpoint — use a SQL-visible column instead)
-SELECT COUNT(*) FROM silver_lakehouse.silver_taxi_trips WHERE pu_location_id IS NULL;
-
--- Gold: check fact table has data for expected dates
-SELECT MIN(date_key), MAX(date_key), COUNT(*) FROM gold_warehouse.dbo.FactTaxiDaily;
-
--- Cross-check: trips in silver vs gold should match (aggregated)
-SELECT SUM(trip_count) FROM gold_warehouse.dbo.FactTaxiDaily;
-```
-
----
-
-## Delta Time Travel (demo / debugging)
-
-```python
-# In any Fabric Notebook — read Bronze at version 0 (original ingest)
-df = spark.read.format("delta").option("versionAsOf", 0).load("abfss://bronze@onelake.../Tables/bronze_taxi_trips")
-
-# Or by timestamp
-df = spark.read.format("delta").option("timestampAsOf", "2025-05-01").load("...")
-
-# View history
-from delta.tables import DeltaTable
-dt = DeltaTable.forPath(spark, "abfss://...")
-dt.history().show()
 ```
 
 ---
