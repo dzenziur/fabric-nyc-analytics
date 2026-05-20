@@ -53,6 +53,7 @@ force_refresh = False
 
 import urllib.request
 import requests
+from pyspark.sql.functions import col
 
 # METADATA ********************
 
@@ -122,6 +123,7 @@ df = (
     .withColumnRenamed("Borough", "borough")
     .withColumnRenamed("Zone", "zone")
     .withColumnRenamed("service_zone", "service_zone")
+    .withColumn("location_id", col("location_id").cast("int"))
 )
 
 df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(BRONZE_TAXI_ZONES)

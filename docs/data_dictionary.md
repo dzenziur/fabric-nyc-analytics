@@ -99,7 +99,7 @@ Note: static reference data (~265 rows), rarely changes; downloaded once per not
 
 | Column | Type | Description |
 |--------|------|-------------|
-| location_id | string | TLC zone ID (1–265) — renamed from `LocationID` |
+| location_id | int | TLC zone ID (1–265) — renamed from `LocationID`; cast from CSV string to int at bronze write time |
 | borough | string | Manhattan / Brooklyn / Queens / Bronx / Staten Island / EWR — renamed from `Borough` |
 | zone | string | Zone name (e.g., "JFK Airport") — renamed from `Zone` |
 | service_zone | string | Boro Zone / Yellow Zone / Airports |

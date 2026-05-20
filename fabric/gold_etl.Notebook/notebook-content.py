@@ -209,8 +209,8 @@ display(df_dim_date.limit(10))
 df_dim_zone = (
     spark.read.table(BRONZE_TAXI_ZONES)
     .select(
-        col("location_id").cast("int").alias("zone_key"),
-        col("location_id").cast("int").alias("location_id"),
+        col("location_id").alias("zone_key"),
+        col("location_id"),
         col("zone").alias("zone_name"),
         col("borough"),
         col("service_zone"),
