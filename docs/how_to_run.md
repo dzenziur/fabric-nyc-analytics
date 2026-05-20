@@ -169,24 +169,26 @@ Expected tables in gold_warehouse:
 2. Pipeline parameters: `year_start` (Int), `year_end` (Int), `force_refresh` (Bool, default false)
 3. Activity structure:
    ```
-   prepare_taxi_ingestion                   (Notebook — runs first, no dependencies)
+   [Parallel — all start at the same time, no cross-dependencies between sources]
+     prepare_taxi_ingestion                 (Notebook — TLC availability + missing-file planning)
                                               · Per-month HEAD check on TLC for each (year, month) in range
-                                              · Skips months returning HTTP 403/404 (not yet published)
+                                              · Reachability probe (2024-01) disambiguates anti-bot 403 from missing-key 403
                                               · Lists Files/raw/taxi/ to exclude already-downloaded files
                                               · Outputs JSON list for ForEach via notebook exit value
                                               · Fails only if NO months in range are available at source
-   [Parallel — all depend on prepare_taxi_ingestion Succeeded]
+       → ForEach_taxi_months → pl_ingest_nyc_taxi (Pipeline, year/month from item())
      df_ecb_fx                              (Dataflow Gen2)
      df_worldbank_gdp                       (Dataflow Gen2)
      bronze_ingest_taxi_zones               (Notebook, no parameters)
+     bronze_ingest_weather                  (Notebook, pass year_start/year_end/force_refresh)
      bronze_ingest_openaq_locations         (Notebook, pass openaq_api_key)
        → bronze_ingest_openaq_measurements  (Notebook, depends on locations; pass year_start/year_end)
-     ForEach (months from prepare) → pl_ingest_nyc_taxi (Pipeline, year/month from item())
    [Then]
      silver_etl                             (Notebook, pass year_start/year_end/force_refresh)
    [Then]
      gold_etl                               (Notebook, pass year_start/year_end/force_refresh)
    ```
+   Only `ForEach_taxi_months` depends on `prepare_taxi_ingestion` (consumes its `exitValue`); every other source runs independently so a TLC outage doesn't block OpenAQ/Weather/FX/GDP and vice-versa.
 4. Run with parameters `year_start=2023`, `year_end=2023` for single-year demo; `year_start=2022`, `year_end=2024` for full backfill. The `force_refresh` parameter cascades through the entire pipeline:
    - **`force_refresh=false` (default, used by scheduled runs)** — incremental processing throughout: `bronze_openaq_measurements` fetches only current + previous month from S3, `silver_openaq_measurements` MERGEs new rows past watermark, `silver_taxi_trips` appends only new `(year, month)` partitions, `FactAirQualityDaily`/`FactTaxiDaily` re-aggregate only last 7 days from `MAX(gold.date_key)`. Typical run: ~1-2 min total.
    - **`force_refresh=true` (manual backfill or recovery)** — full year-range rebuild for all layers; respects `year_start`/`year_end`. Typical run: ~15-22 min for 2-year range.

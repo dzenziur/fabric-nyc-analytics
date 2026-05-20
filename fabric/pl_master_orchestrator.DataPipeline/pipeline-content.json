@@ -17,14 +17,7 @@
           "secureOutput": false
         },
         "name": "df_ecb_fx",
-        "dependsOn": [
-          {
-            "activity": "prepare_taxi_ingestion",
-            "dependencyConditions": [
-              "Succeeded"
-            ]
-          }
-        ]
+        "dependsOn": []
       },
       {
         "type": "RefreshDataflow",
@@ -42,14 +35,7 @@
           "secureOutput": false
         },
         "name": "df_worldbank_gdp",
-        "dependsOn": [
-          {
-            "activity": "prepare_taxi_ingestion",
-            "dependencyConditions": [
-              "Succeeded"
-            ]
-          }
-        ]
+        "dependsOn": []
       },
       {
         "type": "TridentNotebook",
@@ -333,14 +319,7 @@
           "secureOutput": false
         },
         "name": "bronze_ingest_openaq_locations",
-        "dependsOn": [
-          {
-            "activity": "prepare_taxi_ingestion",
-            "dependencyConditions": [
-              "Succeeded"
-            ]
-          }
-        ]
+        "dependsOn": []
       },
       {
         "type": "TridentNotebook",
@@ -356,14 +335,7 @@
           "secureOutput": false
         },
         "name": "bronze_ingest_taxi_zones",
-        "dependsOn": [
-          {
-            "activity": "prepare_taxi_ingestion",
-            "dependencyConditions": [
-              "Succeeded"
-            ]
-          }
-        ]
+        "dependsOn": []
       },
       {
         "type": "TridentNotebook",
@@ -402,14 +374,7 @@
           "secureOutput": false
         },
         "name": "bronze_ingest_weather",
-        "dependsOn": [
-          {
-            "activity": "prepare_taxi_ingestion",
-            "dependencyConditions": [
-              "Succeeded"
-            ]
-          }
-        ]
+        "dependsOn": []
       }
     ],
     "parameters": {
