@@ -36,8 +36,13 @@
 
 # # Gold ETL — Silver → Fabric Warehouse (star schema)
 # Builds star schema from Silver tables and writes to `gold_warehouse` via synapsesql.
-# **Input:** silver_taxi_trips, silver_openaq_measurements, silver_openaq_locations, silver_fx_rates, silver_gdp
+# **Input:** silver_taxi_trips, silver_openaq_measurements, silver_openaq_locations, silver_taxi_zones, silver_fx_rates, silver_gdp
 # **Output:** gold_warehouse.dbo — DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily
+# **`year_start`/`year_end`:** semantics vary by output:
+# - `FactTaxiDaily`, `FactAirQualityDaily` — **ignored when `force_refresh=False`** (incremental
+#   re-aggregates `MAX(gold.date_key) - 7 days` forward). **Used only when `force_refresh=True`**.
+# - `DimDate` — **always used** as a floor/ceiling, expanded outward by actual data min/max.
+# - `DimZone`, `DimFX`, `DimGDP` — **never used** (full overwrite of small dimensions every run).
 
 # PARAMETERS CELL ********************
 

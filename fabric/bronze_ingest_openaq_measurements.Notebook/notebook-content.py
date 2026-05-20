@@ -26,6 +26,9 @@
 # Reads pollutant measurement history for NYC stations from the OpenAQ public S3 archive.
 # **Input:** `bronze_openaq_locations` (NYC stations filtered by bounding box) + S3 archive
 # **Output:** `bronze_openaq_measurements` (raw CSV data, no transformations)
+# **`year_start`/`year_end`:** **ignored when `force_refresh=False`** — incremental mode fetches
+# only current + previous month from S3 and MERGEs on natural key. **Used only when
+# `force_refresh=True`** (manual backfill) — fetches full year range and replaces year partitions.
 # **Note:** Fabric Spark S3A cannot access public S3 anonymously — boto3 is used instead.
 
 # PARAMETERS CELL ********************

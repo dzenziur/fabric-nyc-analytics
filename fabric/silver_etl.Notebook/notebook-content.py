@@ -37,8 +37,14 @@
 # # Silver ETL — Bronze → Silver Transformations
 # Reads raw data from `bronze_lakehouse`, applies type casting, deduplication, and null filtering,
 # writes clean Delta tables to `silver_lakehouse`.
-# **Input:** `bronze_fx_rates`, `bronze_gdp`, `bronze_openaq_locations`, `bronze_openaq_measurements`, `bronze_weather`, `Files/raw/taxi/`
+# **Input:** `bronze_fx_rates`, `bronze_gdp`, `bronze_openaq_locations`, `bronze_openaq_measurements`, `bronze_taxi_zones`, `bronze_weather`, `Files/raw/taxi/`
 # **Output:** `silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_taxi_trips`, `silver_taxi_zones`, `silver_weather`
+# **`year_start`/`year_end`:** semantics vary by source:
+# - `silver_taxi_trips`, `silver_openaq_measurements`, `silver_weather` — **ignored when `force_refresh=False`**
+#   (incremental via partition diff / watermark MERGE). **Used only when `force_refresh=True`** to scope
+#   the full rebuild.
+# - `silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, `silver_taxi_zones` — **never used**
+#   (full overwrite of small reference tables every run).
 
 # PARAMETERS CELL ********************
 

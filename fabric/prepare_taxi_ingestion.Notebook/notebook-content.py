@@ -27,6 +27,9 @@
 # Outputs JSON list of {year, month} pairs to download via ForEach in master orchestrator.
 # **Input:** TLC CloudFront (HEAD) + `Files/raw/taxi/` (list existing)
 # **Output:** notebook exitValue — JSON array of months to download
+# **`year_start`/`year_end`:** always used — defines which months to probe on TLC and which
+# already-downloaded files to exclude. Critical for schedule correctness (update `year_end`
+# each January to pick up the new calendar year).
 
 # PARAMETERS CELL ********************
 

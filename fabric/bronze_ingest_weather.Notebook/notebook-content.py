@@ -26,6 +26,10 @@
 # Fetches hourly weather data for NYC from Open-Meteo, writes to `bronze_lakehouse`.
 # **Input:** Open-Meteo Archive API (historical) + Forecast API (recent days)
 # **Output:** `bronze_weather` (raw hourly observations, partitioned by year)
+# **`year_start`/`year_end`:** **ignored when `force_refresh=False`** — incremental mode hits
+# Forecast API with `past_days=2` and MERGEs on `(latitude, longitude, datetime)`. **Used only
+# when `force_refresh=True`** or on first run (table doesn't exist) — Archive API for full year
+# range + partition overwrite.
 
 # PARAMETERS CELL ********************
 
