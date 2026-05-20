@@ -38,7 +38,7 @@
 # Reads raw data from `bronze_lakehouse`, applies type casting, deduplication, and null filtering,
 # writes clean Delta tables to `silver_lakehouse`.
 # **Input:** `bronze_fx_rates`, `bronze_gdp`, `bronze_openaq_locations`, `bronze_openaq_measurements`, `bronze_weather`, `Files/raw/taxi/`
-# **Output:** `silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_taxi_trips`, `silver_weather`
+# **Output:** `silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_taxi_trips`, `silver_taxi_zones`, `silver_weather`
 
 # PARAMETERS CELL ********************
 
@@ -87,6 +87,7 @@ BRONZE_FX_RATES              = f"{BRONZE}.bronze_fx_rates"
 BRONZE_GDP                   = f"{BRONZE}.bronze_gdp"
 BRONZE_OPENAQ_LOCATIONS      = f"{BRONZE}.bronze_openaq_locations"
 BRONZE_OPENAQ_MEASUREMENTS   = f"{BRONZE}.bronze_openaq_measurements"
+BRONZE_TAXI_ZONES            = f"{BRONZE}.bronze_taxi_zones"
 BRONZE_WEATHER               = f"{BRONZE}.bronze_weather"
 BRONZE_TAXI_FILES            = f"{BRONZE_FILES}/raw/taxi/"
 
@@ -95,6 +96,7 @@ SILVER_GDP                   = f"{SILVER}.silver_gdp"
 SILVER_OPENAQ_LOCATIONS      = f"{SILVER}.silver_openaq_locations"
 SILVER_OPENAQ_MEASUREMENTS   = f"{SILVER}.silver_openaq_measurements"
 SILVER_TAXI_TRIPS            = f"{SILVER}.silver_taxi_trips"
+SILVER_TAXI_ZONES            = f"{SILVER}.silver_taxi_zones"
 SILVER_WEATHER               = f"{SILVER}.silver_weather"
 
 print(f"Year range: {year_start} - {year_end}")
@@ -212,6 +214,35 @@ df_silver = (
 )
 
 write_silver(df_silver, SILVER_OPENAQ_LOCATIONS)
+display(df_silver.limit(5))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## NYC Taxi Zones
+# Source: `bronze_taxi_zones` populated by `bronze_ingest_taxi_zones` notebook (~265 static rows).
+# Defensive cast on `location_id` (string → int) for medallion strictness; drop nulls; dedup.
+# Full overwrite each run — reference data is small and rarely changes.
+
+# CELL ********************
+
+df = spark.read.table(BRONZE_TAXI_ZONES)
+
+df_silver = (
+    df
+    .withColumn("location_id", col("location_id").cast("int"))
+    .filter(col("location_id").isNotNull())
+    .dropDuplicates(["location_id"])
+    .orderBy("location_id")
+)
+
+write_silver(df_silver, SILVER_TAXI_ZONES)
 display(df_silver.limit(5))
 
 # METADATA ********************

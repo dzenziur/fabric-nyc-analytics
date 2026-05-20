@@ -60,7 +60,7 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 
 | Item | Input | Output | Parameters |
 |------|-------|--------|------------|
-| `silver_etl` | All Bronze tables + `Files/raw/taxi/` | `silver_taxi_trips`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_gdp`, `silver_fx_rates`, `silver_weather` | `year_start` (int), `year_end` (int), `force_refresh` (bool) — default mode is incremental for `silver_openaq_measurements` and `silver_weather` (both MERGE on `MAX(datetime)` watermark) and `silver_taxi_trips` (partition diff append) |
+| `silver_etl` | All Bronze tables + `Files/raw/taxi/` | `silver_taxi_trips`, `silver_taxi_zones`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_gdp`, `silver_fx_rates`, `silver_weather` | `year_start` (int), `year_end` (int), `force_refresh` (bool) — default mode is incremental for `silver_openaq_measurements` and `silver_weather` (both MERGE on `MAX(datetime)` watermark) and `silver_taxi_trips` (partition diff append) |
 
 Transformations: snake_case rename, null filtering, deduplication, type casting, year/month partitioning. OpenAQ gas measurements (no2, o3, co, no, nox, so2) normalized from ppm to µg/m³ using EPA conversion factors at 25°C. Weather columns renamed with explicit unit suffixes (`temperature_c`, `feels_like_c`, `precipitation_mm`, `wind_speed_kmh`, `humidity_pct`) and enriched with derived `is_rainy` flag; MERGE uses `whenMatchedUpdateAll` because Open-Meteo retroactively refines recent observations.
 Taxi files read file-by-file to handle TLC Parquet schema drift: `Airport_fee` renamed to `airport_fee` if present (capitalisation changed in 2026 files); explicit casts: `VendorID`/`PULocationID`/`DOLocationID`/`payment_type` → `long`, `passenger_count`/`RatecodeID` → `double` (types vary across TLC file generations).
@@ -71,7 +71,7 @@ Taxi files read file-by-file to handle TLC Parquet schema drift: `Airport_fee` r
 
 | Item | Input | Output | Parameters |
 |------|-------|--------|------------|
-| `gold_etl` | All Silver tables + `bronze_taxi_zones` (for DimZone) | `FactTaxiDaily`, `FactAirQualityDaily`, `DimDate`, `DimZone`, `DimFX`, `DimGDP` | `year_start` (int), `year_end` (int), `force_refresh` (bool) — default mode is incremental for FactTaxiDaily and FactAirQualityDaily (re-aggregate `MAX(gold.date_key) - 7 days` forward) |
+| `gold_etl` | All Silver tables | `FactTaxiDaily`, `FactAirQualityDaily`, `DimDate`, `DimZone`, `DimFX`, `DimGDP` | `year_start` (int), `year_end` (int), `force_refresh` (bool) — default mode is incremental for FactTaxiDaily and FactAirQualityDaily (re-aggregate `MAX(gold.date_key) - 7 days` forward) |
 
 Star schema in `gold_warehouse` (T-SQL / SQL analytics endpoint). Written via `synapsesql`.
 

@@ -254,6 +254,20 @@ ordered by country_code, year.
 
 ---
 
+### `silver_taxi_zones`
+Transformations: defensive cast `location_id` to int, drop nulls, dedup by `location_id`, ordered by `location_id`.
+Reference data (~265 rows, static); full overwrite each run.
+Added for medallion strictness — `gold_etl.DimZone` reads from silver instead of bronze.
+
+| Column | Type | Description | Transformation |
+|--------|------|-------------|----------------|
+| location_id | int | TLC zone ID (1–265) | Cast to int (defensive); nulls dropped |
+| borough | string | Manhattan / Brooklyn / Queens / Bronx / Staten Island / EWR | Unchanged |
+| zone | string | Zone name (e.g., "JFK Airport") | Unchanged |
+| service_zone | string | Boro Zone / Yellow Zone / Airports | Unchanged |
+
+---
+
 ### `silver_fx_rates`
 Transformations: date cast to date type, usd_eur_rate cast to double,
 deduped by date, null rates dropped, ordered by date.
@@ -326,7 +340,7 @@ Grain: one row per calendar day.
 ---
 
 ### `DimZone`
-Source: `bronze_taxi_zones` (loaded from TLC zone lookup CSV via `bronze_ingest_taxi_zones` notebook).
+Source: `silver_taxi_zones` (cleaned in `silver_etl`; originally from TLC zone lookup CSV via `bronze_ingest_taxi_zones` notebook).
 
 | Column | Type | Description |
 |--------|------|-------------|

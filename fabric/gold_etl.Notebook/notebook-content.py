@@ -91,9 +91,8 @@ YEAR_START = year_start
 YEAR_END   = year_end
 LATE_ARRIVING_LOOKBACK_DAYS = 7
 
-BRONZE_TAXI_ZONES           = f"{BRONZE}.bronze_taxi_zones"
-
 SILVER_TAXI_TRIPS           = f"{SILVER}.silver_taxi_trips"
+SILVER_TAXI_ZONES           = f"{SILVER}.silver_taxi_zones"
 SILVER_OPENAQ_MEASUREMENTS  = f"{SILVER}.silver_openaq_measurements"
 SILVER_OPENAQ_LOCATIONS     = f"{SILVER}.silver_openaq_locations"
 SILVER_FX_RATES             = f"{SILVER}.silver_fx_rates"
@@ -201,13 +200,13 @@ display(df_dim_date.limit(10))
 # MARKDOWN ********************
 
 # ## DimZone
-# Reads from `bronze_taxi_zones` (ingested separately by `bronze_ingest_taxi_zones` notebook).
+# Reads from `silver_taxi_zones` (cleaned + cast in `silver_etl`).
 # 265 rows. zone_key = location_id (natural PK, 1–265).
 
 # CELL ********************
 
 df_dim_zone = (
-    spark.read.table(BRONZE_TAXI_ZONES)
+    spark.read.table(SILVER_TAXI_ZONES)
     .select(
         col("location_id").alias("zone_key"),
         col("location_id"),
