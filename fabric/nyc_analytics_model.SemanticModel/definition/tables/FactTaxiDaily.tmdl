@@ -49,8 +49,11 @@ table FactTaxiDaily
 		sourceProviderType: int
 		lineageTag: c6665368-af06-49b5-946c-a95735fc0027
 		sourceLineageTag: date_key
+		isHidden: true
 		summarizeBy: none
 		sourceColumn: date_key
+
+		changedProperty = IsHidden
 
 		annotation SummarizationSetBy = Automatic
 
@@ -60,8 +63,11 @@ table FactTaxiDaily
 		sourceProviderType: int
 		lineageTag: a821a782-c50d-441b-a458-e21364c0f7ab
 		sourceLineageTag: zone_key
+		isHidden: true
 		summarizeBy: none
 		sourceColumn: zone_key
+
+		changedProperty = IsHidden
 
 		annotation SummarizationSetBy = Automatic
 
@@ -71,8 +77,11 @@ table FactTaxiDaily
 		sourceProviderType: int
 		lineageTag: 00d39a5e-82de-49f4-a8d8-8335ad0c6fcb
 		sourceLineageTag: fx_key
+		isHidden: true
 		summarizeBy: none
 		sourceColumn: fx_key
+
+		changedProperty = IsHidden
 
 		annotation SummarizationSetBy = Automatic
 

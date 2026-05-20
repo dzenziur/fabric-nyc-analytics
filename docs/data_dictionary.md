@@ -308,7 +308,7 @@ Grain: one row per day per location per pollutant.
 |--------|------|-------------|
 | date_key | integer | FK → DimDate.date_key |
 | location_id | long | OpenAQ sensor ID |
-| city | string | Station name (joined from `silver_openaq_locations.location_name`) — semantic-model rename to `station_name` planned (see CLAUDE.md backlog) |
+| city | string | Station name (joined from `silver_openaq_locations.location_name`) — exposed as `station_name` in the Power BI semantic model |
 | country | string | Country |
 | latitude | double | Station latitude (joined from `silver_openaq_locations`) — for map visuals |
 | longitude | double | Station longitude (joined from `silver_openaq_locations`) — for map visuals |

@@ -20,8 +20,11 @@ table DimGDP
 		sourceProviderType: int
 		lineageTag: 9ae55a6c-545d-4264-83db-83d515f00bc2
 		sourceLineageTag: gdp_key
+		isHidden: true
 		summarizeBy: sum
 		sourceColumn: gdp_key
+
+		changedProperty = IsHidden
 
 		annotation SummarizationSetBy = Automatic
 
@@ -61,8 +64,11 @@ table DimGDP
 		sourceProviderType: float
 		lineageTag: 90d54508-c492-41e0-a37c-cdb741e7c518
 		sourceLineageTag: gdp_usd
+		isHidden: true
 		summarizeBy: sum
 		sourceColumn: gdp_usd
+
+		changedProperty = IsHidden
 
 		annotation SummarizationSetBy = Automatic
 

@@ -29,8 +29,11 @@ table FactAirQualityDaily
 		sourceProviderType: int
 		lineageTag: a9e706dd-c188-4b3a-bd80-28608688b3cc
 		sourceLineageTag: date_key
+		isHidden: true
 		summarizeBy: none
 		sourceColumn: date_key
+
+		changedProperty = IsHidden
 
 		annotation SummarizationSetBy = Automatic
 
@@ -40,20 +43,24 @@ table FactAirQualityDaily
 		sourceProviderType: bigint
 		lineageTag: a2ef0721-e1c5-4db4-a313-2e70d8330fb3
 		sourceLineageTag: location_id
+		isHidden: true
 		summarizeBy: none
 		sourceColumn: location_id
 
 		changedProperty = SummarizeBy
+		changedProperty = IsHidden
 
 		annotation SummarizationSetBy = User
 
-	column city
+	column station_name
 		dataType: string
 		sourceProviderType: varchar(-1)
 		lineageTag: f3601586-8257-4532-8cc7-c7787c37491e
 		sourceLineageTag: city
 		summarizeBy: none
 		sourceColumn: city
+
+		changedProperty = Name
 
 		annotation SummarizationSetBy = Automatic
 
@@ -62,8 +69,11 @@ table FactAirQualityDaily
 		sourceProviderType: varchar(-1)
 		lineageTag: 1f43b201-f5dd-450e-8181-7a873be4327f
 		sourceLineageTag: country
+		isHidden: true
 		summarizeBy: none
 		sourceColumn: country
+
+		changedProperty = IsHidden
 
 		annotation SummarizationSetBy = Automatic
 
