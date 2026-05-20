@@ -271,12 +271,12 @@ else:
     use_incremental = True
     print(f"Incremental mode — fetching months: {months_to_fetch}")
 
-dfs_new = []
+pd_dfs = []
 total_rows = 0
 
 # Outer parallelism: fetch up to STATION_WORKERS stations concurrently. S3 networking is
-# the dominant cost; spark.createDataFrame must run on the driver and stays serial via
-# as_completed (cheap, in-memory). Log order is now completion-order, not nyc_ids order.
+# the dominant cost; results accumulate as pandas DataFrames and are merged into a single
+# Spark DataFrame at the end (one createDataFrame instead of a long unionByName chain).
 with ThreadPoolExecutor(max_workers=STATION_WORKERS) as executor:
     futures = {
         executor.submit(read_location, s3, S3_BUCKET, loc_id, months_to_fetch): loc_id
@@ -289,24 +289,22 @@ with ThreadPoolExecutor(max_workers=STATION_WORKERS) as executor:
         if df_pd.empty:
             print(f"[location {loc_id}] no data, skipping")
             continue
-        dfs_new.append(
-            spark.createDataFrame(df_pd)
-            .withColumn("year", year(to_timestamp(col("datetime"))))
-        )
+        pd_dfs.append(df_pd)
         total_rows += len(df_pd)
         print(f"[location {loc_id}] rows fetched: {len(df_pd)}")
 
 print(f"New rows fetched from S3: {total_rows}")
 
-if not dfs_new:
+if not pd_dfs:
     if use_incremental:
         print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] no new data for months {months_to_fetch} — skipping write")
     else:
         raise ValueError(f"No data found in S3 for any NYC station in year range {YEAR_START}–{YEAR_END}. Aborting.")
 else:
-    df_new = dfs_new[0]
-    for d in dfs_new[1:]:
-        df_new = df_new.unionByName(d, allowMissingColumns=True)
+    df_new = (
+        spark.createDataFrame(pd.concat(pd_dfs, ignore_index=True))
+        .withColumn("year", year(to_timestamp(col("datetime"))))
+    )
 
     if use_incremental:
         target = DeltaTable.forName(spark, BRONZE_OPENAQ_MEASUREMENTS)
