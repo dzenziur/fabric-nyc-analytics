@@ -97,7 +97,10 @@ S3_BASE   = "records/csv.gz"
 BRONZE_OPENAQ_LOCATIONS    = f"{BRONZE}.bronze_openaq_locations"
 BRONZE_OPENAQ_MEASUREMENTS = f"{BRONZE}.bronze_openaq_measurements"
 
-MAX_WORKERS = 50
+# Parallelism: STATION_WORKERS outer stations × MAX_WORKERS inner S3 keys per station.
+# Total concurrent S3 GETs = 8 × 16 = 128, bounded by the boto3 connection pool below.
+STATION_WORKERS = 8
+MAX_WORKERS     = 16
 
 print(f"Year range: {YEAR_START} - {YEAR_END}")
 
@@ -172,10 +175,15 @@ def current_and_previous_month() -> list:
 
 s3 = boto3.client(
     "s3",
-    config=Config(signature_version=UNSIGNED),
-    region_name="us-east-1"
+    config=Config(
+        signature_version=UNSIGNED,
+        # Connection pool must accommodate STATION_WORKERS × MAX_WORKERS concurrent GETs;
+        # boto3 default of 10 would cause "Connection pool is full" warnings + queueing.
+        max_pool_connections=STATION_WORKERS * MAX_WORKERS,
+    ),
+    region_name="us-east-1",
 )
-print("S3 client ready")
+print(f"S3 client ready (max_pool_connections={STATION_WORKERS * MAX_WORKERS})")
 
 # METADATA ********************
 
@@ -266,17 +274,27 @@ else:
 dfs_new = []
 total_rows = 0
 
-for loc_id in nyc_ids:
-    df_pd = read_location(s3, S3_BUCKET, loc_id, months_to_fetch)
-    if df_pd.empty:
-        print(f"[location {loc_id}] no data, skipping")
-        continue
-    dfs_new.append(
-        spark.createDataFrame(df_pd)
-        .withColumn("year", year(to_timestamp(col("datetime"))))
-    )
-    total_rows += len(df_pd)
-    print(f"[location {loc_id}] rows fetched: {len(df_pd)}")
+# Outer parallelism: fetch up to STATION_WORKERS stations concurrently. S3 networking is
+# the dominant cost; spark.createDataFrame must run on the driver and stays serial via
+# as_completed (cheap, in-memory). Log order is now completion-order, not nyc_ids order.
+with ThreadPoolExecutor(max_workers=STATION_WORKERS) as executor:
+    futures = {
+        executor.submit(read_location, s3, S3_BUCKET, loc_id, months_to_fetch): loc_id
+        for loc_id in nyc_ids
+    }
+    print(f"Submitted {len(futures)} station fetches; outer parallelism = {STATION_WORKERS}, inner per-station = {MAX_WORKERS}")
+    for future in as_completed(futures):
+        loc_id = futures[future]
+        df_pd = future.result()
+        if df_pd.empty:
+            print(f"[location {loc_id}] no data, skipping")
+            continue
+        dfs_new.append(
+            spark.createDataFrame(df_pd)
+            .withColumn("year", year(to_timestamp(col("datetime"))))
+        )
+        total_rows += len(df_pd)
+        print(f"[location {loc_id}] rows fetched: {len(df_pd)}")
 
 print(f"New rows fetched from S3: {total_rows}")
 

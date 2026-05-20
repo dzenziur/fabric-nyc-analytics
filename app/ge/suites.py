@@ -19,12 +19,12 @@ GOLD   = config.GOLD_WAREHOUSE_DB
 
 
 def silver_taxi_trips(conn) -> list[CheckResult]:
-    # Note: pickup_datetime / dropoff_datetime are TIMESTAMP_NTZ in Delta and not
-    # exposed by the Lakehouse SQL endpoint (Fabric limitation), so we can't check
-    # them here. Other columns are fully accessible.
+    # pickup_datetime / dropoff_datetime are cast to TIMESTAMP in silver_etl so they
+    # are visible to the Lakehouse SQL endpoint and can be checked here.
     t  = "silver_taxi_trips"
     fq = f"{SILVER}.dbo.{t}"
     return [
+        sql_not_null(conn, t, fq, "pickup_datetime"),
         sql_not_null(conn, t, fq, "pu_location_id"),
         sql_not_null(conn, t, fq, "do_location_id"),
         sql_not_null(conn, t, fq, "fare_amount"),

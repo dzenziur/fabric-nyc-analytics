@@ -26,6 +26,7 @@ Source: NYC TLC — https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page
 | total_amount | float | Total charged (USD) |
 | congestion_surcharge | float | NYC congestion surcharge |
 | airport_fee | float | JFK/LaGuardia airport fee |
+| cbd_congestion_fee | float | NYC Central Business District congestion fee (introduced in TLC files from 2023+; older files do not have this column) |
 
 ---
 
@@ -129,16 +130,18 @@ Note: single NYC point (40.7128, -74.0060); Open-Meteo snaps to its ~11 km grid 
 ## Silver Layer — Cleaned Tables
 
 ### `silver_taxi_trips`
-Transformations: columns renamed to snake_case, year/month added for partitioning,
-invalid trips filtered (trip_distance > 0 and <= 100 mi, fare_amount > 0), deduped by
+Transformations: columns renamed to snake_case, `pickup_datetime`/`dropoff_datetime`
+cast from TIMESTAMP_NTZ (TLC source type) to TIMESTAMP so they are visible to the
+Lakehouse SQL endpoint, year/month added for partitioning, invalid trips filtered
+(trip_distance > 0 and <= 100 mi, fare_amount between $0 and $10k), deduped by
 (pickup_datetime, dropoff_datetime, pu_location_id, do_location_id, fare_amount).
 Partitioned by: `year`, `month`.
 
 | Column | Type | Description | Transformation |
 |--------|------|-------------|----------------|
 | vendor_id | long | Taxi vendor (1=Creative Mobile, 2=VeriFone) | Renamed from VendorID; cast to long |
-| pickup_datetime | timestamp_ntz | Trip start | Renamed from tpep_pickup_datetime |
-| dropoff_datetime | timestamp_ntz | Trip end | Renamed from tpep_dropoff_datetime |
+| pickup_datetime | timestamp | Trip start | Renamed from tpep_pickup_datetime; cast TIMESTAMP_NTZ → TIMESTAMP for SQL endpoint visibility |
+| dropoff_datetime | timestamp | Trip end | Renamed from tpep_dropoff_datetime; cast TIMESTAMP_NTZ → TIMESTAMP for SQL endpoint visibility |
 | passenger_count | double | Number of passengers | Cast to double (TLC files vary: double in 2021–2025, long/int in 2026+) |
 | trip_distance | double | Distance in miles | Filtered: > 0 and <= 100 (trips above 100 mi are physically implausible for NYC) |
 | ratecode_id | double | Rate code | Renamed from RatecodeID; cast to double (long in 2026+ files) |

@@ -299,7 +299,6 @@ df_zone = spark.read.synapsesql(f"{GOLD}.dbo.DimZone").select("zone_key", "locat
 if force_refresh:
     df_silver_taxi = (
         spark.read.table(SILVER_TAXI_TRIPS)
-        .withColumn("pickup_datetime", col("pickup_datetime").cast("timestamp"))
         .filter(col("year").between(YEAR_START, YEAR_END))
     )
     fact_taxi_exclude_filter = f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}"
@@ -317,8 +316,7 @@ else:
     if max_dt_key is None:
         df_silver_taxi = (
             spark.read.table(SILVER_TAXI_TRIPS)
-            .withColumn("pickup_datetime", col("pickup_datetime").cast("timestamp"))
-            .filter(col("year").between(YEAR_START, YEAR_END))
+                .filter(col("year").between(YEAR_START, YEAR_END))
         )
         fact_taxi_exclude_filter = f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}"
         print(f"[FactTaxiDaily] no existing data — falling back to full rebuild for {YEAR_START}-{YEAR_END}")
@@ -328,8 +326,7 @@ else:
         cutoff_dt_key = int(cutoff_dt.strftime("%Y%m%d"))
         df_silver_taxi = (
             spark.read.table(SILVER_TAXI_TRIPS)
-            .withColumn("pickup_datetime", col("pickup_datetime").cast("timestamp"))
-            .filter(col("pickup_datetime") >= lit(cutoff_dt.strftime("%Y-%m-%d")))
+                .filter(col("pickup_datetime") >= lit(cutoff_dt.strftime("%Y-%m-%d")))
         )
         fact_taxi_exclude_filter = f"date_key < {cutoff_dt_key}"
         print(f"[FactTaxiDaily] incremental — gold max date_key: {max_dt_key}, re-aggregating from {cutoff_dt_key} ({LATE_ARRIVING_LOOKBACK_DAYS}-day lookback)")
@@ -396,7 +393,6 @@ df_loc = spark.read.table(SILVER_OPENAQ_LOCATIONS).select(
 if force_refresh:
     df_silver_aq = (
         spark.read.table(SILVER_OPENAQ_MEASUREMENTS)
-        .withColumn("datetime", col("datetime").cast("timestamp"))
         .filter(col("year").between(YEAR_START, YEAR_END))
     )
     fact_aq_exclude_filter = f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}"
@@ -414,8 +410,7 @@ else:
     if max_dt_key is None:
         df_silver_aq = (
             spark.read.table(SILVER_OPENAQ_MEASUREMENTS)
-            .withColumn("datetime", col("datetime").cast("timestamp"))
-            .filter(col("year").between(YEAR_START, YEAR_END))
+                .filter(col("year").between(YEAR_START, YEAR_END))
         )
         fact_aq_exclude_filter = f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}"
         print(f"[FactAirQualityDaily] no existing data — falling back to full rebuild for {YEAR_START}-{YEAR_END}")
@@ -425,8 +420,7 @@ else:
         cutoff_dt_key = int(cutoff_dt.strftime("%Y%m%d"))
         df_silver_aq = (
             spark.read.table(SILVER_OPENAQ_MEASUREMENTS)
-            .withColumn("datetime", col("datetime").cast("timestamp"))
-            .filter(col("datetime") >= lit(cutoff_dt.strftime("%Y-%m-%d")))
+                .filter(col("datetime") >= lit(cutoff_dt.strftime("%Y-%m-%d")))
         )
         fact_aq_exclude_filter = f"date_key < {cutoff_dt_key}"
         print(f"[FactAirQualityDaily] incremental — gold max date_key: {max_dt_key}, re-aggregating from {cutoff_dt_key} ({LATE_ARRIVING_LOOKBACK_DAYS}-day lookback)")

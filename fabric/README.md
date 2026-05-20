@@ -74,7 +74,6 @@ Taxi files read file-by-file to handle TLC Parquet schema drift: `Airport_fee` r
 | `gold_etl` | All Silver tables + `bronze_taxi_zones` (for DimZone) | `FactTaxiDaily`, `FactAirQualityDaily`, `DimDate`, `DimZone`, `DimFX`, `DimGDP` | `year_start` (int), `year_end` (int), `force_refresh` (bool) — default mode is incremental for FactTaxiDaily and FactAirQualityDaily (re-aggregate `MAX(gold.date_key) - 7 days` forward) |
 
 Star schema in `gold_warehouse` (T-SQL / SQL analytics endpoint). Written via `synapsesql`.
-Silver timestamp columns (`pickup_datetime`, `datetime`) cast from `timestamp_ntz` → `timestamp` on read — workaround for a Spark CBO bug (`FilterEstimation` crashes on `TimestampNTZType` when Delta column statistics are present).
 
 ---
 

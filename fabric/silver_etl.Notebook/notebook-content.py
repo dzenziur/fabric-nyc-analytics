@@ -114,15 +114,20 @@ print(f"Year range: {year_start} - {year_end}")
 
 # CELL ********************
 
-def write_silver(df, table_name: str, partition_by: list = None, replace_where: str = None) -> None:
+def write_silver(df, table_name: str, partition_by: list = None, replace_where: str = None,
+                 merge_schema: bool = False) -> None:
     """Write DataFrame to Silver Lakehouse as Delta table.
     replace_where enables partition-level overwrite (Delta replaceWhere) instead of full table overwrite.
+    merge_schema=True allows additive schema evolution (new upstream columns get NULL on old rows);
+    use for sources known to drift over time (e.g. TLC adds new fee columns mid-year).
     """
     print(f"[{table_name}] rows before write: {df.count()}")
 
     writer = df.write.format("delta").mode("overwrite")
     if replace_where:
         writer = writer.option("replaceWhere", replace_where)
+    if merge_schema:
+        writer = writer.option("mergeSchema", "true")
     if partition_by:
         writer = writer.partitionBy(*partition_by)
 
@@ -225,6 +230,9 @@ display(df_silver.limit(5))
 # realistically exceed a few thousand dollars.
 # Default mode (force_refresh=False): process only bronze files whose (year, month) is not yet in silver — append new partitions.
 # force_refresh=True: re-process all files in year_start..year_end range (partition overwrite).
+# Note: TLC adds new fee columns over time (e.g. `cbd_congestion_fee` from 2023+), so the
+# write uses `mergeSchema=true` to let Delta evolve the schema; older rows get NULL for
+# columns introduced after their ingestion.
 
 # CELL ********************
 
@@ -293,6 +301,10 @@ else:
         .withColumnRenamed("RatecodeID", "ratecode_id")
         .withColumnRenamed("PULocationID", "pu_location_id")
         .withColumnRenamed("DOLocationID", "do_location_id")
+        # Cast TIMESTAMP_NTZ → TIMESTAMP so the columns are visible to the Lakehouse SQL endpoint
+        # (Fabric hides TIMESTAMP_NTZ from T-SQL surface). Wall-clock values are preserved.
+        .withColumn("pickup_datetime",  col("pickup_datetime").cast("timestamp"))
+        .withColumn("dropoff_datetime", col("dropoff_datetime").cast("timestamp"))
         .withColumn("year", year(col("pickup_datetime")))
         .withColumn("month", month(col("pickup_datetime")))
         .dropDuplicates(["pickup_datetime", "dropoff_datetime", "pu_location_id", "do_location_id", "fare_amount"])
@@ -310,7 +322,8 @@ else:
     if use_full_mode:
         df_silver = df_silver.filter(col("year").between(year_start, year_end))
         write_silver(df_silver, SILVER_TAXI_TRIPS, partition_by=["year", "month"],
-                     replace_where=f"year >= {year_start} AND year <= {year_end}")
+                     replace_where=f"year >= {year_start} AND year <= {year_end}",
+                     merge_schema=True)
     else:
         rows_before = spark.read.table(SILVER_TAXI_TRIPS).count()
         df_silver.write.format("delta").mode("append").saveAsTable(SILVER_TAXI_TRIPS)
@@ -402,7 +415,8 @@ if not force_refresh and max_dt is not None:
     print(f"[{SILVER_OPENAQ_MEASUREMENTS}] incremental merge done")
 else:
     write_silver(df_silver, SILVER_OPENAQ_MEASUREMENTS, partition_by=["year", "month"],
-                 replace_where=f"year >= {year_start} AND year <= {year_end}")
+                 replace_where=f"year >= {year_start} AND year <= {year_end}",
+                 merge_schema=True)
 
 display(df_silver.limit(5))
 
