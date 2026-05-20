@@ -220,6 +220,30 @@ Wall-clock end-to-end for the 6-year backfill: prepare_taxi_ingestion 1:25:06 �
 
 ![pl_master_orchestrator — full 2021–2026 backfill, 73/73 activities green on 2026-05-20](img/pl_master_orchestrator_full_run.png)
 
+### Fabric Lineage View
+
+`Workspace → Lineage view` renders the dependency graph between every item (Lakehouses, Warehouses, Notebooks, Dataflows, Pipelines, Semantic Model, Report). Use the per-item view (click an item → focused lineage) for a clean picture — the full workspace view contains orphan connection nodes (`HttpServer`, `FabricDataPipelines`) that aren't useful.
+
+**Per-item lineage screenshots** (captured 2026-05-20):
+
+`bronze_lakehouse` — fed by `df_ecb_fx`, `df_worldbank_gdp`, and all bronze ingest notebooks; feeds `silver_etl` and is queried via its SQL analytics endpoint:
+
+![bronze_lakehouse lineage](img/lineage_bronze_lakehouse.png)
+
+`silver_lakehouse` — fed by `silver_etl`; feeds `gold_etl` and is exposed via its SQL analytics endpoint (used by the external Docker stack):
+
+![silver_lakehouse lineage](img/lineage_silver_lakehouse.png)
+
+`gold_warehouse` — fed by `gold_etl`; feeds `nyc_analytics_model` → `NYC Analytics` report:
+
+![gold_warehouse lineage](img/lineage_gold_warehouse.png)
+
+`pl_master_orchestrator` — full dependency graph from the orchestrator's POV (all bronze ingestion + dataflows + silver_etl + gold_etl + pl_ingest_nyc_taxi):
+
+![pl_master_orchestrator lineage](img/lineage_pl_master_orchestrator.png)
+
+**Known gaps in Fabric lineage view:** external HTTP/S3 sources are only captured when the consumer is a Dataflow Gen2 with a declarative Power Query source (so `Web → df_ecb_fx` shows up, but the TLC CloudFront / OpenAQ REST + S3 / Open-Meteo edges to notebooks do not — Fabric can't introspect `requests`/`boto3`/`urllib` calls inside notebook code). Even the TLC CloudFront connection used by `pl_ingest_nyc_taxi`'s Copy activity appears as an orphan `HttpServer` node without an outgoing edge. This is a Fabric platform limitation, not a project gap.
+
 ---
 
 ## Step 7 — Phase 7 External Stack (Docker Compose)
