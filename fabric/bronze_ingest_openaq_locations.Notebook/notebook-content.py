@@ -83,7 +83,6 @@ REQUEST_TIMEOUT = 30
 # MARKDOWN ********************
 
 # ## OpenAQ Locations
-#
 # ### Fetch
 # Paginated fetch with retries on transient errors (5xx, 429, network).
 # Hard page cap prevents runaway loops; WARNING logged if cap is hit with a full last page.
