@@ -4,7 +4,9 @@ table DimGDP
 
 	measure 'USA GDP (USD)' =
 			
-			VAR yr = SELECTEDVALUE(DimDate[year])
+			VAR gdpYr = SELECTEDVALUE(DimGDP[year])
+			VAR dateYr = SELECTEDVALUE(DimDate[year])
+			VAR yr = COALESCE(gdpYr, dateYr)
 			RETURN
 			IF(
 			    ISBLANK(yr),

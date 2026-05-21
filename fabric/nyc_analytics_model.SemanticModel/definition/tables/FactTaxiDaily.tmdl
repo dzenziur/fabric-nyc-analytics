@@ -189,6 +189,87 @@ table FactTaxiDaily
 
 		changedProperty = Name
 
+	measure 'Correlation Trips vs PM2.5' =
+			
+			VAR S =
+			    SUMMARIZE(
+			        DimDate,
+			        DimDate[date_key],
+			        "X", [Total Trips],
+			        "Y", [Avg PM2.5]
+			    )
+			VAR F = FILTER(S, NOT ISBLANK([X]) && NOT ISBLANK([Y]))
+			VAR n = COUNTROWS(F)
+			VAR sX = SUMX(F, [X])
+			VAR sY = SUMX(F, [Y])
+			VAR sXY = SUMX(F, [X] * [Y])
+			VAR sX2 = SUMX(F, [X] * [X])
+			VAR sY2 = SUMX(F, [Y] * [Y])
+			RETURN DIVIDE(
+			    n * sXY - sX * sY,
+			    SQRT((n * sX2 - sX * sX) * (n * sY2 - sY * sY))
+			)
+		formatString: 0.000
+		lineageTag: b2f6a8a3-51e3-4b86-b877-4477cc0c3879
+
+		changedProperty = Name
+
+		changedProperty = FormatString
+
+	measure 'Correlation Trips vs NO2' =
+			
+			VAR S =
+			    SUMMARIZE(
+			        DimDate,
+			        DimDate[date_key],
+			        "X", [Total Trips],
+			        "Y", [Avg NO2]
+			    )
+			VAR F = FILTER(S, NOT ISBLANK([X]) && NOT ISBLANK([Y]))
+			VAR n = COUNTROWS(F)
+			VAR sX = SUMX(F, [X])
+			VAR sY = SUMX(F, [Y])
+			VAR sXY = SUMX(F, [X] * [Y])
+			VAR sX2 = SUMX(F, [X] * [X])
+			VAR sY2 = SUMX(F, [Y] * [Y])
+			RETURN DIVIDE(
+			    n * sXY - sX * sY,
+			    SQRT((n * sX2 - sX * sX) * (n * sY2 - sY * sY))
+			)
+		formatString: 0.000
+		lineageTag: 087f9302-6ebc-4cad-ba94-0847645f1ba9
+
+		changedProperty = Name
+
+		changedProperty = FormatString
+
+	measure 'Correlation Trips vs O3' =
+			
+			VAR S =
+			    SUMMARIZE(
+			        DimDate,
+			        DimDate[date_key],
+			        "X", [Total Trips],
+			        "Y", [Avg O3]
+			    )
+			VAR F = FILTER(S, NOT ISBLANK([X]) && NOT ISBLANK([Y]))
+			VAR n = COUNTROWS(F)
+			VAR sX = SUMX(F, [X])
+			VAR sY = SUMX(F, [Y])
+			VAR sXY = SUMX(F, [X] * [Y])
+			VAR sX2 = SUMX(F, [X] * [X])
+			VAR sY2 = SUMX(F, [Y] * [Y])
+			RETURN DIVIDE(
+			    n * sXY - sX * sY,
+			    SQRT((n * sX2 - sX * sX) * (n * sY2 - sY * sY))
+			)
+		formatString: 0.000
+		lineageTag: 9b9f9e16-9c50-4e51-80e4-89be98bef8ff
+
+		changedProperty = Name
+
+		changedProperty = FormatString
+
 	column date_key
 		dataType: int64
 		isHidden
