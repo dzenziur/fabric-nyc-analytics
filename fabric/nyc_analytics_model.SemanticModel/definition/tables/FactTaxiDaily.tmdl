@@ -53,11 +53,12 @@ table FactTaxiDaily
 			        DimGDP[year] = SELECTEDVALUE(DimDate[year])
 			    )
 			) * 100
+		formatString: 0.000%;-0.000%;0.000%
 		lineageTag: 720d5e53-f09c-474b-91e3-aeb54a694300
 
 		changedProperty = Name
 
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
+		changedProperty = FormatString
 
 	measure 'Revenue USD YoY %' =
 			

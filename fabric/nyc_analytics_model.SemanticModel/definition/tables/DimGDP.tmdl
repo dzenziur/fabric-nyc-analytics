@@ -4,9 +4,16 @@ table DimGDP
 
 	measure 'USA GDP (USD)' =
 			
-			CALCULATE(
-			    MAX(DimGDP[gdp_usd]),
-			    DimGDP[country_code] = "US"
+			VAR yr = SELECTEDVALUE(DimDate[year])
+			RETURN
+			IF(
+			    ISBLANK(yr),
+			    CALCULATE(MAX(DimGDP[gdp_usd]), DimGDP[country_code] = "US"),
+			    CALCULATE(
+			        MAX(DimGDP[gdp_usd]),
+			        DimGDP[country_code] = "US",
+			        DimGDP[year] = yr
+			    )
 			)
 		lineageTag: 5bf0db5a-bd91-44b5-9880-ecac44917316
 
