@@ -4,11 +4,11 @@ table DimDate
 
 	column date_key
 		dataType: int64
+		isHidden
 		formatString: 0
 		sourceProviderType: int
 		lineageTag: 96293d65-e5bf-43ac-a2ca-a8b7b033a694
 		sourceLineageTag: date_key
-		isHidden: true
 		summarizeBy: none
 		sourceColumn: date_key
 

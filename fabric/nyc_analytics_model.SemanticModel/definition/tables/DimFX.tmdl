@@ -11,11 +11,11 @@ table DimFX
 
 	column fx_key
 		dataType: int64
+		isHidden
 		formatString: 0
 		sourceProviderType: int
 		lineageTag: d4352175-0fd5-497e-a1a0-622a4f02e615
 		sourceLineageTag: fx_key
-		isHidden: true
 		summarizeBy: none
 		sourceColumn: fx_key
 
@@ -25,11 +25,11 @@ table DimFX
 
 	column date_key
 		dataType: int64
+		isHidden
 		formatString: 0
 		sourceProviderType: int
 		lineageTag: 5171fcc6-2fe1-41e0-8ebb-6160a800edb4
 		sourceLineageTag: date_key
-		isHidden: true
 		summarizeBy: none
 		sourceColumn: date_key
 

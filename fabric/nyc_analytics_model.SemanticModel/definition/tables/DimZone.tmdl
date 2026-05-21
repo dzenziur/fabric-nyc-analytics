@@ -4,11 +4,11 @@ table DimZone
 
 	column zone_key
 		dataType: int64
+		isHidden
 		formatString: 0
 		sourceProviderType: int
 		lineageTag: 06dda93a-b881-4d05-b099-e950acf0ead9
 		sourceLineageTag: zone_key
-		isHidden: true
 		summarizeBy: none
 		sourceColumn: zone_key
 
@@ -18,11 +18,11 @@ table DimZone
 
 	column location_id
 		dataType: int64
+		isHidden
 		formatString: 0
 		sourceProviderType: int
 		lineageTag: 89d414a7-161e-4f6e-9ee7-a8699a30e265
 		sourceLineageTag: location_id
-		isHidden: true
 		summarizeBy: none
 		sourceColumn: location_id
 

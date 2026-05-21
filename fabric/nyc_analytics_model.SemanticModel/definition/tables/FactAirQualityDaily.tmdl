@@ -25,11 +25,11 @@ table FactAirQualityDaily
 
 	column date_key
 		dataType: int64
+		isHidden
 		formatString: 0
 		sourceProviderType: int
 		lineageTag: a9e706dd-c188-4b3a-bd80-28608688b3cc
 		sourceLineageTag: date_key
-		isHidden: true
 		summarizeBy: none
 		sourceColumn: date_key
 
@@ -39,15 +39,16 @@ table FactAirQualityDaily
 
 	column location_id
 		dataType: int64
+		isHidden
 		formatString: 0
 		sourceProviderType: bigint
 		lineageTag: a2ef0721-e1c5-4db4-a313-2e70d8330fb3
 		sourceLineageTag: location_id
-		isHidden: true
 		summarizeBy: none
 		sourceColumn: location_id
 
 		changedProperty = SummarizeBy
+
 		changedProperty = IsHidden
 
 		annotation SummarizationSetBy = User
@@ -66,10 +67,10 @@ table FactAirQualityDaily
 
 	column country
 		dataType: string
+		isHidden
 		sourceProviderType: varchar(-1)
 		lineageTag: 1f43b201-f5dd-450e-8181-7a873be4327f
 		sourceLineageTag: country
-		isHidden: true
 		summarizeBy: none
 		sourceColumn: country
 

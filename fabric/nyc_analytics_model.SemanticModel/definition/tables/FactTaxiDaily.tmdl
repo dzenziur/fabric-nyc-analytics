@@ -43,13 +43,158 @@ table FactTaxiDaily
 
 		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
+	measure 'Revenue as % of US GDP' =
+			
+			DIVIDE(
+			    [Total Revenue USD],
+			    CALCULATE(
+			        MAX(DimGDP[gdp_usd]),
+			        DimGDP[country_code] = "US",
+			        DimGDP[year] = SELECTEDVALUE(DimDate[year])
+			    )
+			) * 100
+		lineageTag: 720d5e53-f09c-474b-91e3-aeb54a694300
+
+		changedProperty = Name
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Revenue USD YoY %' =
+			
+			VAR yr = SELECTEDVALUE(DimDate[year])
+			VAR cur = [Total Revenue USD]
+			VAR prev = CALCULATE(
+			    [Total Revenue USD],
+			    REMOVEFILTERS(DimDate),
+			    DimDate[year] = yr - 1
+			)
+			RETURN IF(ISBLANK(yr), BLANK(), DIVIDE(cur - prev, prev))
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 6f8aa723-e7cf-4456-923d-260bcdcb382c
+
+		changedProperty = Name
+
+		changedProperty = FormatString
+
+	measure 'Revenue USD YoY Label' =
+			
+			VAR pct = [Revenue USD YoY %]
+			VAR yr = SELECTEDVALUE(DimDate[year])
+			RETURN
+			IF(
+			    ISBLANK(pct) || ISBLANK(yr),
+			    BLANK(),
+			    IF(pct >= 0, "▲ +", "▼ ") & FORMAT(pct, "0.0%") & " vs " & (yr - 1)
+			)
+		lineageTag: ce748d26-6589-4f1b-bb4d-7a82852d035b
+
+		changedProperty = Name
+
+	measure 'Revenue EUR YoY %' =
+			
+			VAR yr = SELECTEDVALUE(DimDate[year])
+			VAR cur = [Total Revenue EUR]
+			VAR prev = CALCULATE(
+			    [Total Revenue EUR],
+			    REMOVEFILTERS(DimDate),
+			    DimDate[year] = yr - 1
+			)
+			RETURN IF(ISBLANK(yr), BLANK(), DIVIDE(cur - prev, prev))
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 9fc943e7-8cf3-4e60-b9ee-3018e6c91d9c
+
+		changedProperty = Name
+
+		changedProperty = FormatString
+
+	measure Measure
+		lineageTag: 582d89e6-a27d-475f-ab8f-3990a0f06d81
+
+		annotation 43dbc3e8-3a1c-4b6f-9923-b49ff7d6691c = True
+
+	measure 'Revenue EUR YoY Label' =
+			
+			VAR pct = [Revenue EUR YoY %]
+			VAR yr = SELECTEDVALUE(DimDate[year])
+			RETURN
+			IF(
+			    ISBLANK(pct) || ISBLANK(yr),
+			    BLANK(),
+			    IF(pct >= 0, "▲ +", "▼ ") & FORMAT(pct, "0.0%") & " vs " & (yr - 1)
+			)
+		lineageTag: c90ec423-5e79-41f8-a57a-1a37c242450f
+
+		changedProperty = Name
+
+	measure 'Trips YoY %' =
+			
+			VAR yr = SELECTEDVALUE(DimDate[year])
+			VAR cur = [Total Trips]
+			VAR prev = CALCULATE(
+			    [Total Trips],
+			    REMOVEFILTERS(DimDate),
+			    DimDate[year] = yr - 1
+			)
+			RETURN IF(ISBLANK(yr), BLANK(), DIVIDE(cur - prev, prev))
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 1cde6f6a-149a-4516-9c45-1d3f931116e8
+
+		changedProperty = Name
+
+		changedProperty = FormatString
+
+	measure 'Trips YoY Label' =
+			
+			VAR pct = [Trips YoY %]
+			VAR yr = SELECTEDVALUE(DimDate[year])
+			RETURN
+			IF(
+			    ISBLANK(pct) || ISBLANK(yr),
+			    BLANK(),
+			    IF(pct >= 0, "▲ +", "▼ ") & FORMAT(pct, "0.0%") & " vs " & (yr - 1)
+			)
+		lineageTag: f5f814e8-d9e6-417c-9925-78e1db1ff0f2
+
+		changedProperty = Name
+
+	measure 'Avg Fare USD YoY %' =
+			
+			VAR yr = SELECTEDVALUE(DimDate[year])
+			VAR cur = [Avg Fare USD]
+			VAR prev = CALCULATE(
+			    [Avg Fare USD],
+			    REMOVEFILTERS(DimDate),
+			    DimDate[year] = yr - 1
+			)
+			RETURN IF(ISBLANK(yr), BLANK(), DIVIDE(cur - prev, prev))
+		formatString: 0.0%;-0.0%;0.0%
+		lineageTag: 659fdca4-f899-438b-aa4e-3bec817c4860
+
+		changedProperty = Name
+
+		changedProperty = FormatString
+
+	measure 'Avg Fare USD YoY Label' =
+			
+			VAR pct = [Avg Fare USD YoY %]
+			VAR yr = SELECTEDVALUE(DimDate[year])
+			RETURN
+			IF(
+			    ISBLANK(pct) || ISBLANK(yr),
+			    BLANK(),
+			    IF(pct >= 0, "▲ +", "▼ ") & FORMAT(pct, "0.0%") & " vs " & (yr - 1)
+			)
+		lineageTag: 5b725f9d-07d7-4b63-b65d-68d2045873f8
+
+		changedProperty = Name
+
 	column date_key
 		dataType: int64
+		isHidden
 		formatString: 0
 		sourceProviderType: int
 		lineageTag: c6665368-af06-49b5-946c-a95735fc0027
 		sourceLineageTag: date_key
-		isHidden: true
 		summarizeBy: none
 		sourceColumn: date_key
 
@@ -59,11 +204,11 @@ table FactTaxiDaily
 
 	column zone_key
 		dataType: int64
+		isHidden
 		formatString: 0
 		sourceProviderType: int
 		lineageTag: a821a782-c50d-441b-a458-e21364c0f7ab
 		sourceLineageTag: zone_key
-		isHidden: true
 		summarizeBy: none
 		sourceColumn: zone_key
 
@@ -73,11 +218,11 @@ table FactTaxiDaily
 
 	column fx_key
 		dataType: int64
+		isHidden
 		formatString: 0
 		sourceProviderType: int
 		lineageTag: 00d39a5e-82de-49f4-a8d8-8335ad0c6fcb
 		sourceLineageTag: fx_key
-		isHidden: true
 		summarizeBy: none
 		sourceColumn: fx_key
 

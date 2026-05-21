@@ -1,0 +1,7 @@
+role 'EWR Operator'
+	modelPermission: read
+
+	tablePermission DimZone = [service_zone] = "EWR"
+
+	annotation PBI_Id = a1ae2ca526f2429c9c3d873caad8b9b2
+
