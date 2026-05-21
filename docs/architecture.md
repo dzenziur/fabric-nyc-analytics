@@ -154,13 +154,13 @@
   | `EWR Operator` | `[service_zone] = "EWR"` | Newark (NJ) airport team |
 
 ### Power BI Report: NYC Analytics
-- **Item:** `fabric/NYC Analytics.Report/`
+- **Item:** `fabric/Mobility Dashboard.Report/`
 - **Semantic model:** `nyc_analytics_model`
 - **Pages:**
-  - **Mobility** — KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), year tile slicer, trips/day trend, top 10 pickup zones by trip count
-  - **Air Quality** — KPI cards (Avg NO2, Avg O3, Avg PM2.5) with conditional fill color based on WHO 24h limits (green/yellow/red), year tile slicer, Azure Maps bubble visual (station coordinates, bubble size + gradient color by Avg PM2.5), combined PM2.5+NO2+O3 daily trend with WHO threshold reference lines (PM2.5=15, NO2=25, O3=100) and zoom slider, top 10 stations by Avg PM2.5
-  - **Correlation** — KPI cards (Total Trips, Avg PM2.5, Avg NO2) — PM2.5/NO2 cards use same WHO-based conditional fill as Air Quality page, bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines, monthly aggregation), year tile slicer (multi-select)
-  - **Economic Impact** — KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP 2000–present), line chart (USD/EUR exchange rate full history)
+  - **Mobility** ([screenshot](img/powerbi_mobility.png)) — KPI cards with YoY change indicators (`▲ +X.X% vs prev year`, green/red conditional font color): Total Trips, Total Revenue USD, Avg Fare USD; year tile slicer, daily trips trend (line chart with range slider), top 10 pickup zones by trip count
+  - **Air Quality** ([screenshot](img/powerbi_air_quality.png)) — KPI cards (Avg NO2, Avg O3, Avg PM2.5) with conditional fill color based on WHO 24h limits (green/yellow/red), year tile slicer, Azure Maps bubble visual (station coordinates, bubble size + gradient color by Avg PM2.5), combined PM2.5+NO2+O3 daily trend with WHO threshold reference lines (PM2.5=15, NO2=25, O3=100) and zoom slider, top 10 stations by Avg PM2.5
+  - **Mobility & Air Quality Correlation** ([screenshot](img/powerbi_correlation.png)) — KPI cards: Total Trips, plus 3 Pearson correlation coefficient cards (`r vs PM2.5`, `r vs NO2`, `r vs O3`) computed via DAX `SUMMARIZE` + `SUMX` over `DimDate[date_key]`; year tile slicer; combo chart with Total Trips bars + PM2.5/NO2/O3 lines (monthly aggregation)
+  - **Economic Impact** ([screenshot](img/powerbi_economic_impact.png)) — KPI cards with YoY indicators (Total Revenue USD, Total Revenue EUR), plus `% of US GDP` card and `USA GDP (USD)` card (latter year-aware via `COALESCE(SELECTEDVALUE(DimGDP[year]), SELECTEDVALUE(DimDate[year]))`); year tile slicer; clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year, 2000–2024), `Revenue as % of US GDP` bar chart by year (2021–2024 — World Bank GDP ends 2024), USD/EUR exchange rate line chart (filtered to 2021–2026 to match taxi window)
 
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.

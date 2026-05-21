@@ -24,7 +24,7 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 | `silver_etl` | Notebook | Silver | ✅ Active |
 | `gold_etl` | Notebook | Gold | ✅ Active |
 | `nyc_analytics_model` | Semantic Model | Reporting | ✅ Active |
-| `NYC Analytics` | Report | Reporting | ✅ Active |
+| `Mobility Dashboard` | Report | Reporting | ✅ Active |
 
 ---
 
@@ -82,16 +82,23 @@ Star schema in `gold_warehouse` (T-SQL / SQL analytics endpoint). Written via `s
 ### Semantic Model — `nyc_analytics_model`
 - Storage mode: Direct Lake on SQL (`gold_warehouse`)
 - Relationships: FactTaxiDaily → DimDate, DimZone, DimFX · FactAirQualityDaily → DimDate
-- DAX measures: Total Trips, Total Revenue USD/EUR, Avg Fare USD, Avg Trip Distance, Avg Trip Duration, Avg PM2.5, Avg NO2, Avg O3, USA GDP (USD)
+- DAX measures:
+  - **FactTaxiDaily:** Total Trips, Total Revenue USD/EUR, Avg Fare USD, Avg Trip Duration (min), Revenue as % of US GDP, 3 Pearson correlation coefficients (Trips vs PM2.5/NO2/O3), 8 YoY measures (`<X> YoY %` + `<X> YoY Label` for Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD)
+  - **FactAirQualityDaily:** Avg PM2.5, Avg NO2, Avg O3
+  - **DimGDP:** USA GDP (USD) — year-aware via `COALESCE(SELECTEDVALUE(DimGDP[year]), SELECTEDVALUE(DimDate[year]))`
+  - **DimFX:** Avg FX Rate
+- All surrogate FK keys hidden (`date_key`, `zone_key`, `fx_key`, `location_id`, `gdp_key`); `FactAirQualityDaily.country` and raw `gdp_usd` also hidden
 - RLS: 5 roles on `DimZone[service_zone]` — `Admin` (no filter), `Yellow Cab Dispatcher` (Yellow Zone), `Green Cab Dispatcher` (Boro Zone), `Airports Operator` (Airports), `EWR Operator` (EWR). Filter propagates to FactTaxiDaily via zone_key. See `docs/architecture.md`.
 
-### Report — `NYC Analytics`
+### Report — `Mobility Dashboard`
+Screenshots in `docs/img/powerbi_{mobility,air_quality,correlation,economic_impact}.png`.
+
 | Page | Key visuals |
 |------|------------|
-| Mobility | KPI cards (Total Trips, Revenue USD, Avg Fare, Avg Distance), year tile slicer, trips/day trend, top 10 pickup zones |
+| Mobility | KPI cards with YoY indicators (Total Trips, Revenue USD, Avg Fare), year tile slicer, trips/day trend, top 10 pickup zones |
 | Air Quality | KPI cards (Avg NO2/O3/PM2.5) with WHO-based conditional fill color, year tile slicer, Azure Maps bubble visual (Avg PM2.5 gradient), PM2.5+NO2+O3 daily trend with WHO threshold lines and zoom slider, top 10 stations by Avg PM2.5 |
-| Correlation | KPI cards (Total Trips, Avg PM2.5, Avg NO2) — PM2.5/NO2 with WHO-based fill color, bar+line chart (Trips vs PM2.5+NO2 by month), year tile slicer (multi-select) |
-| Economic Impact | KPI cards (Revenue USD, Revenue EUR, USA GDP), revenue by year, USA GDP trend, USD/EUR exchange rate |
+| Mobility & Air Quality Correlation | KPI cards: Total Trips + 3 Pearson r cards (`r vs PM2.5/NO2/O3`); combo chart (Trips bars + PM2.5/NO2/O3 lines, monthly) |
+| Economic Impact | KPI cards with YoY indicators (Revenue USD, Revenue EUR) + `% of US GDP` + year-aware `USA GDP (USD)`; revenue by year (USD vs EUR bars), USA GDP line (2000–2024), Revenue as % of US GDP bars (2021–2024), USD/EUR exchange rate (2021–2026) |
 
 ---
 
