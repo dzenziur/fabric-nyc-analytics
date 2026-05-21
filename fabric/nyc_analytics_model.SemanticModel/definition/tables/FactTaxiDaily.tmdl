@@ -29,20 +29,6 @@ table FactTaxiDaily
 
 		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
-	measure 'Avg Trip Distance (mi)' = AVERAGE(FactTaxiDaily[avg_trip_distance_mi])
-		lineageTag: 648d613d-547e-441a-96b8-d39986ddecbc
-
-		changedProperty = Name
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
-
-	measure 'Avg Trip Duration (min)' = AVERAGE(FactTaxiDaily[avg_trip_duration_min])
-		lineageTag: 5c2b00ce-1eb2-40ee-8095-97e8e6a52b69
-
-		changedProperty = Name
-
-		annotation PBI_FormatHint = {"isGeneralNumber":true}
-
 	measure 'Revenue as % of US GDP' =
 			
 			DIVIDE(
@@ -107,11 +93,6 @@ table FactTaxiDaily
 		changedProperty = Name
 
 		changedProperty = FormatString
-
-	measure Measure
-		lineageTag: 582d89e6-a27d-475f-ab8f-3990a0f06d81
-
-		annotation 43dbc3e8-3a1c-4b6f-9923-b49ff7d6691c = True
 
 	measure 'Revenue EUR YoY Label' =
 			
