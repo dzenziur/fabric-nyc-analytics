@@ -26,12 +26,15 @@
 # Reads pollutant measurement history for NYC stations from the OpenAQ public S3 archive.
 # **Input:** `bronze_openaq_locations` (NYC stations filtered by bounding box) + S3 archive
 # **Output:** `bronze_openaq_measurements` (raw CSV data, no transformations)
+# **`year_start`/`year_end`:** **ignored when `force_refresh=False`** — incremental mode fetches
+# only current + previous month from S3 and MERGEs on natural key. **Used only when
+# `force_refresh=True`** (manual backfill) — fetches full year range and replaces year partitions.
 # **Note:** Fabric Spark S3A cannot access public S3 anonymously — boto3 is used instead.
 
 # PARAMETERS CELL ********************
 
-year_start = 2023
-year_end = 2023
+year_start = 2021
+year_end = 2026
 force_refresh = False
 
 # METADATA ********************
@@ -65,9 +68,9 @@ import pandas as pd
 from botocore import UNSIGNED
 from botocore.client import Config
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
+from datetime import date, datetime
 from delta.tables import DeltaTable
-from pyspark.sql.functions import col, year, to_timestamp
+from pyspark.sql.functions import col, lit, year, to_timestamp
 from pyspark.sql.utils import AnalysisException
 
 # METADATA ********************
@@ -88,18 +91,18 @@ BRONZE = "bronze_lakehouse"
 NYC_LAT_MIN, NYC_LAT_MAX = 40.4, 40.9
 NYC_LON_MIN, NYC_LON_MAX = -74.3, -73.7
 
-YEAR_END   = year_end
-YEAR_START = year_start
-
 S3_BUCKET = "openaq-data-archive"
 S3_BASE   = "records/csv.gz"
 
 BRONZE_OPENAQ_LOCATIONS    = f"{BRONZE}.bronze_openaq_locations"
 BRONZE_OPENAQ_MEASUREMENTS = f"{BRONZE}.bronze_openaq_measurements"
 
-MAX_WORKERS = 50
+# Parallelism: STATION_WORKERS outer stations × MAX_WORKERS inner S3 keys per station.
+# Total concurrent S3 GETs = 8 × 16 = 128, bounded by the boto3 connection pool below.
+STATION_WORKERS = 8
+MAX_WORKERS     = 16
 
-print(f"Year range: {YEAR_START} - {YEAR_END}")
+print(f"Year range: {year_start} - {year_end}")
 
 # METADATA ********************
 
@@ -172,10 +175,15 @@ def current_and_previous_month() -> list:
 
 s3 = boto3.client(
     "s3",
-    config=Config(signature_version=UNSIGNED),
-    region_name="us-east-1"
+    config=Config(
+        signature_version=UNSIGNED,
+        # Connection pool must accommodate STATION_WORKERS × MAX_WORKERS concurrent GETs;
+        # boto3 default of 10 would cause "Connection pool is full" warnings + queueing.
+        max_pool_connections=STATION_WORKERS * MAX_WORKERS,
+    ),
+    region_name="us-east-1",
 )
-print("S3 client ready")
+print(f"S3 client ready (max_pool_connections={STATION_WORKERS * MAX_WORKERS})")
 
 # METADATA ********************
 
@@ -188,23 +196,44 @@ print("S3 client ready")
 
 # ## NYC Stations
 # Read location IDs from `bronze_openaq_locations`, filter by NYC bounding box.
+# Pre-filter by station activity window — drop stations whose `[datetime_first, datetime_last]`
+# doesn't overlap the requested year range. Saves the bulk of S3 LIST calls (most NYC stations
+# came online post-2023, so 2021–2022 probes are otherwise just "no data, skipping").
+# Falls back to no filter (with a warning) if the activity columns are missing.
 
 # CELL ********************
 
 df_locations = spark.read.table(BRONZE_OPENAQ_LOCATIONS)
 
-nyc_ids = (
-    df_locations
-    .filter(
-        (col("latitude")  >= NYC_LAT_MIN) & (col("latitude")  <= NYC_LAT_MAX) &
-        (col("longitude") >= NYC_LON_MIN) & (col("longitude") <= NYC_LON_MAX)
+df_nyc = df_locations.filter(
+    (col("latitude")  >= NYC_LAT_MIN) & (col("latitude")  <= NYC_LAT_MAX) &
+    (col("longitude") >= NYC_LON_MIN) & (col("longitude") <= NYC_LON_MAX)
+)
+
+has_activity_cols = "datetime_first" in df_locations.columns and "datetime_last" in df_locations.columns
+if has_activity_cols:
+    range_start = datetime(year_start, 1, 1)
+    range_end   = datetime(year_end, 12, 31, 23, 59, 59)
+    df_active = df_nyc.filter(
+        (col("datetime_first").isNull() | (to_timestamp(col("datetime_first")) <= lit(range_end))) &
+        (col("datetime_last").isNull()  | (to_timestamp(col("datetime_last"))  >= lit(range_start)))
     )
+    nyc_total  = df_nyc.count()
+    nyc_active = df_active.count()
+    print(f"NYC stations in bbox: {nyc_total}; active for {year_start}-{year_end}: {nyc_active} (dropped {nyc_total - nyc_active} inactive)")
+    df_filtered = df_active
+else:
+    print(f"WARNING: bronze_openaq_locations is missing datetime_first/datetime_last — skipping activity pre-filter. Re-run bronze_ingest_openaq_locations to enable.")
+    df_filtered = df_nyc
+
+nyc_ids = (
+    df_filtered
     .select("location_id")
     .rdd.flatMap(lambda x: x)
     .collect()
 )
 
-print(f"NYC stations found: {len(nyc_ids)}")
+print(f"NYC stations to probe: {len(nyc_ids)}")
 print(f"IDs: {sorted(nyc_ids)}")
 
 # METADATA ********************
@@ -216,7 +245,7 @@ print(f"IDs: {sorted(nyc_ids)}")
 
 # MARKDOWN ********************
 
-# ## Read Measurements from S3 and Write to Bronze
+# ## OpenAQ Measurements
 # Default mode (force_refresh=False): fetch only current + previous month from S3, MERGE INTO bronze on natural key.
 #   Most efficient for scheduled daily runs — historical months in S3 archive are immutable.
 # force_refresh=True: fetch full year range, replace year partitions (existing behavior). For manual backfill.
@@ -231,40 +260,48 @@ except Exception:
     bronze_exists = False
 
 if force_refresh or not bronze_exists:
-    months_to_fetch = months_in_year_range(YEAR_START, YEAR_END)
+    months_to_fetch = months_in_year_range(year_start, year_end)
     use_incremental = False
-    print(f"Full mode — fetching year range {YEAR_START}-{YEAR_END} ({len(months_to_fetch)} months)")
+    print(f"Full mode — fetching year range {year_start}-{year_end} ({len(months_to_fetch)} months)")
 else:
     months_to_fetch = current_and_previous_month()
     use_incremental = True
     print(f"Incremental mode — fetching months: {months_to_fetch}")
 
-dfs_new = []
+pd_dfs = []
 total_rows = 0
 
-for loc_id in nyc_ids:
-    df_pd = read_location(s3, S3_BUCKET, loc_id, months_to_fetch)
-    if df_pd.empty:
-        print(f"[location {loc_id}] no data, skipping")
-        continue
-    dfs_new.append(
-        spark.createDataFrame(df_pd)
-        .withColumn("year", year(to_timestamp(col("datetime"))))
-    )
-    total_rows += len(df_pd)
-    print(f"[location {loc_id}] rows fetched: {len(df_pd)}")
+# Outer parallelism: fetch up to STATION_WORKERS stations concurrently. S3 networking is
+# the dominant cost; results accumulate as pandas DataFrames and are merged into a single
+# Spark DataFrame at the end (one createDataFrame instead of a long unionByName chain).
+with ThreadPoolExecutor(max_workers=STATION_WORKERS) as executor:
+    futures = {
+        executor.submit(read_location, s3, S3_BUCKET, loc_id, months_to_fetch): loc_id
+        for loc_id in nyc_ids
+    }
+    print(f"Submitted {len(futures)} station fetches; outer parallelism = {STATION_WORKERS}, inner per-station = {MAX_WORKERS}")
+    for future in as_completed(futures):
+        loc_id = futures[future]
+        df_pd = future.result()
+        if df_pd.empty:
+            print(f"[location {loc_id}] no data, skipping")
+            continue
+        pd_dfs.append(df_pd)
+        total_rows += len(df_pd)
+        print(f"[location {loc_id}] rows fetched: {len(df_pd)}")
 
 print(f"New rows fetched from S3: {total_rows}")
 
-if not dfs_new:
+if not pd_dfs:
     if use_incremental:
         print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] no new data for months {months_to_fetch} — skipping write")
     else:
-        raise ValueError(f"No data found in S3 for any NYC station in year range {YEAR_START}–{YEAR_END}. Aborting.")
+        raise ValueError(f"No data found in S3 for any NYC station in year range {year_start}–{year_end}. Aborting.")
 else:
-    df_new = dfs_new[0]
-    for d in dfs_new[1:]:
-        df_new = df_new.unionByName(d, allowMissingColumns=True)
+    df_new = (
+        spark.createDataFrame(pd.concat(pd_dfs, ignore_index=True))
+        .withColumn("year", year(to_timestamp(col("datetime"))))
+    )
 
     if use_incremental:
         target = DeltaTable.forName(spark, BRONZE_OPENAQ_MEASUREMENTS)
@@ -285,7 +322,7 @@ else:
             if "year" not in df_existing.columns:
                 df_existing = df_existing.withColumn("year", year(to_timestamp(col("datetime"))))
             df_existing = df_existing.filter(
-                (col("year") < YEAR_START) | (col("year") > YEAR_END)
+                (col("year") < year_start) | (col("year") > year_end)
             )
             df_final = df_existing.unionByName(df_new, allowMissingColumns=True)
         except AnalysisException:

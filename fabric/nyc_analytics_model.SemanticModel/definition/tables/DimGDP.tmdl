@@ -4,9 +4,18 @@ table DimGDP
 
 	measure 'USA GDP (USD)' =
 			
-			CALCULATE(
-			    MAX(DimGDP[gdp_usd]),
-			    DimGDP[country_code] = "US"
+			VAR gdpYr = SELECTEDVALUE(DimGDP[year])
+			VAR dateYr = SELECTEDVALUE(DimDate[year])
+			VAR yr = COALESCE(gdpYr, dateYr)
+			RETURN
+			IF(
+			    ISBLANK(yr),
+			    CALCULATE(MAX(DimGDP[gdp_usd]), DimGDP[country_code] = "US"),
+			    CALCULATE(
+			        MAX(DimGDP[gdp_usd]),
+			        DimGDP[country_code] = "US",
+			        DimGDP[year] = yr
+			    )
 			)
 		lineageTag: 5bf0db5a-bd91-44b5-9880-ecac44917316
 
@@ -16,12 +25,15 @@ table DimGDP
 
 	column gdp_key
 		dataType: int64
+		isHidden
 		formatString: 0
 		sourceProviderType: int
 		lineageTag: 9ae55a6c-545d-4264-83db-83d515f00bc2
 		sourceLineageTag: gdp_key
 		summarizeBy: sum
 		sourceColumn: gdp_key
+
+		changedProperty = IsHidden
 
 		annotation SummarizationSetBy = Automatic
 
@@ -58,11 +70,14 @@ table DimGDP
 
 	column gdp_usd
 		dataType: double
+		isHidden
 		sourceProviderType: float
 		lineageTag: 90d54508-c492-41e0-a37c-cdb741e7c518
 		sourceLineageTag: gdp_usd
 		summarizeBy: sum
 		sourceColumn: gdp_usd
+
+		changedProperty = IsHidden
 
 		annotation SummarizationSetBy = Automatic
 

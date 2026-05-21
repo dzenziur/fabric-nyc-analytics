@@ -25,11 +25,14 @@
 # # Bronze — OpenAQ Locations Ingestion
 # Fetches location metadata from OpenAQ API v3, writes to `bronze_lakehouse`.
 # **Input:** OpenAQ API `/v3/locations` (paginated)
-# **Output:** `bronze_openaq_locations`
+# **Output:** `bronze_openaq_locations` (includes `datetime_first`/`datetime_last` activity window per station)
+# Default (force_refresh=False) does a lightweight `limit=1` probe of `meta.found` and
+# skips the full paginated fetch when it matches the existing bronze row count.
 
 # PARAMETERS CELL ********************
 
 openaq_api_key = ""
+force_refresh = False
 
 # METADATA ********************
 
@@ -46,7 +49,6 @@ openaq_api_key = ""
 
 import requests
 import pandas as pd
-from pyspark.sql.functions import col
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -80,7 +82,8 @@ REQUEST_TIMEOUT = 30
 
 # MARKDOWN ********************
 
-# ## Fetch
+# ## OpenAQ Locations
+# ### Fetch
 # Paginated fetch with retries on transient errors (5xx, 429, network).
 # Hard page cap prevents runaway loops; WARNING logged if cap is hit with a full last page.
 
@@ -95,6 +98,25 @@ session.mount("https://", HTTPAdapter(max_retries=Retry(
 )))
 
 headers = {"X-API-Key": openaq_api_key}
+
+# Lightweight up-to-date check: one limit=1 call returns meta.found.
+# If bronze already has the same count and force_refresh is False, skip the full paginated fetch.
+if not force_refresh:
+    try:
+        existing_count = spark.read.table(BRONZE_OPENAQ_LOCATIONS).count()
+    except Exception:
+        existing_count = 0
+    if existing_count > 0:
+        probe = session.get(BASE_URL, params={"limit": 1, "page": 1},
+                            headers=headers, timeout=REQUEST_TIMEOUT)
+        probe.raise_for_status()
+        meta_found = probe.json().get("meta", {}).get("found")
+        if meta_found == existing_count:
+            print(f"[{BRONZE_OPENAQ_LOCATIONS}] up to date — {existing_count} rows match OpenAQ meta.found={meta_found}; skipping fetch")
+            notebookutils.notebook.exit("skipped: up to date")
+        else:
+            print(f"[{BRONZE_OPENAQ_LOCATIONS}] stale — bronze has {existing_count} rows, OpenAQ has {meta_found}; refetching")
+
 records = []
 last_page_size = 0
 
@@ -125,22 +147,26 @@ print(f"Total locations fetched: {len(records)}")
 
 # MARKDOWN ********************
 
-# ## Flatten
+# ### Flatten
 
 # CELL ********************
 
 rows = []
 for r in records:
-    country = r.get("country") or {}
-    coords  = r.get("coordinates") or {}
+    country  = r.get("country") or {}
+    coords   = r.get("coordinates") or {}
+    dt_first = r.get("datetimeFirst") or {}
+    dt_last  = r.get("datetimeLast")  or {}
     rows.append({
-        "location_id":   r.get("id"),
-        "location_name": r.get("name"),
-        "timezone":      r.get("timezone"),
-        "country_id":    country.get("code"),
-        "country_name":  country.get("name"),
-        "latitude":      coords.get("latitude"),
-        "longitude":     coords.get("longitude"),
+        "location_id":    r.get("id"),
+        "location_name":  r.get("name"),
+        "timezone":       r.get("timezone"),
+        "country_id":     country.get("code"),
+        "country_name":   country.get("name"),
+        "latitude":       coords.get("latitude"),
+        "longitude":      coords.get("longitude"),
+        "datetime_first": dt_first.get("utc"),
+        "datetime_last":  dt_last.get("utc"),
     })
 
 df_pd = pd.DataFrame(rows)
@@ -155,7 +181,7 @@ print(f"Rows to write: {len(df_pd)}")
 
 # MARKDOWN ********************
 
-# ## Write
+# ### Write
 
 # CELL ********************
 

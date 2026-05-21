@@ -36,13 +36,18 @@
 
 # # Gold ETL — Silver → Fabric Warehouse (star schema)
 # Builds star schema from Silver tables and writes to `gold_warehouse` via synapsesql.
-# **Input:** silver_taxi_trips, silver_openaq_measurements, silver_openaq_locations, silver_fx_rates, silver_gdp
+# **Input:** silver_taxi_trips, silver_openaq_measurements, silver_openaq_locations, silver_taxi_zones, silver_fx_rates, silver_gdp
 # **Output:** gold_warehouse.dbo — DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily
+# **`year_start`/`year_end`:** semantics vary by output:
+# - `FactTaxiDaily`, `FactAirQualityDaily` — **ignored when `force_refresh=False`** (incremental
+#   re-aggregates `MAX(gold.date_key) - 7 days` forward). **Used only when `force_refresh=True`**.
+# - `DimDate` — **always used** as a floor/ceiling, expanded outward by actual data min/max.
+# - `DimZone`, `DimFX`, `DimGDP` — **never used** (full overwrite of small dimensions every run).
 
 # PARAMETERS CELL ********************
 
-year_start = 2023
-year_end = 2023
+year_start = 2021
+year_end = 2026
 force_refresh = False
 
 # METADATA ********************
@@ -61,7 +66,7 @@ force_refresh = False
 import com.microsoft.spark.fabric
 from datetime import date, timedelta
 from pyspark.sql.functions import (
-    col, explode, lit, sequence, to_date,
+    col, lit, to_date,
     year, quarter, month, date_format,
     weekofyear, dayofmonth, dayofweek,
     avg, max, min, count, sum as spark_sum,
@@ -83,23 +88,19 @@ from pyspark.sql.window import Window
 
 # CELL ********************
 
-BRONZE = "bronze_lakehouse"
 SILVER = "silver_lakehouse"
 GOLD   = "gold_warehouse"
 
-YEAR_START = year_start
-YEAR_END   = year_end
 LATE_ARRIVING_LOOKBACK_DAYS = 7
 
-BRONZE_TAXI_ZONES           = f"{BRONZE}.bronze_taxi_zones"
-
 SILVER_TAXI_TRIPS           = f"{SILVER}.silver_taxi_trips"
+SILVER_TAXI_ZONES           = f"{SILVER}.silver_taxi_zones"
 SILVER_OPENAQ_MEASUREMENTS  = f"{SILVER}.silver_openaq_measurements"
 SILVER_OPENAQ_LOCATIONS     = f"{SILVER}.silver_openaq_locations"
 SILVER_FX_RATES             = f"{SILVER}.silver_fx_rates"
 SILVER_GDP                  = f"{SILVER}.silver_gdp"
 
-print(f"Year range: {YEAR_START} - {YEAR_END}")
+print(f"Year range: {year_start} - {year_end}")
 
 # METADATA ********************
 
@@ -151,13 +152,13 @@ try:
         min(col("year")).alias("min_y"),
         max(col("year")).alias("max_y"),
     ).collect()[0]
-    _dim_year_start = _row["min_y"] if _row["min_y"] < YEAR_START else YEAR_START
-    _dim_year_end   = _row["max_y"] if _row["max_y"] > YEAR_END   else YEAR_END
+    _dim_year_start = _row["min_y"] if _row["min_y"] < year_start else year_start
+    _dim_year_end   = _row["max_y"] if _row["max_y"] > year_end   else year_end
 except Py4JJavaError as e:
     if "source is invalid" in str(e) or "read access" in str(e):
         print("DimDate not found (first run), using parameter range")
-        _dim_year_start = YEAR_START
-        _dim_year_end   = YEAR_END
+        _dim_year_start = year_start
+        _dim_year_end   = year_end
     else:
         raise
 
@@ -201,16 +202,16 @@ display(df_dim_date.limit(10))
 # MARKDOWN ********************
 
 # ## DimZone
-# Reads from `bronze_taxi_zones` (ingested separately by `bronze_ingest_taxi_zones` notebook).
+# Reads from `silver_taxi_zones` (cleaned + cast in `silver_etl`).
 # 265 rows. zone_key = location_id (natural PK, 1–265).
 
 # CELL ********************
 
 df_dim_zone = (
-    spark.read.table(BRONZE_TAXI_ZONES)
+    spark.read.table(SILVER_TAXI_ZONES)
     .select(
-        col("location_id").cast("int").alias("zone_key"),
-        col("location_id").cast("int").alias("location_id"),
+        col("location_id").alias("zone_key"),
+        col("location_id"),
         col("zone").alias("zone_name"),
         col("borough"),
         col("service_zone"),
@@ -289,7 +290,7 @@ display(df_dim_gdp.limit(10))
 # Grain: one row per day × pickup zone. FX join is left — weekend/holiday dates have no ECB rate (null fx_key).
 # Default mode (force_refresh=False): re-aggregate only dates from MAX(gold.date_key) - 7 days forward.
 #   Same 7-day lookback as FactAirQualityDaily — handles late-arriving silver data and short missed-run gaps.
-# force_refresh=True: full rebuild for YEAR_START..YEAR_END range (existing behavior).
+# force_refresh=True: full rebuild for year_start..year_end range (existing behavior).
 
 # CELL ********************
 
@@ -299,11 +300,10 @@ df_zone = spark.read.synapsesql(f"{GOLD}.dbo.DimZone").select("zone_key", "locat
 if force_refresh:
     df_silver_taxi = (
         spark.read.table(SILVER_TAXI_TRIPS)
-        .withColumn("pickup_datetime", col("pickup_datetime").cast("timestamp"))
-        .filter(col("year").between(YEAR_START, YEAR_END))
+        .filter(col("year").between(year_start, year_end))
     )
-    fact_taxi_exclude_filter = f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}"
-    print(f"[FactTaxiDaily] force_refresh=True — full rebuild for {YEAR_START}-{YEAR_END}")
+    fact_taxi_exclude_filter = f"date_key < {year_start * 10000 + 101} OR date_key > {year_end * 10000 + 1231}"
+    print(f"[FactTaxiDaily] force_refresh=True — full rebuild for {year_start}-{year_end}")
 else:
     try:
         max_dt_key_row = spark.read.synapsesql(f"{GOLD}.dbo.FactTaxiDaily").agg(max("date_key")).collect()
@@ -317,19 +317,17 @@ else:
     if max_dt_key is None:
         df_silver_taxi = (
             spark.read.table(SILVER_TAXI_TRIPS)
-            .withColumn("pickup_datetime", col("pickup_datetime").cast("timestamp"))
-            .filter(col("year").between(YEAR_START, YEAR_END))
+                .filter(col("year").between(year_start, year_end))
         )
-        fact_taxi_exclude_filter = f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}"
-        print(f"[FactTaxiDaily] no existing data — falling back to full rebuild for {YEAR_START}-{YEAR_END}")
+        fact_taxi_exclude_filter = f"date_key < {year_start * 10000 + 101} OR date_key > {year_end * 10000 + 1231}"
+        print(f"[FactTaxiDaily] no existing data — falling back to full rebuild for {year_start}-{year_end}")
     else:
         max_dt = date(max_dt_key // 10000, (max_dt_key // 100) % 100, max_dt_key % 100)
         cutoff_dt = max_dt - timedelta(days=LATE_ARRIVING_LOOKBACK_DAYS)
         cutoff_dt_key = int(cutoff_dt.strftime("%Y%m%d"))
         df_silver_taxi = (
             spark.read.table(SILVER_TAXI_TRIPS)
-            .withColumn("pickup_datetime", col("pickup_datetime").cast("timestamp"))
-            .filter(col("pickup_datetime") >= lit(cutoff_dt.strftime("%Y-%m-%d")))
+                .filter(col("pickup_datetime") >= lit(cutoff_dt.strftime("%Y-%m-%d")))
         )
         fact_taxi_exclude_filter = f"date_key < {cutoff_dt_key}"
         print(f"[FactTaxiDaily] incremental — gold max date_key: {max_dt_key}, re-aggregating from {cutoff_dt_key} ({LATE_ARRIVING_LOOKBACK_DAYS}-day lookback)")
@@ -385,7 +383,7 @@ display(df_fact_taxi.limit(10))
 # Grain: one row per day × location × parameter. city/country joined from silver_openaq_locations.
 # Default mode (force_refresh=False): re-aggregate only dates from MAX(gold.date_key) - 7 days forward.
 #   The 7-day lookback handles late-arriving measurements AND short missed-run gaps.
-# force_refresh=True: full rebuild for YEAR_START..YEAR_END range (existing behavior).
+# force_refresh=True: full rebuild for year_start..year_end range (existing behavior).
 
 # CELL ********************
 
@@ -396,11 +394,10 @@ df_loc = spark.read.table(SILVER_OPENAQ_LOCATIONS).select(
 if force_refresh:
     df_silver_aq = (
         spark.read.table(SILVER_OPENAQ_MEASUREMENTS)
-        .withColumn("datetime", col("datetime").cast("timestamp"))
-        .filter(col("year").between(YEAR_START, YEAR_END))
+        .filter(col("year").between(year_start, year_end))
     )
-    fact_aq_exclude_filter = f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}"
-    print(f"[FactAirQualityDaily] force_refresh=True — full rebuild for {YEAR_START}-{YEAR_END}")
+    fact_aq_exclude_filter = f"date_key < {year_start * 10000 + 101} OR date_key > {year_end * 10000 + 1231}"
+    print(f"[FactAirQualityDaily] force_refresh=True — full rebuild for {year_start}-{year_end}")
 else:
     try:
         max_dt_key_row = spark.read.synapsesql(f"{GOLD}.dbo.FactAirQualityDaily").agg(max("date_key")).collect()
@@ -414,19 +411,17 @@ else:
     if max_dt_key is None:
         df_silver_aq = (
             spark.read.table(SILVER_OPENAQ_MEASUREMENTS)
-            .withColumn("datetime", col("datetime").cast("timestamp"))
-            .filter(col("year").between(YEAR_START, YEAR_END))
+                .filter(col("year").between(year_start, year_end))
         )
-        fact_aq_exclude_filter = f"date_key < {YEAR_START * 10000 + 101} OR date_key > {YEAR_END * 10000 + 1231}"
-        print(f"[FactAirQualityDaily] no existing data — falling back to full rebuild for {YEAR_START}-{YEAR_END}")
+        fact_aq_exclude_filter = f"date_key < {year_start * 10000 + 101} OR date_key > {year_end * 10000 + 1231}"
+        print(f"[FactAirQualityDaily] no existing data — falling back to full rebuild for {year_start}-{year_end}")
     else:
         max_dt = date(max_dt_key // 10000, (max_dt_key // 100) % 100, max_dt_key % 100)
         cutoff_dt = max_dt - timedelta(days=LATE_ARRIVING_LOOKBACK_DAYS)
         cutoff_dt_key = int(cutoff_dt.strftime("%Y%m%d"))
         df_silver_aq = (
             spark.read.table(SILVER_OPENAQ_MEASUREMENTS)
-            .withColumn("datetime", col("datetime").cast("timestamp"))
-            .filter(col("datetime") >= lit(cutoff_dt.strftime("%Y-%m-%d")))
+                .filter(col("datetime") >= lit(cutoff_dt.strftime("%Y-%m-%d")))
         )
         fact_aq_exclude_filter = f"date_key < {cutoff_dt_key}"
         print(f"[FactAirQualityDaily] incremental — gold max date_key: {max_dt_key}, re-aggregating from {cutoff_dt_key} ({LATE_ARRIVING_LOOKBACK_DAYS}-day lookback)")

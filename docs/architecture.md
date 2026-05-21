@@ -3,77 +3,26 @@
 ## High-Level Diagram
 
 ```
-┌──────────────────────────────────────────────────────────────────────────────────────┐
-│                              EXTERNAL DATA SOURCES                                   │
-├──────────────┬──────────────────┬──────────────┬──────────┬──────────────────────────┤
-│  NYC Taxi    │  OpenAQ          │  World Bank  │  ECB FX  │  Open-Meteo              │
-│  (TLC)       │  API + S3        │  API         │  API     │  Archive + Forecast      │
-│  Parquet/mo  │  JSON / CSV.gz   │  JSON        │  CSV     │  JSON (hourly)           │
-└──────┬───────┴────────┬─────────┴──────┬───────┴────┬─────┴───────┬──────────────────┘
-       │                │                │            │             │
- pl_ingest_      bronze_ingest_    df_worldbank_   df_ecb_fx   bronze_ingest_
- nyc_taxi        openaq_*          gdp             Dataflow    weather
- Pipeline        Notebooks         Dataflow                    Notebook
-       │                │                │            │             │
-       └────────────────┴────────────────┴────────────┴─────────────┘
-                                          │
-                             ┌────────────▼────────────┐
-                             │  pl_master_orchestrator │
-                             │  year_start / year_end  │
-                             └────────────┬────────────┘
-                                          │
-                             ┌────────────▼────────────┐
-                             │      BRONZE LAKEHOUSE   │
-                             │  raw · immutable · Delta│
-                             └────────────┬────────────┘
-                                          │
-                             ┌────────────▼────────────┐
-                             │   silver_etl Notebook   │
-                             │   PySpark               │
-                             └────────────┬────────────┘
-                                          │
-                             ┌────────────▼────────────┐
-                             │      SILVER LAKEHOUSE   │──────────┐
-                             │  clean · normalized     │          │
-                             └────────────┬────────────┘          │
-                                          │ (weather stops here)  │
-                             ┌────────────▼────────────┐          │
-                             │   gold_etl Notebook     │          │
-                             │   PySpark               │          │
-                             └────────────┬────────────┘          │
-                                          │                       │
-                             ┌────────────▼────────────┐──────────┤
-                             │      FABRIC WAREHOUSE   │          │
-                             │  star schema · T-SQL    │          │
-                             │  FactTaxiDaily          │          │
-                             │  FactAirQualityDaily    │          │
-                             │  DimDate · DimZone      │          │
-                             │  DimFX · DimGDP         │          │
-                             └────────────┬────────────┘          │
-                                          │                       │
-                             ┌────────────▼────────────┐          │
-                             │   nyc_analytics_model   │          │
-                             │   Direct Lake on SQL    │          │
-                             └────────────┬────────────┘          │
-                                          │                       │
-                             ┌────────────▼────────────┐          │
-                             │   NYC ANALYTICS REPORT  │          │
-                             │   Mobility · Air Quality│          │
-                             │   Correlation · Econ    │          │
-                             └─────────────────────────┘          │
-                                                                  │
-                                                                  ▼
-   ┌─────────────────────────────────────────────────────────────────────────────────┐
-   │              EXTERNAL APP  (docker-compose.yml — local containers)              │
-   │                                                                                 │
-   │    weather_sync  ────►  InfluxDB OSS  ────►  Grafana OSS                        │
-   │    (reads silver_weather              (weather dashboard:                       │
-   │     via Fabric SQL endpoint)           temperature / precip / wind / humidity)  │
-   │                                                                                 │
-   │    ge (Silver + Gold)  ────►  bot  ──/report──►  Telegram                       │
-   │    Great Expectations         python-telegram-bot                               │
-   │    suites                     (long-polling mode, no public URL needed)         │
-   └─────────────────────────────────────────────────────────────────────────────────┘
++--------------------------- Microsoft Fabric Workspace ---------------------------+
+|                                                                                  |
+|  Sources         Bronze Lakehouse     Silver Lakehouse     Gold Warehouse        |
+|  -------         ----------------     ----------------     --------------        |
+|  NYC TLC      -> bronze_taxi_trips -> silver_taxi_trips -> FactTaxiDaily         |
+|  OpenAQ API   -> bronze_openaq_*   -> silver_openaq_*   -> FactAirQualityDaily   |
+|  World Bank   -> bronze_gdp        -> silver_gdp        -> DimGDP, DimDate       |
+|  ECB CSV      -> bronze_fx_rates   -> silver_fx_rates   -> DimFX, DimZone        |
+|  Open-Meteo   -> bronze_weather    -> silver_weather    --+                      |
+|                                                           |                      |
+|  Orchestration: pl_master_orchestrator (Data Factory)     |                      |
+|  Star schema -> Power BI semantic model (Direct Lake)     |                      |
++-----------------------------------------------------------+----------------------+
+                                                            v
+                  +---------------- External Stack (Docker) -----------------+
+                  |                                                          |
+                  |  silver_weather -> InfluxDB -> Grafana dashboard         |
+                  |  Silver + Gold  -> Great Expectations -> Telegram bot    |
+                  |                                                          |
+                  +----------------------------------------------------------+
 ```
 
 ---
@@ -154,13 +103,13 @@
   | `EWR Operator` | `[service_zone] = "EWR"` | Newark (NJ) airport team |
 
 ### Power BI Report: NYC Analytics
-- **Item:** `fabric/NYC Analytics.Report/`
+- **Item:** `fabric/Mobility Dashboard.Report/`
 - **Semantic model:** `nyc_analytics_model`
 - **Pages:**
-  - **Mobility** — KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), year tile slicer, trips/day trend, top 10 pickup zones by trip count
-  - **Air Quality** — KPI cards (Avg NO2, Avg O3, Avg PM2.5) with conditional fill color based on WHO 24h limits (green/yellow/red), year tile slicer, Azure Maps bubble visual (station coordinates, bubble size + gradient color by Avg PM2.5), combined PM2.5+NO2+O3 daily trend with WHO threshold reference lines (PM2.5=15, NO2=25, O3=100) and zoom slider, top 10 stations by Avg PM2.5
-  - **Correlation** — KPI cards (Total Trips, Avg PM2.5, Avg NO2) — PM2.5/NO2 cards use same WHO-based conditional fill as Air Quality page, bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines, monthly aggregation), year tile slicer (multi-select)
-  - **Economic Impact** — KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP 2000–present), line chart (USD/EUR exchange rate full history)
+  - **Mobility** ([screenshot](img/powerbi_mobility.png)) — KPI cards with YoY change indicators (`▲ +X.X% vs prev year`, green/red conditional font color): Total Trips, Total Revenue USD, Avg Fare USD; year tile slicer, daily trips trend (line chart with range slider), top 10 pickup zones by trip count
+  - **Air Quality** ([screenshot](img/powerbi_air_quality.png)) — KPI cards (Avg NO2, Avg O3, Avg PM2.5) with conditional fill color based on WHO 24h limits (green/yellow/red), year tile slicer, Azure Maps bubble visual (station coordinates, bubble size + gradient color by Avg PM2.5), combined PM2.5+NO2+O3 daily trend with WHO threshold reference lines (PM2.5=15, NO2=25, O3=100) and zoom slider, top 10 stations by Avg PM2.5
+  - **Mobility & Air Quality Correlation** ([screenshot](img/powerbi_correlation.png)) — KPI cards: Total Trips, plus 3 Pearson correlation coefficient cards (`r vs PM2.5`, `r vs NO2`, `r vs O3`) computed via DAX `SUMMARIZE` + `SUMX` over `DimDate[date_key]`; year tile slicer; combo chart with Total Trips bars + PM2.5/NO2/O3 lines (monthly aggregation)
+  - **Economic Impact** ([screenshot](img/powerbi_economic_impact.png)) — KPI cards with YoY indicators (Total Revenue USD, Total Revenue EUR), plus `% of US GDP` card and `USA GDP (USD)` card (latter year-aware via `COALESCE(SELECTEDVALUE(DimGDP[year]), SELECTEDVALUE(DimDate[year]))`); year tile slicer; clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year, 2000–2024), `Revenue as % of US GDP` bar chart by year (2021–2024 — World Bank GDP ends 2024), USD/EUR exchange rate line chart (filtered to 2021–2026 to match taxi window)
 
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
@@ -170,9 +119,9 @@ All notebooks live in `fabric/` as Fabric Notebook items synced via Git integrat
 - `fabric/bronze_ingest_weather.Notebook/` — Open-Meteo hourly weather for NYC single point (Manhattan) → `bronze_weather`; parameters: `year_start`, `year_end`, `force_refresh` (bool). Default mode uses Forecast API `past_days=2` and MERGEs into target on `(latitude, longitude, datetime)`; `force_refresh=True` or first run uses Archive API for the full year range with partition replacement
 - `fabric/prepare_taxi_ingestion.Notebook/` — pre-flight per-month HEAD check on TLC for each `(year, month)` in range + lists existing taxi files in bronze; outputs JSON list of months to download via `notebookutils.notebook.exit` for ForEach in `pl_master_orchestrator`; parameters: `year_start`, `year_end`, `force_refresh` (bool, default false). Treats HTTP 403/404 as "not yet published" and proceeds with available months; fails only if NO months in range are available at source. Enables incremental ingestion (skip already-downloaded files) and partial-year ingestion (download Jan-Mar 2026 even when later months aren't published)
 - `fabric/silver_etl.Notebook/` — Bronze → Silver transformations (PySpark): all 5 data sources; parameters: `year_start`, `year_end`, `force_refresh` (bool). Default mode is incremental for `silver_openaq_measurements` (watermark `MAX(datetime)` + Delta `MERGE INTO`) and `silver_taxi_trips` (partition diff — append only `(year, month)` not yet in silver). `force_refresh=True` does full partition overwrite for the year range. Handles TLC Parquet schema drift via per-file normalisation: `Airport_fee` → `airport_fee` rename (capitalisation changed in 2026 files); explicit casts `VendorID`/`PULocationID`/`DOLocationID`/`payment_type` → long, `passenger_count`/`RatecodeID` → double (types changed across TLC file generations). Normalizes OpenAQ gas measurements from ppm to µg/m³
-- `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + synapsesql); parameters: `year_start`, `year_end`, `force_refresh` (bool). Default mode is incremental for `FactAirQualityDaily` and `FactTaxiDaily` — re-aggregates only dates from `MAX(gold.date_key) - LATE_ARRIVING_LOOKBACK_DAYS` (=7) forward to handle late-arriving silver data and short missed-run gaps. `force_refresh=True` does full rebuild for year range. **Note:** silver timestamp columns (`pickup_datetime`, `datetime`) are cast from `timestamp_ntz` to `timestamp` on read — workaround for a Spark CBO bug (`FilterEstimation` does not handle `TimestampNTZType`) that causes `MatchError` during query planning when Delta column statistics are present
+- `fabric/gold_etl.Notebook/` — Silver → Gold / Warehouse load (PySpark + synapsesql); parameters: `year_start`, `year_end`, `force_refresh` (bool). Default mode is incremental for `FactAirQualityDaily` and `FactTaxiDaily` — re-aggregates only dates from `MAX(gold.date_key) - LATE_ARRIVING_LOOKBACK_DAYS` (=7) forward to handle late-arriving silver data and short missed-run gaps. `force_refresh=True` does full rebuild for year range
 
-### Phase 7 — External Integrations
+### External Integrations
 
 Two integrations layered on top of the medallion: (1) weather data flowing out of Fabric into a time-series database with a Grafana dashboard; (2) Great Expectations data-quality validation triggered on demand via a Telegram bot. Fabric remains the single source of truth — the external app reads from it, never the other way around.
 
@@ -221,31 +170,11 @@ For high-frequency scheduled runs (twice daily), full year rebuild of silver and
 - Two orchestrators (daily + monthly) — rejected per spec re-read: spec says "daily/hourly" not "daily AND monthly"; one orchestrator with idempotent prepare + incremental ETL works for any frequency
 - Delta Change Data Feed (CDF) for change tracking — rejected as over-engineered for our scale
 
-### Why Terraform for infrastructure
-- **Reproducibility:** workspace + all 3 storage layers can be destroyed and recreated in <2 minutes
-- **Audit trail:** all infra changes go through Git, not click-ops
-- **Auth:** Service Principal is the default (`tenant_id`/`client_id`/`client_secret` in `terraform.tfvars`). Works on Fabric Trial and paid F-SKU alike. Azure CLI auth (`use_cli = true`) is available as a fallback for quick local tests without an SP.
-- **Limitation accepted:** the provider does not yet cover Dataflow Gen2, Pipelines, or Notebook content — these are managed via Fabric Git integration (workspace ↔ repo sync of JSON definitions)
-- **Alternative considered:** Pulumi — has a Fabric provider too, but smaller community and ecosystem. Terraform is the industry default for IaC.
-
 ### Why Open-Meteo for Weather?
 - Completely free, no API key, no rate limits for historical + forecast
 - Returns hourly JSON with temperature, precipitation, windspeed, humidity, weather_code, apparent_temperature
 - Two endpoints (Archive + Forecast) cover both backfill and incremental modes naturally
 - Alternative: OpenWeatherMap (requires API key, limited free tier)
-
-### Why Fabric is the source of truth (not external job pulling directly to InfluxDB)
-The spec requires "an external job that periodically gets and copies enriched weather data into a separate time-series database". Two ways to satisfy this:
-- **Dual write:** the job calls Open-Meteo and writes to both Fabric Bronze and InfluxDB. Simple but doubles the write paths and creates drift risk — Fabric and InfluxDB can disagree if one write fails.
-- **Fabric-first (chosen):** weather lands in Fabric via the same medallion pattern as every other source, gets enriched in Silver (unit-suffix renames, derived `is_rainy`), and the external job reads `silver_weather` from the Lakehouse SQL endpoint and pushes to InfluxDB.
-
-Fabric-first wins: single source of truth, Silver-level enrichment flows to InfluxDB automatically, and the medallion's "replicable framework" claim from the spec is demonstrated concretely (weather follows the same Bronze→Silver pattern as taxi/openaq/gdp/fx). "External" is preserved — the job runs outside Fabric, but reads rather than dual-writes.
-
-### Why no Gold / Power BI for weather
-The visualisation requirement for weather is satisfied by Grafana on InfluxDB; there is no Power BI consumer for a hypothetical `FactWeatherDaily`. Building a Gold table with no downstream reader is dead code — the medallion stops at Silver for weather.
-
-### Why one Docker image with multi-entry CLI (not separate images)
-`weather_sync`, `bot`, and `ge` all share the same dependencies (pyodbc + ODBC Driver 18 for Fabric SQL, requests, python-dotenv) and the same Service Principal credentials. Building / publishing / scanning one image is cheaper than three. Render Cron Job and Web Service both pull the same image and override the entrypoint command — the CLI dispatcher (`python -m app <subcommand>`) routes to the right module.
 
 ### Why InfluxDB for Weather Data?
 - Native time-series storage: data is indexed by timestamp — queries like "avg temp per hour" are 10–100× faster than on a relational DB
@@ -274,10 +203,6 @@ The visualisation requirement for weather is satisfied by Grafana on InfluxDB; t
 OpenAQ sensor IDs and TLC taxi zone IDs are different geographic systems with no shared key. OpenAQ stations are identified by `location_id` (a global integer) with lat/lon coordinates; TLC zones are polygons referenced by `LocationID` (1–265). Joining them requires external geocoding (reverse geocode sensor lat/lon to a TLC zone polygon), which is not implemented.
 
 As a result, `FactAirQualityDaily` cannot be directly joined to `FactTaxiDaily` at the zone level. The Correlation page shows city-wide aggregates (all stations averaged, all zones summed) — not zone-specific correlation. This is a known architectural constraint, not a bug.
-
-### Why USA national GDP (not NYC GDP)
-
-The World Bank API provides GDP data at country level only. There is no city-level GDP available from this source. USA national GDP (`NY.GDP.MKTP.CD` for country code `USA`) is the closest available macro-economic context for NYC taxi demand. The limitation is intentional and acceptable for academic scope.
 
 ### Why Gold uses read-filter-union-overwrite (not append)
 
@@ -323,37 +248,52 @@ Fabric Warehouse is written via `synapsesql`, which only supports `mode("overwri
 ## Data Flow — End-to-End
 
 ```
-pl_master_orchestrator(year_start, year_end)
-  [Parallel]
-    df_ecb_fx                              (Dataflow Gen2)
-    df_worldbank_gdp                       (Dataflow Gen2, end year dynamic)
-    bronze_ingest_openaq_locations         (Notebook, openaq_api_key parameter)
-    bronze_ingest_openaq_measurements      (Notebook, year_start/year_end)
-    ForEach(year × month) → pl_ingest_nyc_taxi  (Pipeline, year/month dynamic URL)
-  [Sequential]
-    silver_etl(year_start, year_end)       (Notebook, partition-level overwrite)
-  [Sequential]
-    gold_etl(year_start, year_end)         (Notebook, synapsesql write)
-  [Always-on]
+pl_master_orchestrator(year_start, year_end, force_refresh)
+  [Parallel — all start at the same time, no shared dependency]
+    prepare_taxi_ingestion              (Notebook, year_start/year_end/force_refresh)
+      └─▶ ForEach(year, month) → pl_ingest_nyc_taxi   (Pipeline, dynamic URL per month)
+    bronze_ingest_taxi_zones            (Notebook, force_refresh)
+    bronze_ingest_openaq_locations      (Notebook, openaq_api_key, force_refresh)
+    bronze_ingest_openaq_measurements   (Notebook, year_start/year_end/force_refresh)
+    bronze_ingest_weather               (Notebook, year_start/year_end/force_refresh)
+    df_worldbank_gdp                    (Dataflow Gen2, end year dynamic)
+    df_ecb_fx                           (Dataflow Gen2, full history)
+  [Sequential — waits for all bronze + dataflows to succeed]
+    silver_etl(year_start, year_end, force_refresh)   (Notebook, incremental MERGE / append)
+  [Sequential — waits for silver_etl]
+    gold_etl(year_start, year_end, force_refresh)     (Notebook, synapsesql read-filter-union-overwrite)
+  [Always-on, decoupled from orchestrator]
     Power BI reads Warehouse via Direct Lake semantic model
 ```
 
 ---
 
-## Key Numbers (fill in after first run)
+## Key Numbers
 
-| Table | Row count | Refresh cadence |
-|-------|-----------|-----------------|
-| bronze_taxi_trips (Files) | 2,964,624 | Monthly |
-| silver_taxi_trips | 2,869,710 | Monthly |
-| bronze_openaq_locations | 5,000 | Daily |
-| silver_openaq_locations | 5,000 | Daily |
-| bronze_gdp | 6,384 | Yearly |
-| silver_gdp | 6,193 | Yearly |
-| bronze_fx_rates | 7,058 | Daily |
-| silver_fx_rates | 6,996 | Daily |
-| FactTaxiDaily | 6,856 | Monthly |
-| FactAirQualityDaily | 49,287 | Daily |
+Snapshot of table sizes after a full 2021–2026 backfill (`pl_master_orchestrator` with `force_refresh=true`).
+
+| Layer | Table | Row count | Refresh cadence |
+|-------|-------|-----------|-----------------|
+| Bronze | `bronze_taxi_trips` (raw Parquet, 63 files) | 209,840,160 | Monthly |
+| Bronze | `bronze_openaq_locations` | 24,543 | Daily |
+| Bronze | `bronze_openaq_measurements` | 2,402,054 | Daily |
+| Bronze | `bronze_gdp` | 6,916 | Yearly |
+| Bronze | `bronze_fx_rates` | 7,071 | Daily |
+| Bronze | `bronze_taxi_zones` | 265 | Static |
+| Bronze | `bronze_weather` | 8,760 | Hourly |
+| Silver | `silver_taxi_trips` | 201,432,190 | Monthly |
+| Silver | `silver_openaq_locations` | 24,543 | Daily |
+| Silver | `silver_openaq_measurements` | 1,664,118 | Daily |
+| Silver | `silver_gdp` | 6,433 | Yearly |
+| Silver | `silver_fx_rates` | 7,009 | Daily |
+| Silver | `silver_taxi_zones` | 265 | Static |
+| Silver | `silver_weather` | 47,136 | Hourly |
+| Gold | `DimDate` | 2,191 | Per orchestrator run |
+| Gold | `DimZone` | 265 | Static |
+| Gold | `DimFX` | 7,009 | Daily |
+| Gold | `DimGDP` | 6,433 | Yearly |
+| Gold | `FactTaxiDaily` | 432,403 | Monthly |
+| Gold | `FactAirQualityDaily` | 76,792 | Daily |
 
 ---
 

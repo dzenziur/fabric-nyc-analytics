@@ -37,13 +37,19 @@
 # # Silver ETL — Bronze → Silver Transformations
 # Reads raw data from `bronze_lakehouse`, applies type casting, deduplication, and null filtering,
 # writes clean Delta tables to `silver_lakehouse`.
-# **Input:** `bronze_fx_rates`, `bronze_gdp`, `bronze_openaq_locations`, `bronze_openaq_measurements`, `bronze_weather`, `Files/raw/taxi/`
-# **Output:** `silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_taxi_trips`, `silver_weather`
+# **Input:** `bronze_fx_rates`, `bronze_gdp`, `bronze_openaq_locations`, `bronze_openaq_measurements`, `bronze_taxi_zones`, `bronze_weather`, `Files/raw/taxi/`
+# **Output:** `silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, `silver_openaq_measurements`, `silver_taxi_trips`, `silver_taxi_zones`, `silver_weather`
+# **`year_start`/`year_end`:** semantics vary by source:
+# - `silver_taxi_trips`, `silver_openaq_measurements`, `silver_weather` — **ignored when `force_refresh=False`**
+#   (incremental via partition diff / watermark MERGE). **Used only when `force_refresh=True`** to scope
+#   the full rebuild.
+# - `silver_fx_rates`, `silver_gdp`, `silver_openaq_locations`, `silver_taxi_zones` — **never used**
+#   (full overwrite of small reference tables every run).
 
 # PARAMETERS CELL ********************
 
-year_start = 2023
-year_end = 2023
+year_start = 2021
+year_end = 2026
 force_refresh = False
 
 # METADATA ********************
@@ -87,6 +93,7 @@ BRONZE_FX_RATES              = f"{BRONZE}.bronze_fx_rates"
 BRONZE_GDP                   = f"{BRONZE}.bronze_gdp"
 BRONZE_OPENAQ_LOCATIONS      = f"{BRONZE}.bronze_openaq_locations"
 BRONZE_OPENAQ_MEASUREMENTS   = f"{BRONZE}.bronze_openaq_measurements"
+BRONZE_TAXI_ZONES            = f"{BRONZE}.bronze_taxi_zones"
 BRONZE_WEATHER               = f"{BRONZE}.bronze_weather"
 BRONZE_TAXI_FILES            = f"{BRONZE_FILES}/raw/taxi/"
 
@@ -95,6 +102,7 @@ SILVER_GDP                   = f"{SILVER}.silver_gdp"
 SILVER_OPENAQ_LOCATIONS      = f"{SILVER}.silver_openaq_locations"
 SILVER_OPENAQ_MEASUREMENTS   = f"{SILVER}.silver_openaq_measurements"
 SILVER_TAXI_TRIPS            = f"{SILVER}.silver_taxi_trips"
+SILVER_TAXI_ZONES            = f"{SILVER}.silver_taxi_zones"
 SILVER_WEATHER               = f"{SILVER}.silver_weather"
 
 print(f"Year range: {year_start} - {year_end}")
@@ -114,15 +122,20 @@ print(f"Year range: {year_start} - {year_end}")
 
 # CELL ********************
 
-def write_silver(df, table_name: str, partition_by: list = None, replace_where: str = None) -> None:
+def write_silver(df, table_name: str, partition_by: list = None, replace_where: str = None,
+                 merge_schema: bool = False) -> None:
     """Write DataFrame to Silver Lakehouse as Delta table.
     replace_where enables partition-level overwrite (Delta replaceWhere) instead of full table overwrite.
+    merge_schema=True allows additive schema evolution (new upstream columns get NULL on old rows);
+    use for sources known to drift over time (e.g. TLC adds new fee columns mid-year).
     """
     print(f"[{table_name}] rows before write: {df.count()}")
 
     writer = df.write.format("delta").mode("overwrite")
     if replace_where:
         writer = writer.option("replaceWhere", replace_where)
+    if merge_schema:
+        writer = writer.option("mergeSchema", "true")
     if partition_by:
         writer = writer.partitionBy(*partition_by)
 
@@ -218,16 +231,52 @@ display(df_silver.limit(5))
 
 # MARKDOWN ********************
 
+# ## NYC Taxi Zones
+# Source: `bronze_taxi_zones` populated by `bronze_ingest_taxi_zones` notebook (~265 static rows).
+# Defensive cast on `location_id` (string → int) for medallion strictness; drop nulls; dedup.
+# Full overwrite each run — reference data is small and rarely changes.
+
+# CELL ********************
+
+df = spark.read.table(BRONZE_TAXI_ZONES)
+
+df_silver = (
+    df
+    .withColumn("location_id", col("location_id").cast("int"))
+    .filter(col("location_id").isNotNull())
+    .dropDuplicates(["location_id"])
+    .orderBy("location_id")
+)
+
+write_silver(df_silver, SILVER_TAXI_ZONES)
+display(df_silver.limit(5))
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
 # ## NYC Taxi Trips
 # Rename columns to snake_case, add year/month for partitioning, filter out invalid trips.
+# Sanity filter on `fare_amount`: keep `(0, 10_000]`. TLC source occasionally publishes
+# corrupted rows with fares of $187k–$863k for short trips; real NYC taxi fares cannot
+# realistically exceed a few thousand dollars.
 # Default mode (force_refresh=False): process only bronze files whose (year, month) is not yet in silver — append new partitions.
 # force_refresh=True: re-process all files in year_start..year_end range (partition overwrite).
+# Note: TLC adds new fee columns over time (e.g. `cbd_congestion_fee` from 2023+), so the
+# write uses `mergeSchema=true` to let Delta evolve the schema; older rows get NULL for
+# columns introduced after their ingestion.
 
 # CELL ********************
 
 def _file_year_month(name: str) -> tuple:
     # yellow_tripdata_YYYY-MM.parquet → (YYYY, MM)
-    return int(name[16:20]), int(name[21:23])
+    parts = name.replace("yellow_tripdata_", "").replace(".parquet", "").split("-")
+    return int(parts[0]), int(parts[1])
 
 if force_refresh:
     use_full_mode = True
@@ -290,6 +339,10 @@ else:
         .withColumnRenamed("RatecodeID", "ratecode_id")
         .withColumnRenamed("PULocationID", "pu_location_id")
         .withColumnRenamed("DOLocationID", "do_location_id")
+        # Cast TIMESTAMP_NTZ → TIMESTAMP so the columns are visible to the Lakehouse SQL endpoint
+        # (Fabric hides TIMESTAMP_NTZ from T-SQL surface). Wall-clock values are preserved.
+        .withColumn("pickup_datetime",  col("pickup_datetime").cast("timestamp"))
+        .withColumn("dropoff_datetime", col("dropoff_datetime").cast("timestamp"))
         .withColumn("year", year(col("pickup_datetime")))
         .withColumn("month", month(col("pickup_datetime")))
         .dropDuplicates(["pickup_datetime", "dropoff_datetime", "pu_location_id", "do_location_id", "fare_amount"])
@@ -300,17 +353,20 @@ else:
             & (col("trip_distance") > 0)
             & (col("trip_distance") <= 100)
             & (col("fare_amount") > 0)
+            & (col("fare_amount") <= 10_000)
         )
     )
 
     if use_full_mode:
         df_silver = df_silver.filter(col("year").between(year_start, year_end))
         write_silver(df_silver, SILVER_TAXI_TRIPS, partition_by=["year", "month"],
-                     replace_where=f"year >= {year_start} AND year <= {year_end}")
+                     replace_where=f"year >= {year_start} AND year <= {year_end}",
+                     merge_schema=True)
     else:
-        print(f"[{SILVER_TAXI_TRIPS}] rows before append: {df_silver.count()}")
+        rows_before = spark.read.table(SILVER_TAXI_TRIPS).count()
         df_silver.write.format("delta").mode("append").saveAsTable(SILVER_TAXI_TRIPS)
-        print(f"[{SILVER_TAXI_TRIPS}] incremental append done")
+        rows_after = spark.read.table(SILVER_TAXI_TRIPS).count()
+        print(f"[{SILVER_TAXI_TRIPS}] appended {rows_after - rows_before:,} rows; silver total: {rows_after:,}")
 
     display(df_silver.limit(5))
 
@@ -326,6 +382,10 @@ else:
 # ## OpenAQ Measurements
 # Filter out non-positive readings, deduplicate by (location_id, parameter, datetime),
 # cast datetime, add year/month partition keys.
+# Restrict to pollutant parameters only — OpenAQ co-hosts context parameters
+# (`temperature`, `relativehumidity`, `um003`) that are out of scope for this project's
+# pollution analytics; they are dropped here so downstream consumers and DQ checks
+# only see real pollutants.
 # Default mode (force_refresh=False): read only bronze rows newer than MAX(datetime) in silver, then MERGE INTO target — fast incremental processing for scheduled runs.
 # force_refresh=True: read full bronze for the year range and overwrite partitions — for manual backfill or recovery.
 
@@ -354,6 +414,8 @@ PPM_TO_UGM3 = {
     "no": 1227,  "nox": 1882, "so2": 2619,
 }
 
+POLLUTANTS = ["pm25", "pm10", "pm1", "no2", "o3", "co", "so2", "no", "nox"]
+
 value_expr = col("value")
 for param, factor in PPM_TO_UGM3.items():
     value_expr = when(
@@ -363,6 +425,7 @@ for param, factor in PPM_TO_UGM3.items():
 
 df_silver = (
     df
+    .filter(col("parameter").isin(POLLUTANTS))
     .filter(col("value") > 0)
     .withColumn("value", value_expr)
     .withColumn("units", when(col("units") == "ppm", lit("µg/m³")).otherwise(col("units")))
@@ -390,7 +453,8 @@ if not force_refresh and max_dt is not None:
     print(f"[{SILVER_OPENAQ_MEASUREMENTS}] incremental merge done")
 else:
     write_silver(df_silver, SILVER_OPENAQ_MEASUREMENTS, partition_by=["year", "month"],
-                 replace_where=f"year >= {year_start} AND year <= {year_end}")
+                 replace_where=f"year >= {year_start} AND year <= {year_end}",
+                 merge_schema=True)
 
 display(df_silver.limit(5))
 

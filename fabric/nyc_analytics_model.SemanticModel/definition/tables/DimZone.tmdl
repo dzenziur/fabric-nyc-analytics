@@ -4,6 +4,7 @@ table DimZone
 
 	column zone_key
 		dataType: int64
+		isHidden
 		formatString: 0
 		sourceProviderType: int
 		lineageTag: 06dda93a-b881-4d05-b099-e950acf0ead9
@@ -11,16 +12,21 @@ table DimZone
 		summarizeBy: none
 		sourceColumn: zone_key
 
+		changedProperty = IsHidden
+
 		annotation SummarizationSetBy = Automatic
 
 	column location_id
 		dataType: int64
+		isHidden
 		formatString: 0
 		sourceProviderType: int
 		lineageTag: 89d414a7-161e-4f6e-9ee7-a8699a30e265
 		sourceLineageTag: location_id
 		summarizeBy: none
 		sourceColumn: location_id
+
+		changedProperty = IsHidden
 
 		annotation SummarizationSetBy = Automatic
 

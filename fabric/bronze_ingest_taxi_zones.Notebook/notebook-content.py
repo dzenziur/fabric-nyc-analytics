@@ -35,10 +35,24 @@
 # # Static CSV from TLC CloudFront (~265 rows, rarely changes).
 # # **Input:** TLC `taxi_zone_lookup.csv`
 # # **Output:** `bronze_taxi_zones`
+# # Default (force_refresh=False) skips the download entirely when the table already
+# # has rows — zones are essentially static. Pass force_refresh=True to force a re-fetch.
+
+# PARAMETERS CELL ********************
+
+force_refresh = False
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
 
 # CELL ********************
 
-import urllib.request
+import requests
+from pyspark.sql.functions import col
 
 # METADATA ********************
 
@@ -64,14 +78,50 @@ ZONE_CSV_TMP = "/tmp/taxi_zone_lookup.csv"
 
 # CELL ********************
 
-urllib.request.urlretrieve(ZONE_CSV_URL, ZONE_CSV_TMP)
+# Skip download when bronze already has rows and force_refresh is False.
+if not force_refresh:
+    try:
+        existing_count = spark.read.table(BRONZE_TAXI_ZONES).count()
+    except Exception:
+        existing_count = 0
+    if existing_count > 0:
+        print(f"[{BRONZE_TAXI_ZONES}] table already populated ({existing_count} rows) — skipping download. Pass force_refresh=True to override.")
+        notebookutils.notebook.exit("skipped: table populated")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# TLC CloudFront `/misc/` path is stricter than `/trip-data/` — UA alone is not enough.
+# Send a full browser-like header set via `requests` (which also handles redirects/cookies
+# more like a real browser than `urllib`).
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/csv,application/csv,application/octet-stream,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page",
+}
+resp = requests.get(ZONE_CSV_URL, headers=BROWSER_HEADERS, timeout=30)
+resp.raise_for_status()
+with open(ZONE_CSV_TMP, "wb") as fh:
+    fh.write(resp.content)
+print(f"Downloaded {len(resp.content):,} bytes from {ZONE_CSV_URL}")
 
 df = (
     spark.read.option("header", True).csv(f"file://{ZONE_CSV_TMP}")
     .withColumnRenamed("LocationID", "location_id")
     .withColumnRenamed("Borough", "borough")
     .withColumnRenamed("Zone", "zone")
-    .withColumnRenamed("service_zone", "service_zone")
+    .withColumn("location_id", col("location_id").cast("int"))
 )
 
 df.write.format("delta").mode("overwrite").option("overwriteSchema", "true").saveAsTable(BRONZE_TAXI_ZONES)

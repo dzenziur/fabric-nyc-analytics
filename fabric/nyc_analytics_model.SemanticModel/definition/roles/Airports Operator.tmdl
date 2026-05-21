@@ -1,0 +1,7 @@
+role 'Airports Operator'
+	modelPermission: read
+
+	tablePermission DimZone = [service_zone] = "Airports"
+
+	annotation PBI_Id = 653e31c90dec4b37b5d5689f7050ba77
+

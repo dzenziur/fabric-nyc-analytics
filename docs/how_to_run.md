@@ -169,45 +169,81 @@ Expected tables in gold_warehouse:
 2. Pipeline parameters: `year_start` (Int), `year_end` (Int), `force_refresh` (Bool, default false)
 3. Activity structure:
    ```
-   prepare_taxi_ingestion                   (Notebook — runs first, no dependencies)
+   [Parallel — all start at the same time, no cross-dependencies between sources]
+     prepare_taxi_ingestion                 (Notebook — TLC availability + missing-file planning)
                                               · Per-month HEAD check on TLC for each (year, month) in range
-                                              · Skips months returning HTTP 403/404 (not yet published)
+                                              · Reachability probe (2024-01) disambiguates anti-bot 403 from missing-key 403
                                               · Lists Files/raw/taxi/ to exclude already-downloaded files
                                               · Outputs JSON list for ForEach via notebook exit value
                                               · Fails only if NO months in range are available at source
-   [Parallel — all depend on prepare_taxi_ingestion Succeeded]
+       → ForEach_taxi_months → pl_ingest_nyc_taxi (Pipeline, year/month from item())
      df_ecb_fx                              (Dataflow Gen2)
      df_worldbank_gdp                       (Dataflow Gen2)
      bronze_ingest_taxi_zones               (Notebook, no parameters)
+     bronze_ingest_weather                  (Notebook, pass year_start/year_end/force_refresh)
      bronze_ingest_openaq_locations         (Notebook, pass openaq_api_key)
        → bronze_ingest_openaq_measurements  (Notebook, depends on locations; pass year_start/year_end)
-     ForEach (months from prepare) → pl_ingest_nyc_taxi (Pipeline, year/month from item())
    [Then]
      silver_etl                             (Notebook, pass year_start/year_end/force_refresh)
    [Then]
      gold_etl                               (Notebook, pass year_start/year_end/force_refresh)
    ```
+   Only `ForEach_taxi_months` depends on `prepare_taxi_ingestion` (consumes its `exitValue`); every other source runs independently so a TLC outage doesn't block OpenAQ/Weather/FX/GDP and vice-versa.
 4. Run with parameters `year_start=2023`, `year_end=2023` for single-year demo; `year_start=2022`, `year_end=2024` for full backfill. The `force_refresh` parameter cascades through the entire pipeline:
    - **`force_refresh=false` (default, used by scheduled runs)** — incremental processing throughout: `bronze_openaq_measurements` fetches only current + previous month from S3, `silver_openaq_measurements` MERGEs new rows past watermark, `silver_taxi_trips` appends only new `(year, month)` partitions, `FactAirQualityDaily`/`FactTaxiDaily` re-aggregate only last 7 days from `MAX(gold.date_key)`. Typical run: ~1-2 min total.
    - **`force_refresh=true` (manual backfill or recovery)** — full year-range rebuild for all layers; respects `year_start`/`year_end`. Typical run: ~15-22 min for 2-year range.
    - Partial years are supported — running for `year_end=2026` mid-year ingests only the months TLC has published (via `prepare_taxi_ingestion`).
 
-### Typical activity durations (measured 2026-05-12)
+### Typical activity durations
 
-| Activity | 1 year | 2 years |
-|----------|--------|---------|
-| ForEach_taxi_months (12 months/yr, parallel) | ~2m 54s | ~3m 30s–4m 3s |
-| Each ingest_taxi_month (Copy Data) | ~2m 3–4s | ~2m 3–4s |
-| df_worldbank_gdp | ~1m 1s | ~1m 4–17s |
-| df_ecb_fx | ~1m 2s | ~1m 17–18s |
-| bronze_ingest_openaq_locations | ~2m 18s | ~1m 49s–2m 5s |
-| bronze_ingest_openaq_measurements | ~4m 38s | ~4m 53s–8m 38s |
-| silver_etl | ~6m 9s | ~7m 8s–12m 14s |
-| gold_etl | ~2m 22s | ~2m 37s–3m 22s |
+Measured on a full historical backfill (`year_start=2021`, `year_end=2026`, `force_refresh=True`) on 2026-05-21, after the Batch 0 parallelisation + master orchestrator dependency fix.
 
-Note: `bronze_ingest_openaq_measurements` and `silver_etl` scale with cumulative data volume — later years (2024–2025) have more station coverage than earlier years.
+| Activity | Duration |
+|----------|----------|
+| prepare_taxi_ingestion | 35s |
+| ForEach_taxi_months (12 months/yr, parallel) | ~6m 22s |
+| Each ingest_taxi_month (Copy Data) | ~2m 0–10s |
+| bronze_ingest_taxi_zones | ~1m 8s |
+| bronze_ingest_weather | ~1m 6s |
+| df_worldbank_gdp | ~50s |
+| df_ecb_fx | ~50s |
+| bronze_ingest_openaq_locations | ~1m 37s |
+| bronze_ingest_openaq_measurements | ~5m 38s |
+| silver_etl | ~8m 8s |
+| gold_etl | ~3m 38s |
 
-Full run estimate: ~5–7 min (bronze parallel) + ~6–12 min silver + ~2–3 min gold ≈ **~15–22 min per 2-year range**.
+Notes:
+- `bronze_ingest_openaq_measurements` used to be the dominant cost (~17 min on full backfill); after parallelising the outer station loop (`STATION_WORKERS=8 × MAX_WORKERS=16 = 128` concurrent S3 GETs) it's now ~5m 38s. Station-activity pre-filter (Batch 0) trims inactive station/year combinations on top.
+- All bronze sources + dataflows + `prepare_taxi_ingestion` now start fully in parallel (only `ForEach_taxi_months` truly depends on `prepare_taxi_ingestion` via its `exitValue`). Previously 5 unrelated activities chained behind prepare, which serialised the bronze layer.
+- `silver_etl` and `gold_etl` scale with cumulative data volume — later years have more station/trip coverage.
+
+Wall-clock end-to-end for the 6-year backfill: first bronze activity starts 18:35:45 → gold_etl finishes ~18:54:50 = **~19 minutes** (down from ~31 min before the parallelisation + dependency fixes). Bronze layer completes in ~7m, then silver (~8m), then gold (~4m).
+
+![pl_master_orchestrator — full 2021–2026 backfill, 73/73 activities green on 2026-05-20](img/pl_master_orchestrator_full_run.png)
+
+### Fabric Lineage View
+
+`Workspace → Lineage view` renders the dependency graph between every item (Lakehouses, Warehouses, Notebooks, Dataflows, Pipelines, Semantic Model, Report). Use the per-item view (click an item → focused lineage) for a clean picture — the full workspace view contains orphan connection nodes (`HttpServer`, `FabricDataPipelines`) that aren't useful.
+
+**Per-item lineage screenshots** (captured 2026-05-20):
+
+`bronze_lakehouse` — fed by `df_ecb_fx`, `df_worldbank_gdp`, and all bronze ingest notebooks; feeds `silver_etl` and is queried via its SQL analytics endpoint:
+
+![bronze_lakehouse lineage](img/lineage_bronze_lakehouse.png)
+
+`silver_lakehouse` — fed by `silver_etl`; feeds `gold_etl` and is exposed via its SQL analytics endpoint (used by the external Docker stack):
+
+![silver_lakehouse lineage](img/lineage_silver_lakehouse.png)
+
+`gold_warehouse` — fed by `gold_etl`; feeds `nyc_analytics_model` → `NYC Analytics` report:
+
+![gold_warehouse lineage](img/lineage_gold_warehouse.png)
+
+`pl_master_orchestrator` — full dependency graph from the orchestrator's POV (all bronze ingestion + dataflows + silver_etl + gold_etl + pl_ingest_nyc_taxi):
+
+![pl_master_orchestrator lineage](img/lineage_pl_master_orchestrator.png)
+
+**Known gaps in Fabric lineage view:** external HTTP/S3 sources are only captured when the consumer is a Dataflow Gen2 with a declarative Power Query source (so `Web → df_ecb_fx` shows up, but the TLC CloudFront / OpenAQ REST + S3 / Open-Meteo edges to notebooks do not — Fabric can't introspect `requests`/`boto3`/`urllib` calls inside notebook code). Even the TLC CloudFront connection used by `pl_ingest_nyc_taxi`'s Copy activity appears as an orphan `HttpServer` node without an outgoing edge. This is a Fabric platform limitation, not a project gap.
 
 ---
 
@@ -234,7 +270,7 @@ The app reads from `silver_lakehouse` SQL endpoint and `gold_warehouse` via Micr
    - Redirect URI: leave blank → **Register**
 2. From the Overview page copy the **Application (client) ID**
 3. Sidebar → **Certificates & secrets** → **Client secrets** → **New client secret**
-   - Description: `phase-7-app`, Expires: 6 months → **Add**
+   - Description: `nyc-analytics-app`, Expires: 6 months → **Add**
    - Immediately copy the **Value** column (shown only once)
 4. Enable the tenant setting **Service principals can call Fabric APIs**: Fabric portal → ⚙ Settings → **Admin portal** → **Tenant settings** → **Developer settings** → enable for entire org or a security group containing the SP. *(Requires Fabric admin role.)*
 5. Add the SP to the workspace: Fabric portal → workspace **Fabric NYC Analytics** → **Manage access** → **+ Add people or groups** → paste the application ID → role **Viewer** → **Add**
@@ -282,6 +318,8 @@ Open Grafana on http://localhost:3000:
 3. Time range top-right — pick **Last 30 days** or **Last 6 months** (default 7 days may be empty due to Open-Meteo Archive's ~5-day lag)
 4. Four panels should render: Temperature (with feels_like overlay), Precipitation (bars), Wind speed, Humidity
 
+![NYC Weather dashboard — Last 30 days view showing temperature/feels-like, precipitation, wind speed, and humidity panels (2026-05-20)](img/grafana_weather.png)
+
 ### 7f. Verify GE + Telegram bot
 
 CLI smoke test (does not need the bot):
@@ -293,6 +331,8 @@ Bot smoke test:
 1. Find your bot in Telegram by its `@username`
 2. Send `/start` → bot replies with welcome text
 3. Send `/report` → bot replies "Running DQ checks, please wait..." → ~30-60 sec later edits that message to show the full report wrapped in a `<pre>` block
+
+![Telegram `/report` output — 56/56 expectations passing across 12 Silver + Gold tables (2026-05-20)](img/telegram_report.png)
 
 The bot keeps running as long as the `app-bot` container is up (`restart: unless-stopped`). Logs: `make logs-bot`.
 
@@ -310,8 +350,6 @@ make weather-sync-once   # one-shot weather sync (exits on completion)
 make ge-report       # one-shot DQ report to stdout
 ```
 
-Full target list: `make help`.
-
 ---
 
 ## Step 8 — Schedule Automation (Phase 6)
@@ -323,12 +361,10 @@ Full target list: `make help`.
 1. Workspace → `pl_master_orchestrator` → **Schedule** tab → **Add schedule**
 2. Set **Every day**, times: **06:00** and **18:00**, timezone: **UTC**
 3. Open **Parameters** for the schedule and set:
-   | Parameter | Type | Value |
-   |-----------|------|-------|
-   | `year_start` | Int | `2021` |
-   | `year_end` | Int | current year (update annually each January) |
-   | `openaq_api_key` | SecureString | your OpenAQ API key |
-   | `force_refresh` | Bool | `false` |
+   - `year_start` (Int) → `2021`
+   - `year_end` (Int) → current year (update annually each January)
+   - `openaq_api_key` (SecureString) → your OpenAQ API key
+   - `force_refresh` (Bool) → `false`
 4. Toggle **On** → Save
 
 ### Why twice daily
@@ -361,45 +397,6 @@ External app (docker-compose, see Step 7):
  11. make weather-sync-once                 → silver_weather replicated to InfluxDB
  12. open Grafana on localhost:3000         → NYC Weather dashboard renders
  13. Telegram bot — /report                 → DQ report from Great Expectations
-```
-
----
-
-## Verification Checks
-
-After each phase, run these sanity checks:
-
-```sql
--- Bronze: check row counts
-SELECT COUNT(*) FROM bronze_lakehouse.bronze_taxi_trips;
-SELECT COUNT(*) FROM bronze_lakehouse.bronze_openaq_locations;
-
--- Silver: check no nulls in key columns
--- (pickup_datetime is TIMESTAMP_NTZ and not exposed by the SQL endpoint — use a SQL-visible column instead)
-SELECT COUNT(*) FROM silver_lakehouse.silver_taxi_trips WHERE pu_location_id IS NULL;
-
--- Gold: check fact table has data for expected dates
-SELECT MIN(date_key), MAX(date_key), COUNT(*) FROM gold_warehouse.dbo.FactTaxiDaily;
-
--- Cross-check: trips in silver vs gold should match (aggregated)
-SELECT SUM(trip_count) FROM gold_warehouse.dbo.FactTaxiDaily;
-```
-
----
-
-## Delta Time Travel (demo / debugging)
-
-```python
-# In any Fabric Notebook — read Bronze at version 0 (original ingest)
-df = spark.read.format("delta").option("versionAsOf", 0).load("abfss://bronze@onelake.../Tables/bronze_taxi_trips")
-
-# Or by timestamp
-df = spark.read.format("delta").option("timestampAsOf", "2025-05-01").load("...")
-
-# View history
-from delta.tables import DeltaTable
-dt = DeltaTable.forPath(spark, "abfss://...")
-dt.history().show()
 ```
 
 ---

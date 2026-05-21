@@ -1,0 +1,7 @@
+role 'Yellow Cab Dispatcher'
+	modelPermission: read
+
+	tablePermission DimZone = [service_zone] = "Yellow Zone"
+
+	annotation PBI_Id = af2b3270ee7f44fcb85b22a8cdbefed1
+
