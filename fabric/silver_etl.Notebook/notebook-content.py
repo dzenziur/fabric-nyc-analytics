@@ -48,8 +48,8 @@
 
 # PARAMETERS CELL ********************
 
-year_start = 2023
-year_end = 2023
+year_start = 2021
+year_end = 2026
 force_refresh = False
 
 # METADATA ********************
@@ -275,7 +275,8 @@ display(df_silver.limit(5))
 
 def _file_year_month(name: str) -> tuple:
     # yellow_tripdata_YYYY-MM.parquet → (YYYY, MM)
-    return int(name[16:20]), int(name[21:23])
+    parts = name.replace("yellow_tripdata_", "").replace(".parquet", "").split("-")
+    return int(parts[0]), int(parts[1])
 
 if force_refresh:
     use_full_mode = True

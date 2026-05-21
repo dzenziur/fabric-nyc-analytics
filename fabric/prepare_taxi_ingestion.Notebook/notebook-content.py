@@ -33,8 +33,8 @@
 
 # PARAMETERS CELL ********************
 
-year_start = 2023
-year_end = 2023
+year_start = 2021
+year_end = 2026
 force_refresh = False
 
 # METADATA ********************
@@ -67,7 +67,8 @@ from urllib.error import HTTPError
 
 # CELL ********************
 
-URL_TEMPLATE = "https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_{:04d}-{:02d}.parquet"
+FILENAME_TEMPLATE = "yellow_tripdata_{:04d}-{:02d}.parquet"
+URL_TEMPLATE = "https://d37ci6vzurychx.cloudfront.net/trip-data/" + FILENAME_TEMPLATE
 REQUEST_TIMEOUT = 15
 TAXI_FILES_PATH = "Files/raw/taxi/"
 # TLC CloudFront rejects the default `Python-urllib/*` User-Agent with HTTP 403.
@@ -148,7 +149,7 @@ if not months_available_at_source:
 
 # MARKDOWN ********************
 
-# ## Plan Ingestion
+# ## Ingestion Plan
 # From available months, exclude ones already in bronze. Result is the list of files to actually download.
 
 # CELL ********************
@@ -167,7 +168,7 @@ else:
 
 months_to_download = []
 for item in months_available_at_source:
-    filename = f"yellow_tripdata_{item['year']:04d}-{item['month']:02d}.parquet"
+    filename = FILENAME_TEMPLATE.format(item["year"], item["month"])
     if filename not in existing_files:
         months_to_download.append(item)
 
@@ -182,7 +183,7 @@ print(f"Files to download: {len(months_to_download)} / {len(months_available_at_
 
 # MARKDOWN ********************
 
-# ## Exit
+# ## Output
 # Pass list of months to ForEach in pl_master_orchestrator via notebook exit value.
 
 # CELL ********************

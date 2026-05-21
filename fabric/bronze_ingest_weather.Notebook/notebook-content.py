@@ -54,8 +54,7 @@ import requests
 import pandas as pd
 from datetime import date, timedelta
 from delta.tables import DeltaTable
-from pyspark.sql.functions import col, year, to_timestamp, current_timestamp, lit
-from pyspark.sql.utils import AnalysisException
+from pyspark.sql.functions import col, year, to_timestamp, current_timestamp
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -93,10 +92,7 @@ FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 INCREMENTAL_PAST_DAYS = 2
 REQUEST_TIMEOUT       = 60
 
-YEAR_START = year_start
-YEAR_END   = year_end
-
-print(f"Year range: {YEAR_START} - {YEAR_END}")
+print(f"Year range: {year_start} - {year_end}")
 
 # METADATA ********************
 
@@ -146,7 +142,7 @@ def fetch_hourly(url: str, params: dict) -> pd.DataFrame:
 
 # MARKDOWN ********************
 
-# ## Fetch and Write to Bronze
+# ## Weather
 # Default mode (`force_refresh=False`): fetch the last `INCREMENTAL_PAST_DAYS` days from the forecast endpoint
 #   and MERGE into bronze on (latitude, longitude, datetime). Most efficient for scheduled runs.
 # `force_refresh=True`: fetch the full year range from the archive endpoint and replace year partitions.
@@ -160,14 +156,14 @@ except Exception:
     bronze_exists = False
 
 if force_refresh or not bronze_exists:
-    end_date = date(YEAR_END, 12, 31)
+    end_date = date(year_end, 12, 31)
     today    = date.today()
     if end_date > today:
         end_date = today - timedelta(days=2)
     params = {
         "latitude":   NYC_LAT,
         "longitude":  NYC_LON,
-        "start_date": f"{YEAR_START}-01-01",
+        "start_date": f"{year_start}-01-01",
         "end_date":   end_date.isoformat(),
         "hourly":     ",".join(HOURLY_PARAMS),
         "timezone":   "GMT",
@@ -194,7 +190,7 @@ if df_pd.empty:
     if use_incremental:
         print(f"[{BRONZE_WEATHER}] no new data — skipping write")
     else:
-        raise ValueError(f"No weather data returned from Open-Meteo for {YEAR_START}–{YEAR_END}. Aborting.")
+        raise ValueError(f"No weather data returned from Open-Meteo for {year_start}–{year_end}. Aborting.")
 else:
     df_new = (
         spark.createDataFrame(df_pd)

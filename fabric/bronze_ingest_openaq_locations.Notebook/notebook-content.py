@@ -49,7 +49,6 @@ force_refresh = False
 
 import requests
 import pandas as pd
-from pyspark.sql.functions import col
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
@@ -83,7 +82,9 @@ REQUEST_TIMEOUT = 30
 
 # MARKDOWN ********************
 
-# ## Fetch
+# ## OpenAQ Locations
+#
+# ### Fetch
 # Paginated fetch with retries on transient errors (5xx, 429, network).
 # Hard page cap prevents runaway loops; WARNING logged if cap is hit with a full last page.
 
@@ -147,7 +148,7 @@ print(f"Total locations fetched: {len(records)}")
 
 # MARKDOWN ********************
 
-# ## Flatten
+# ### Flatten
 
 # CELL ********************
 
@@ -181,7 +182,7 @@ print(f"Rows to write: {len(df_pd)}")
 
 # MARKDOWN ********************
 
-# ## Write
+# ### Write
 
 # CELL ********************
 

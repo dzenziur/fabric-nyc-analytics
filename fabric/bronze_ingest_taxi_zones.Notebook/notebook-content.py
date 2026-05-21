@@ -51,7 +51,6 @@ force_refresh = False
 
 # CELL ********************
 
-import urllib.request
 import requests
 from pyspark.sql.functions import col
 
@@ -122,7 +121,6 @@ df = (
     .withColumnRenamed("LocationID", "location_id")
     .withColumnRenamed("Borough", "borough")
     .withColumnRenamed("Zone", "zone")
-    .withColumnRenamed("service_zone", "service_zone")
     .withColumn("location_id", col("location_id").cast("int"))
 )
 

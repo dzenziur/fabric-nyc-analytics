@@ -33,8 +33,8 @@
 
 # PARAMETERS CELL ********************
 
-year_start = 2023
-year_end = 2023
+year_start = 2021
+year_end = 2026
 force_refresh = False
 
 # METADATA ********************
@@ -68,9 +68,9 @@ import pandas as pd
 from botocore import UNSIGNED
 from botocore.client import Config
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import date
+from datetime import date, datetime
 from delta.tables import DeltaTable
-from pyspark.sql.functions import col, year, to_timestamp
+from pyspark.sql.functions import col, lit, year, to_timestamp
 from pyspark.sql.utils import AnalysisException
 
 # METADATA ********************
@@ -91,9 +91,6 @@ BRONZE = "bronze_lakehouse"
 NYC_LAT_MIN, NYC_LAT_MAX = 40.4, 40.9
 NYC_LON_MIN, NYC_LON_MAX = -74.3, -73.7
 
-YEAR_END   = year_end
-YEAR_START = year_start
-
 S3_BUCKET = "openaq-data-archive"
 S3_BASE   = "records/csv.gz"
 
@@ -105,7 +102,7 @@ BRONZE_OPENAQ_MEASUREMENTS = f"{BRONZE}.bronze_openaq_measurements"
 STATION_WORKERS = 8
 MAX_WORKERS     = 16
 
-print(f"Year range: {YEAR_START} - {YEAR_END}")
+print(f"Year range: {year_start} - {year_end}")
 
 # METADATA ********************
 
@@ -206,9 +203,6 @@ print(f"S3 client ready (max_pool_connections={STATION_WORKERS * MAX_WORKERS})")
 
 # CELL ********************
 
-from datetime import datetime
-from pyspark.sql.functions import lit
-
 df_locations = spark.read.table(BRONZE_OPENAQ_LOCATIONS)
 
 df_nyc = df_locations.filter(
@@ -218,15 +212,15 @@ df_nyc = df_locations.filter(
 
 has_activity_cols = "datetime_first" in df_locations.columns and "datetime_last" in df_locations.columns
 if has_activity_cols:
-    range_start = datetime(YEAR_START, 1, 1)
-    range_end   = datetime(YEAR_END, 12, 31, 23, 59, 59)
+    range_start = datetime(year_start, 1, 1)
+    range_end   = datetime(year_end, 12, 31, 23, 59, 59)
     df_active = df_nyc.filter(
         (col("datetime_first").isNull() | (to_timestamp(col("datetime_first")) <= lit(range_end))) &
         (col("datetime_last").isNull()  | (to_timestamp(col("datetime_last"))  >= lit(range_start)))
     )
     nyc_total  = df_nyc.count()
     nyc_active = df_active.count()
-    print(f"NYC stations in bbox: {nyc_total}; active for {YEAR_START}-{YEAR_END}: {nyc_active} (dropped {nyc_total - nyc_active} inactive)")
+    print(f"NYC stations in bbox: {nyc_total}; active for {year_start}-{year_end}: {nyc_active} (dropped {nyc_total - nyc_active} inactive)")
     df_filtered = df_active
 else:
     print(f"WARNING: bronze_openaq_locations is missing datetime_first/datetime_last — skipping activity pre-filter. Re-run bronze_ingest_openaq_locations to enable.")
@@ -251,7 +245,7 @@ print(f"IDs: {sorted(nyc_ids)}")
 
 # MARKDOWN ********************
 
-# ## Read Measurements from S3 and Write to Bronze
+# ## OpenAQ Measurements
 # Default mode (force_refresh=False): fetch only current + previous month from S3, MERGE INTO bronze on natural key.
 #   Most efficient for scheduled daily runs — historical months in S3 archive are immutable.
 # force_refresh=True: fetch full year range, replace year partitions (existing behavior). For manual backfill.
@@ -266,9 +260,9 @@ except Exception:
     bronze_exists = False
 
 if force_refresh or not bronze_exists:
-    months_to_fetch = months_in_year_range(YEAR_START, YEAR_END)
+    months_to_fetch = months_in_year_range(year_start, year_end)
     use_incremental = False
-    print(f"Full mode — fetching year range {YEAR_START}-{YEAR_END} ({len(months_to_fetch)} months)")
+    print(f"Full mode — fetching year range {year_start}-{year_end} ({len(months_to_fetch)} months)")
 else:
     months_to_fetch = current_and_previous_month()
     use_incremental = True
@@ -302,7 +296,7 @@ if not pd_dfs:
     if use_incremental:
         print(f"[{BRONZE_OPENAQ_MEASUREMENTS}] no new data for months {months_to_fetch} — skipping write")
     else:
-        raise ValueError(f"No data found in S3 for any NYC station in year range {YEAR_START}–{YEAR_END}. Aborting.")
+        raise ValueError(f"No data found in S3 for any NYC station in year range {year_start}–{year_end}. Aborting.")
 else:
     df_new = (
         spark.createDataFrame(pd.concat(pd_dfs, ignore_index=True))
@@ -328,7 +322,7 @@ else:
             if "year" not in df_existing.columns:
                 df_existing = df_existing.withColumn("year", year(to_timestamp(col("datetime"))))
             df_existing = df_existing.filter(
-                (col("year") < YEAR_START) | (col("year") > YEAR_END)
+                (col("year") < year_start) | (col("year") > year_end)
             )
             df_final = df_existing.unionByName(df_new, allowMissingColumns=True)
         except AnalysisException:
