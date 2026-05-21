@@ -12,7 +12,7 @@
 
 **Active branch:** `feature/polishing`
 **Deadline:** May 21, 2026. Defense on May 26 but all artefacts must be ready by 21.
-**Last session:** 2026-05-20 — Polishing pass mid-flight. Batch 0 (bronze download caching) and three of four Batch 1 items (silver DQ filters + taxi append logging) shipped and **verified end-to-end** — `/report` returns 56/56 PASS across 12 Silver + Gold tables (screenshot in `docs/how_to_run.md § Step 7f`). Full 2021–2026 master orchestrator backfill ran green in ~31 minutes wall-clock (73 activities, screenshot in `docs/how_to_run.md § Step 6`). Two TLC CloudFront 403 gotchas resolved along the way (missing-key vs anti-bot 403, `/misc/` path-specific anti-bot rules — see `Known data limitations`).
+**Last session:** 2026-05-21 (Part 2) — Power BI + semantic model polish round. Shipped: (1) **Semantic model polish** — `FactAirQualityDaily.city` → `station_name`, all surrogate FK keys hidden (`date_key`, `zone_key`, `fx_key`, `location_id`, `gdp_key`), `country` (always "US") and raw `gdp_usd` hidden; (2) **DimGDP M2M relationship tried & dropped** — `DimDate[year] ↔ DimGDP[year]` caused cross-filter side effects (clicking taxi revenue bar blanked GDP chart). DAX `SELECTEDVALUE` approach used instead; (3) **Economic Impact redesign** — exchange rate chart (25-year, not in spec) removed; new measure `Revenue as % of US GDP` connects taxi revenue to GDP via DAX (no relationship); (4) **YoY KPI indicators** on Mobility + Economic Impact — Year slicer on each page, 2 DAX measures per KPI (`<X> YoY %` numeric + `<X> YoY Label` string with ▲/▼), Card (new) reference label with conditional font color (green ≥0, red <0). Applied to Total Trips, Total Revenue USD, Avg Fare USD, Total Revenue EUR. Earlier session (Part 1) — Pipeline + docs polish round. Shipped: (1) `pl_master_orchestrator` dependency audit — removed 5 redundant `prepare_taxi_ingestion` links, only `ForEach_taxi_months` truly depends on prepare now (eliminates single-point-of-failure; verified — bronze layer now finishes in ~7 min total, `bronze_ingest_openaq_measurements` 17m → 5m 37s after parallelisation); (2) `bronze_ingest_openaq_measurements` union chain → single `pd.concat` (cleaner code, removes long Spark plan tree); (3) Fabric lineage view audit — captured 4 per-item screenshots (`bronze/silver/gold/orchestrator`), embedded in `how_to_run.md`, documented platform-level gap (notebook external sources invisible); (4) **Full `data_dictionary.md` type audit** — mass `float`→`double` and `int`→`long` fixes across Bronze+Silver+Gold, added missing `year`/`datetime_first`/`datetime_last` columns, deleted stale FactWeatherDaily/InfluxDB/GE sections (replaced with pointers to source files), clarified `bronze_taxi_trips` is source-schema only; (5) backlog restructure — dropped Sankey after honest ROI reassessment (2-stage flow not worth gold-schema cost), dropped Batch 6 (deferred silver-side incremental), reordered Power BI work — readability polish first (Batch 2), signature features second (Batch 3); (6) **silver_taxi_zones added for medallion strictness** — `gold_etl.DimZone` now reads from silver (not bronze); cleans up the gold↔bronze architectural shortcut, also resolves the schema-mismatch failure seen in the 2026-05-21 6-year backfill (gold_etl saw `StringType` from bronze vs `IntegerType` in Warehouse DimZone). Operational step: drop `gold_warehouse.dbo.DimZone` once, then re-run `pl_master_orchestrator` — silver_etl will create `silver_taxi_zones` with int location_id, gold_etl will recreate DimZone with matching schema.
 
 ### Phase completion
 
@@ -44,11 +44,10 @@ Work is grouped into batches — one batch = one Power BI session / one notebook
 |---|----------|--------|-------|-----------|
 | 0 | 🔥 P1 | ✅ Done (pending re-run) | **Bronze ingestion fixes & efficiency** | Pre-backfill bronze polish. Caching (`bronze_taxi_zones` skip-if-exists, `openaq_locations` count-diff skip, `openaq_measurements` station-activity pre-filter), TLC CloudFront 403 hotfixes (UA + reachability probe), parallelised `openaq_measurements` outer station loop to attack the 17m bottleneck. |
 | 1 | 🔥 P1 | ✅ Done (pending re-run) | **Silver data-quality fixes** | One `silver_etl` re-run, then re-run GE. Closes real DQ findings visible in `/report` demo, restores `pickup_datetime` checks, fixes a corruption surface. High correctness payoff, low touch surface. |
-| 2 | 🔥 P1 | ⬜ Not started | **Power BI signature features** | Most visible at defense — what the committee actually looks at. Sankey (Mobility), Scatter+Play (Correlation), Forecast (Economic Impact). |
-| 3 | ⭐ P2 | ⬜ Not started | **Power BI readability polish** | Same Power BI Desktop session — insight text boxes per page, semantic-model rename (`city` → `station_name`), Smart Narrative, YoY indicators, theme JSON. |
-| 4 | ⭐ P2 | 🔄 In progress | **Pipeline audits + defense screenshots** | Verification-only work + evidence captures for the defense slide deck — `pl_master_orchestrator` dependency audit, Fabric lineage view check, plus screenshots of the live external stack (`/report` in Telegram, a Power BI page, Grafana weather dashboard). |
+| 2 | 🔥 P1 | 🔄 Partial | **Power BI signature features** | Economic Impact `Revenue as % of US GDP` shipped (replaces exchange rate chart). Correlation Scatter+Play not started. Forecast attempt failed earlier and was dropped. |
+| 3 | 🔥 P1 | 🔄 Partial | **Power BI readability polish** | Semantic model polish + YoY indicators shipped. Insight text boxes, Smart Narrative, theme, final screenshot still pending. |
+| 4 | ⭐ P2 | ✅ Done | **Pipeline audits + defense screenshots** | Verification-only work + evidence captures for the defense slide deck — `pl_master_orchestrator` dependency audit, Fabric lineage view check, plus screenshots of the live external stack (`/report` in Telegram, a Power BI page, Grafana weather dashboard). |
 | 5 | 💡 P3 | ⬜ Not started | **Notebook & docs clarity** | `year_start/year_end` semantics headers, `silver_etl` taxi append logging, `data_dictionary.md` type audit. Reviewer/handoff polish. |
-| 6 | 🧊 P4 | 🧊 Deferred | **Incremental ETL — silver-side deferred** | Silver/dim full-rebuilds (FX, GDP, locations, dims). Already analysed as low-ROI; skip unless time allows. |
 
 ### Batch 0 — Bronze ingestion fixes & efficiency
 
@@ -71,54 +70,41 @@ Single notebook touch, re-run silver, re-run GE to verify the report goes 56/56.
 
 ### Batch 2 — Power BI signature features (`nyc_analytics_report`)
 
-One "wow" feature per page beyond the standard charts. Air Quality already has the Azure Maps station bubble visual (done).
+**Start here.** Two substantive analytical visuals — each carries a real insight, not just aesthetic. Air Quality already has the Azure Maps station bubble visual (done). **Sankey dropped** after honest reassessment: pickup→dropoff is a 2-stage flow (Sankey shines on 3+ stages), top-N would just confirm well-known Manhattan↔Manhattan + airport hubs, and the gold-schema cost (new `FactTaxiFlows` table + semantic model relationships) wasn't justified by the marginal insight.
 
-- [ ] **Mobility — Sankey diagram** (pickup zone → dropoff zone). Requires gold_etl change: either rebuild `FactTaxiDaily` with `DO_zone_key` in addition to `zone_key` (PU), OR create a new `FactTaxiFlows` table aggregated by (PU, DO, year). Marketplace visual: "Sankey" by Microsoft. Maps actual NYC movement patterns.
-- [ ] **Correlation — Scatter plot with Play Axis animation**. Replace current bar+line monthly aggregate with daily scatter (one point per day): X=Total Trips, Y=Avg PM2.5, Play axis=year. Shows the actual correlation shape. Built-in scatter visual supports Play axis natively.
-- [ ] **Economic Impact — Forecast on USD/EUR line chart**. Built-in Analytics pane → Forecast. Length 90 days with 95% CI. Demonstrates predictive analytics without external tools. Alternative: waterfall chart for YoY revenue change.
+- [ ] **Correlation — Scatter plot with Play Axis animation**. Replace current bar+line monthly aggregate with daily scatter (one point per day): X=Total Trips, Y=Avg PM2.5, Play axis=year. Shows the actual correlation shape over time. Built-in scatter visual supports Play axis natively — no marketplace dependency.
+- [x] **Economic Impact — Replace exchange rate chart with "Revenue as % of US GDP"**. Exchange rate chart removed; new measure `Revenue as % of US GDP = DIVIDE([Total Revenue USD], CALCULATE(MAX(DimGDP[gdp_usd]), DimGDP[country_code]="US", DimGDP[year]=SELECTEDVALUE(DimDate[year])))` added (no `* 100` — Percentage format string handles it). Connects taxi revenue to GDP via `SELECTEDVALUE(DimDate[year])` in DAX — no model relationship needed (M2M DimDate↔DimGDP was tried earlier and dropped). **Caveat:** World Bank GDP data ends 2024; 2025–2026 show BLANK. Visual currently uses line chart but bars would read better with only 4 data points — open follow-up.
 
 ### Batch 3 — Power BI readability polish (same Power BI Desktop session)
 
+One comprehensive polish pass after the new visuals from Batch 2 land — applies to the final state of the report. Highest defense-day ROI per hour of work: text + correct field names + YoY signals are what the committee actually reads and remembers.
+
+- [x] **Semantic model field rename** — `FactAirQualityDaily.city` renamed to `station_name` in TMDL (`sourceColumn: city` preserved). All surrogate FK keys hidden (`date_key`, `zone_key`, `fx_key`, `location_id`, `gdp_key`) across all tables. `FactAirQualityDaily.country` (always "US") and `DimGDP.gdp_usd` (raw column, wrapped by measure) hidden. **Pending:** update any visuals that still reference the old `city` field name after publishing to Fabric.
 - [ ] **Key insight text boxes** — 2–3 sentences per page, specific numbers:
   - Mobility: post-COVID growth, busiest zones, avg fare trend
-  - Air Quality: PM2.5 seasonality, NO2 rush-hour pattern, data coverage note (2023+)
-  - Correlation: trips vs PM2.5 overlay observation, caveat about 2023+ data
-  - Economic Impact: revenue growth 2021→2025, EUR/USD gap explanation, GDP scale context
-- [ ] **Semantic model field rename** — `FactAirQualityDaily.city` actually contains station names (OpenAQ `location_name`), not city names; rename to `station_name` in `nyc_analytics_model` and update all visuals that reference it. Full pass of all column display names across all tables to ensure they match what the data actually contains.
+  - Air Quality: PM2.5 seasonality, NO2 rush-hour pattern, OpenAQ Jul–Aug 2022 coverage gap caveat
+  - Correlation: trips vs PM2.5 overlay observation, caveat about 2023+ data (reference the new Scatter+Play visual from Batch 2)
+  - Economic Impact: revenue growth 2021→2025, taxi revenue as % of US GDP (2021–2024), note that 2025–2026 GDP data not yet published by World Bank
+- [x] **YoY change indicators** on monetary/count KPI cards (Mobility, Economic Impact). Pattern: Year slicer on each page; 2 DAX measures per KPI (`<X> YoY %` for color, `<X> YoY Label` returns string like `▲ +6.9% vs 2023`); Card (new) visual with reference label = YoY Label measure; conditional font color (green ≥0, red <0) bound to YoY % measure. Applied to: `Total Trips`, `Total Revenue USD`, `Avg Fare USD` (Mobility), `Total Revenue USD`, `Total Revenue EUR` (Economic Impact). Without slicer → label is BLANK. Avg Trip Distance skipped (low analytical value).
 - [ ] **Smart Narrative AI visual** on at least one page (e.g., Mobility) — auto-generated text insights from KPIs.
-- [ ] **YoY change indicators** on monetary/count KPI cards (Mobility, Economic Impact) — up/down arrow + colour based on previous-year comparison (where WHO-style threshold doesn't apply).
 - [ ] **Power BI theme JSON** — export current theme and check into repo for consistency across reports (deferred — Fabric Direct Lake report theme handling not yet evaluated).
+- [ ] **Power BI dashboard screenshot** — one representative page (e.g. Mobility overview with KPIs + map). Save as `docs/img/powerbi_mobility.png`. Reference from `docs/architecture.md` (Visualizations section). Capture **last** — after all Batch 2 + Batch 3 work lands, so the screenshot reflects final state.
+- [ ] **DimGDP — relationship** *(dropped — DAX approach used instead)* — M2M relationship `DimDate[year] ↔ DimGDP[year]` was tried but caused cross-filter side effects: clicking a taxi revenue bar blanked the GDP chart. Removed. The `Revenue as % of US GDP` measure uses `SELECTEDVALUE(DimDate[year])` in DAX to connect the two datasets without a model relationship.
 
 ### Batch 4 — Pipeline audits + defense screenshots
 
 Verification work and evidence captures for the defense slide deck. Screenshots land in `docs/img/` and are referenced from `docs/architecture.md` / `docs/how_to_run.md` where relevant.
 
 - [x] **`pl_master_orchestrator` full-run screenshot** — `docs/img/pl_master_orchestrator_full_run.png` (2026-05-20, 6-year backfill, 73/73 activities green). Referenced from `docs/how_to_run.md § Typical activity durations`.
-- [ ] **`pl_master_orchestrator` dependency audit** — verify correct execution order (bronze → silver → gold), no missing or redundant dependency links between activities.
-- [ ] **Fabric lineage view completeness** — verify built-in lineage (`Workspace → Lineage view`) captures all expected upstream/downstream edges. Suspected gaps: notebook → table edges may not be visible for all notebooks; external source nodes may be missing for some pipelines. Compare graph against `docs/architecture.md` → Data Flow section and document any missing edges (annotations or screenshot caveats). If gaps are significant, re-evaluate Purview Data Map (free Azure tier).
+- [x] **`pl_master_orchestrator` dependency audit** — removed 5 redundant `dependsOn: prepare_taxi_ingestion` links from `df_ecb_fx`, `df_worldbank_gdp`, `bronze_ingest_openaq_locations`, `bronze_ingest_taxi_zones`, `bronze_ingest_weather`. Only `ForEach_taxi_months` truly depends on prepare (consumes its `exitValue`); the rest now start fully parallel. Eliminates single-point-of-failure where a TLC outage blocked unrelated OpenAQ/Weather/FX/GDP ingestion. Doc updates in `fabric/README.md`, `docs/how_to_run.md`.
+- [x] **Fabric lineage view completeness** — verified 2026-05-20. Per-item lineage covers all internal item-to-item edges correctly (`bronze_lakehouse`, `silver_lakehouse`, `gold_warehouse`, `pl_master_orchestrator` screenshots in `docs/img/lineage_*.png`, embedded in `docs/how_to_run.md § Fabric Lineage View`). **Known gap (platform limitation):** Fabric can't introspect `requests`/`boto3`/`urllib` calls inside notebooks, so external HTTP/S3 sources are only visible for Dataflow Gen2 consumers (`Web → df_ecb_fx`). TLC CloudFront, OpenAQ REST + S3, Open-Meteo edges to notebooks not drawn; documented as caveat. Purview Data Map not needed.
 - [x] **Telegram `/report` screenshot** — `docs/img/telegram_report.png` captured 2026-05-20: 56/56 PASS across all 12 Silver + Gold tables. Embedded in `docs/how_to_run.md § Step 7f`.
-- [ ] **Power BI dashboard screenshot** — one representative page (e.g. Mobility overview with KPIs + map). Save as `docs/img/powerbi_mobility.png`. Reference from `docs/architecture.md` (Visualizations section). Capture after Batch 2 signature features land so the screenshot reflects final state.
 - [x] **Grafana weather dashboard screenshot** — `docs/img/grafana_weather.png` captured 2026-05-20: 4-panel NYC Weather dashboard (Temperature + feels_like, Precipitation, Wind speed, Humidity) over Last 30 days. Embedded in `docs/how_to_run.md § Step 7e`.
 
 ### Batch 5 — Notebook & docs clarity (markdown-only edits)
 
-- [ ] **`year_start`/`year_end` semantics in notebook header cells** — explicitly state per notebook when the parameters are used vs. ignored:
-  - `prepare_taxi_ingestion` — **always uses** year range (determines which TLC months to check/download); critical for schedule correctness
-  - `bronze_ingest_openaq_measurements` — **ignores** year range when `force_refresh=False` (fetches current+prev month only); used only with `force_refresh=True`
-  - `silver_etl` taxi section — **ignores** year range when `force_refresh=False` (partition diff); used only with `force_refresh=True`
-  - `silver_etl` OpenAQ section — **ignores** year range when `force_refresh=False` (watermark); used only with `force_refresh=True`
-  - `gold_etl` FactTaxiDaily/FactAirQualityDaily — **ignores** year range when `force_refresh=False` (7-day lookback); used only with `force_refresh=True`
-  - `gold_etl` DimDate — **uses** year range as a floor/ceiling, expanded by actual data min/max
-- [ ] **`docs/data_dictionary.md` type audit** — run `printSchema()` for each Bronze and Silver table and compare against the doc. First known discrepancy: `bronze_openaq_measurements.datetime` is `string` in practice, was `timestamp` in docs (already fixed).
-
-### Batch 6 — Incremental ETL silver-side (deferred)
-
-Bronze caching shipped in Batch 0. What remains here is silver/dim full-rebuilds — already analysed as low-ROI given the table sizes; skip for defense.
-
-- [ ] `silver_fx_rates` — ~7k rows; read only `date > MAX(silver.date)` from bronze, append.
-- [ ] `silver_gdp` — ~6k rows, yearly data, rarely changes; skip if bronze unchanged.
-- [ ] `silver_openaq_locations` — ~5k rows, rare changes; MERGE only updated stations.
-- [ ] `DimDate`/`DimZone`/`DimFX`/`DimGDP` — full rebuild <30s combined; not worth complexity.
+- [x] **`year_start`/`year_end` semantics in notebook header cells** — 2026-05-21: added per-source explicit "used / ignored" semantics under each notebook's header markdown cell in `prepare_taxi_ingestion`, `bronze_ingest_openaq_measurements`, `bronze_ingest_weather`, `silver_etl`, `gold_etl`. Also added `silver_taxi_zones` to silver_etl Input list and gold_etl Input list (was missed during medallion-strictness commit).
+- [x] **`docs/data_dictionary.md` type audit** — 2026-05-20: full Bronze + Silver + Gold `printSchema()` diff. Fixed mass `float`→`double` and `int`→`long` drift across most numeric/ID columns (Spark long = SQL BIGINT in Warehouse). Added missing columns: `year` in `bronze_openaq_measurements`, `datetime_first`/`datetime_last` in `silver_openaq_locations`. Clarified `bronze_taxi_trips` is source-schema only (raw Parquet files, not a Delta table). Deleted obsolete `FactWeatherDaily` section (weather → InfluxDB, not gold). Replaced InfluxDB + GE inline schemas with pointers to authoritative source files (`app/weather_sync.py`, `app/ge/suites.py`). Fixed `cbd_congestion_fee` year (2023+ → 2025+) consistently. Fixed `silver_taxi_trips.payment_type` to list all 6 codes.
 
 ## Known data limitations
 
@@ -128,7 +114,7 @@ Upstream quirks we accept and work around — not bugs to fix on our side.
 - **Multi-pollutant station coverage** — not all OpenAQ stations measure all pollutants; some stations have gaps in NO2/O3 data. Known data limitation from OpenAQ source.
 - **TLC parquet schema drift** — TLC keeps changing the yellow_tripdata schema across years:
   - **pre/post mid-2023** — INT32 vs INT64 for location columns
-  - **2023+** — added column `cbd_congestion_fee` (NYC Central Business District congestion fee)
+  - **2025+** — added column `cbd_congestion_fee` (NYC Central Business District congestion fee — congestion pricing went live 2025-01-05)
   - **2026+** — `passenger_count` (long vs double), `RatecodeID` (long vs double), renamed `airport_fee` → `Airport_fee` (capitalisation)
   - Handled in `silver_etl` via (a) per-file normalisation: rename `Airport_fee` → `airport_fee` if present, cast `VendorID`/`PULocationID`/`DOLocationID`/`payment_type` → long, `passenger_count`/`RatecodeID` → double; and (b) `write_silver(merge_schema=True)` on the taxi write, so Delta auto-evolves the table when TLC adds new columns mid-range (older partitions get NULL for the new column).
 - **OpenAQ gas units** — NO2, O3, CO, NO, NOx, SO2 are stored in ppm in the S3 archive; PM2.5/PM1/PM10 in µg/m³. `silver_etl` normalizes all gas parameters to µg/m³ using EPA conversion factors at 25°C.

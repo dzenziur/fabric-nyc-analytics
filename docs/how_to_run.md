@@ -196,27 +196,28 @@ Expected tables in gold_warehouse:
 
 ### Typical activity durations
 
-Measured on a full historical backfill (`year_start=2021`, `year_end=2026`, `force_refresh=True`) on 2026-05-20.
+Measured on a full historical backfill (`year_start=2021`, `year_end=2026`, `force_refresh=True`) on 2026-05-21, after the Batch 0 parallelisation + master orchestrator dependency fix.
 
 | Activity | Duration |
 |----------|----------|
-| prepare_taxi_ingestion | 49s |
-| ForEach_taxi_months (12 months/yr, parallel) | ~5m 50s |
+| prepare_taxi_ingestion | 35s |
+| ForEach_taxi_months (12 months/yr, parallel) | ~6m 22s |
 | Each ingest_taxi_month (Copy Data) | ~2m 0–10s |
-| bronze_ingest_taxi_zones | ~1m 6s |
-| bronze_ingest_weather | ~1m 22s |
-| df_worldbank_gdp | ~51s |
-| df_ecb_fx | ~51s |
-| bronze_ingest_openaq_locations | ~1m 52s |
-| bronze_ingest_openaq_measurements | ~17m 11s |
-| silver_etl | ~7m 41s |
-| gold_etl | ~3m 52s |
+| bronze_ingest_taxi_zones | ~1m 8s |
+| bronze_ingest_weather | ~1m 6s |
+| df_worldbank_gdp | ~50s |
+| df_ecb_fx | ~50s |
+| bronze_ingest_openaq_locations | ~1m 37s |
+| bronze_ingest_openaq_measurements | ~5m 38s |
+| silver_etl | ~8m 8s |
+| gold_etl | ~3m 38s |
 
 Notes:
-- `bronze_ingest_openaq_measurements` is the dominant cost on long backfills — it's a serial S3 sweep per NYC station × year × month. The station-activity pre-filter (Batch 0, see `CLAUDE.md`) trims inactive station/year combinations.
+- `bronze_ingest_openaq_measurements` used to be the dominant cost (~17 min on full backfill); after parallelising the outer station loop (`STATION_WORKERS=8 × MAX_WORKERS=16 = 128` concurrent S3 GETs) it's now ~5m 38s. Station-activity pre-filter (Batch 0) trims inactive station/year combinations on top.
+- All bronze sources + dataflows + `prepare_taxi_ingestion` now start fully in parallel (only `ForEach_taxi_months` truly depends on `prepare_taxi_ingestion` via its `exitValue`). Previously 5 unrelated activities chained behind prepare, which serialised the bronze layer.
 - `silver_etl` and `gold_etl` scale with cumulative data volume — later years have more station/trip coverage.
 
-Wall-clock end-to-end for the 6-year backfill: prepare_taxi_ingestion 1:25:06 → gold_etl finishes 1:56:36 = **~31 minutes** (bronze ingestions run in parallel; silver waits for bronze, gold waits for silver).
+Wall-clock end-to-end for the 6-year backfill: first bronze activity starts 18:35:45 → gold_etl finishes ~18:54:50 = **~19 minutes** (down from ~31 min before the parallelisation + dependency fixes). Bronze layer completes in ~7m, then silver (~8m), then gold (~4m).
 
 ![pl_master_orchestrator — full 2021–2026 backfill, 73/73 activities green on 2026-05-20](img/pl_master_orchestrator_full_run.png)
 
