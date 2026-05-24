@@ -22,7 +22,7 @@ table FactTaxiDaily
 
 		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
-	measure 'Avg Fare USD' = AVERAGE(FactTaxiDaily[avg_fare_usd])
+	measure 'Avg Fare USD' = DIVIDE([Total Revenue USD], [Total Trips])
 		lineageTag: 7e4624cc-c19f-4e2d-aafa-69cee8acc8d5
 
 		changedProperty = Name
@@ -250,6 +250,13 @@ table FactTaxiDaily
 		changedProperty = Name
 
 		changedProperty = FormatString
+
+	measure 'Avg Fare EUR' = DIVIDE([Total Revenue EUR], [Total Trips])
+		lineageTag: b9310b3c-8ef2-4753-8998-36bc84d0c714
+
+		changedProperty = Name
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
 
 	column date_key
 		dataType: int64
