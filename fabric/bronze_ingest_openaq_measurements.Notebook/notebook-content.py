@@ -23,13 +23,17 @@
 # MARKDOWN ********************
 
 # # Bronze — OpenAQ Measurements Ingestion
-# Reads pollutant measurement history for NYC stations from the OpenAQ public S3 archive.
-# **Input:** `bronze_openaq_locations` (NYC stations filtered by bounding box) + S3 archive
-# **Output:** `bronze_openaq_measurements` (raw CSV data, no transformations)
-# **`year_start`/`year_end`:** **ignored when `force_refresh=False`** — incremental mode fetches
-# only current + previous month from S3 and MERGEs on natural key. **Used only when
-# `force_refresh=True`** (manual backfill) — fetches full year range and replaces year partitions.
-# **Note:** Fabric Spark S3A cannot access public S3 anonymously — boto3 is used instead.
+# Reads hourly pollutant measurements for NYC stations from the OpenAQ public S3 archive
+# (`s3://openaq-data-archive/`). Largest and most parallelized Bronze notebook.
+# ### Input
+# - `bronze_openaq_locations` — station list, filtered downstream to NYC bbox + active window.<p>
+# - `s3://openaq-data-archive/records/csv.gz/locationid=*/year=*/month=*/...` — public, anonymous.
+# ### Output
+# - `bronze_openaq_measurements` — raw CSV data, no transformations (cleaning happens in Silver).
+# ### Parameters
+# - `year_start` (int) — lower bound; used only on full rebuilds.<p>
+# - `year_end` (int) — upper bound; used only on full rebuilds.<p>
+# - `force_refresh` (bool) — selects which months to fetch and how to write; details in the **OpenAQ Measurements** section below.
 
 # PARAMETERS CELL ********************
 
@@ -43,6 +47,11 @@ force_refresh = False
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark"
 # META }
+
+# MARKDOWN ********************
+
+# ## Install
+# `boto3` isn't bundled with Fabric Spark runtimes — install it inline so the notebook is self-contained. Quiet flag (`-q`) keeps the output clean.
 
 # CELL ********************
 
@@ -59,6 +68,10 @@ subprocess.run(["pip", "install", "boto3", "-q"], check=True)
 # MARKDOWN ********************
 
 # ## Imports
+# - `boto3` + `botocore.UNSIGNED` — anonymous S3 access.<p>
+# - `pandas` — accumulating per-station CSV chunks before one bulk conversion to Spark.<p>
+# - `ThreadPoolExecutor` / `as_completed` — two-level parallelism for fetching stations and S3 keys concurrently.<p>
+# - `DeltaTable` — incremental MERGE in default mode.
 
 # CELL ********************
 
@@ -83,6 +96,9 @@ from pyspark.sql.utils import AnalysisException
 # MARKDOWN ********************
 
 # ## Config
+# **NYC bounding box** — lat/lon range covering the five boroughs plus immediate suburbs. Used to filter the global station list from `bronze_openaq_locations` down to ~22 NYC-area stations.<p>
+# **S3 archive layout** — `s3://openaq-data-archive/records/csv.gz/locationid={id}/year={y}/month={m}/...`. Month-level prefix listing is much cheaper than scanning the whole `locationid={id}/` tree.<p>
+# **Parallelism** — two-level: `STATION_WORKERS=8` outer workers (one station each) × `MAX_WORKERS=16` inner workers (S3 keys per station) = up to 128 concurrent S3 GETs. The boto3 connection pool below is sized to match; the default of 10 would queue and warn "Connection pool is full".
 
 # CELL ********************
 
@@ -97,8 +113,6 @@ S3_BASE   = "records/csv.gz"
 BRONZE_OPENAQ_LOCATIONS    = f"{BRONZE}.bronze_openaq_locations"
 BRONZE_OPENAQ_MEASUREMENTS = f"{BRONZE}.bronze_openaq_measurements"
 
-# Parallelism: STATION_WORKERS outer stations × MAX_WORKERS inner S3 keys per station.
-# Total concurrent S3 GETs = 8 × 16 = 128, bounded by the boto3 connection pool below.
 STATION_WORKERS = 8
 MAX_WORKERS     = 16
 
@@ -114,11 +128,15 @@ print(f"Year range: {year_start} - {year_end}")
 # MARKDOWN ********************
 
 # ## Helper
+# - `list_keys` — list S3 object keys for given `(year, month)` tuples under one station's prefix. Uses month-level prefix to keep the LIST cheap (much faster than scanning the whole station tree).<p>
+# - `download_file` — download one S3 object and read its gzipped CSV into a pandas DataFrame.<p>
+# - `read_location` — combine both: list all keys for a station's months, download them in parallel via the inner `ThreadPoolExecutor`, return one concatenated DataFrame.<p>
+# - `months_in_year_range` — `[(y, m) for y in start..end for m in 1..12]` for full-rebuild mode.<p>
+# - `current_and_previous_month` — `[(prev_year, prev_month), (curr_year, curr_month)]` for incremental mode. Handles year boundary (January → previous month is December of last year).
 
 # CELL ********************
 
 def list_keys(s3_client: object, bucket: str, loc_id: int, months: list) -> list:
-    """List S3 keys for given (year, month) tuples. Uses month-level prefix for narrower listing."""
     keys = []
     for y, m in months:
         prefix = f"{S3_BASE}/locationid={loc_id}/year={y}/month={m:02d}/"
@@ -146,12 +164,10 @@ def read_location(s3_client: object, bucket: str, loc_id: int, months: list) -> 
 
 
 def months_in_year_range(year_start: int, year_end: int) -> list:
-    """Generate all (year, month) tuples for full year range."""
     return [(y, m) for y in range(year_start, year_end + 1) for m in range(1, 13)]
 
 
 def current_and_previous_month() -> list:
-    """Return [(prev_year, prev_month), (curr_year, curr_month)] for incremental fetching."""
     today = date.today()
     if today.month == 1:
         prev = (today.year - 1, 12)
@@ -169,7 +185,8 @@ def current_and_previous_month() -> list:
 # MARKDOWN ********************
 
 # ## S3 Client
-# Anonymous access via boto3 — `openaq-data-archive` is a public AWS Open Data Registry bucket.
+# `openaq-data-archive` is a public AWS Open Data Registry bucket — anonymous access only. `signature_version=UNSIGNED` tells boto3 to skip credential signing, which Spark's S3A connector can't do (Fabric Spark hardcodes the AWS credential provider chain).<p>
+# `max_pool_connections` is sized to match the maximum number of concurrent GETs we can launch (`STATION_WORKERS × MAX_WORKERS = 128`). The boto3 default of 10 would queue requests and emit "Connection pool is full" warnings.
 
 # CELL ********************
 
@@ -177,8 +194,6 @@ s3 = boto3.client(
     "s3",
     config=Config(
         signature_version=UNSIGNED,
-        # Connection pool must accommodate STATION_WORKERS × MAX_WORKERS concurrent GETs;
-        # boto3 default of 10 would cause "Connection pool is full" warnings + queueing.
         max_pool_connections=STATION_WORKERS * MAX_WORKERS,
     ),
     region_name="us-east-1",
@@ -195,11 +210,11 @@ print(f"S3 client ready (max_pool_connections={STATION_WORKERS * MAX_WORKERS})")
 # MARKDOWN ********************
 
 # ## NYC Stations
-# Read location IDs from `bronze_openaq_locations`, filter by NYC bounding box.
-# Pre-filter by station activity window — drop stations whose `[datetime_first, datetime_last]`
-# doesn't overlap the requested year range. Saves the bulk of S3 LIST calls (most NYC stations
-# came online post-2023, so 2021–2022 probes are otherwise just "no data, skipping").
-# Falls back to no filter (with a warning) if the activity columns are missing.
+# Build the list of stations to probe in this run:<p>
+# 1. Read all stations from `bronze_openaq_locations`.<p>
+# 2. Spatial filter: keep those inside the NYC bounding box (`NYC_LAT/LON_*`) → ~22 stations.<p>
+# 3. Temporal filter (activity window): drop stations whose `[datetime_first, datetime_last]` does NOT overlap the requested year range. Saves the bulk of S3 LIST calls — most NYC stations came online post-2023, so 2021–2022 probes would otherwise be just "no data, skipping".<p>
+# Falls back to no temporal filter (with a WARNING) if the activity columns are missing — they're populated by `bronze_ingest_openaq_locations`.
 
 # CELL ********************
 
@@ -246,10 +261,14 @@ print(f"IDs: {sorted(nyc_ids)}")
 # MARKDOWN ********************
 
 # ## OpenAQ Measurements
-# Default mode (force_refresh=False): fetch only current + previous month from S3, MERGE INTO bronze on natural key.
-#   Most efficient for scheduled daily runs — historical months in S3 archive are immutable.
-# force_refresh=True: fetch full year range, replace year partitions (existing behavior). For manual backfill.
-# First run (table doesn't exist): falls back to full year range mode regardless of force_refresh.
+# Fetch + write loop. Mode logic decides which months to fetch and how to write.
+# ### Mode scenarios
+# - **`force_refresh=True`** → fetch full `year_start..year_end` range. Partition overwrite by `year` via read-filter-union-overwrite (read existing, filter out year range, union new, overwrite).<p>
+# - **`force_refresh=False` + Bronze has data** → fetch only current + previous month from S3 (since the archive is immutable for closed months, older data can't have changed). Delta `MERGE INTO` on natural key `(location_id, sensors_id, datetime, parameter)` with `whenNotMatchedInsertAll` (insert-only — never updates matched rows).<p>
+# - **`force_refresh=False` + first run / empty Bronze** → falls back to full year range.
+# ### Parallel fetch
+# Outer `ThreadPoolExecutor` of `STATION_WORKERS=8` stations runs concurrently; each station spawns inner `MAX_WORKERS=16` downloads. Up to 128 concurrent S3 GETs total. Results accumulate as per-station pandas DataFrames and are concatenated once at the end via `pd.concat` — much cheaper than a long Spark `unionByName` chain.
+
 
 # CELL ********************
 

@@ -23,13 +23,16 @@
 # MARKDOWN ********************
 
 # # Bronze — Open-Meteo Weather Ingestion
-# Fetches hourly weather data for NYC from Open-Meteo, writes to `bronze_lakehouse`.
-# **Input:** Open-Meteo Archive API (historical) + Forecast API (recent days)
-# **Output:** `bronze_weather` (raw hourly observations, partitioned by year)
-# **`year_start`/`year_end`:** **ignored when `force_refresh=False`** — incremental mode hits
-# Forecast API with `past_days=2` and MERGEs on `(latitude, longitude, datetime)`. **Used only
-# when `force_refresh=True`** or on first run (table doesn't exist) — Archive API for full year
-# range + partition overwrite.
+# Fetches hourly weather observations for NYC (single point — Manhattan) from Open-Meteo and writes raw rows to `bronze_lakehouse`. Open-Meteo is free with no API key and no rate limit for the volumes we need (one point × hourly resolution).
+# ### Input
+# - Open-Meteo Archive API (`archive-api.open-meteo.com`) — historical, lags ~5 days.<p>
+# - Open-Meteo Forecast API (`api.open-meteo.com/v1/forecast`) — recent days.
+# ### Output
+# - `bronze_weather` — raw hourly observations, partitioned by year.
+# ### Parameters
+# - `year_start` (int) — lower bound; used only in full-rebuild mode.<p>
+# - `year_end` (int) — upper bound; used only in full-rebuild mode.<p>
+# - `force_refresh` (bool) — selects which endpoint to hit and how to write; details in the **Weather** section below.
 
 # PARAMETERS CELL ********************
 
@@ -47,6 +50,9 @@ force_refresh = False
 # MARKDOWN ********************
 
 # ## Imports
+# - `requests` + `urllib3.util.retry.Retry` mounted on an `HTTPAdapter` — retry-on-transient-error behaviour.<p>
+# - `pandas` — flatten Open-Meteo's parallel hourly arrays into a row-per-hour DataFrame.<p>
+# - `DeltaTable` — MERGE in incremental mode.
 
 # CELL ********************
 
@@ -68,6 +74,10 @@ from urllib3.util.retry import Retry
 # MARKDOWN ********************
 
 # ## Config
+# - `NYC_LAT` / `NYC_LON` — Manhattan coordinates (40.7128, -74.0060). Single point coverage is enough for city-wide context with taxi data; a finer grid would not change conclusions on this project.<p>
+# - `HOURLY_PARAMS` — six hourly variables we request from Open-Meteo. The API returns each as a parallel array; the `fetch_hourly` helper zips them into a row-per-hour DataFrame.<p>
+# - `ARCHIVE_URL` vs `FORECAST_URL` — two different Open-Meteo endpoints. Archive covers history but lags ~5 days; Forecast covers recent days. Mode logic below picks the right one.<p>
+# - `INCREMENTAL_PAST_DAYS = 2` — how many days the Forecast endpoint reaches back in incremental mode. Two days of overlap means a single missed scheduled run doesn't create a gap; three would be safer but more redundant.
 
 # CELL ********************
 
@@ -104,6 +114,8 @@ print(f"Year range: {year_start} - {year_end}")
 # MARKDOWN ********************
 
 # ## Helper
+# - `session` — HTTPS session with retry-on-transient-error mounted: up to 3 retries with exponential backoff (factor 2) on 429 / 5xx. Saves us from writing manual `try/except` around every GET.<p>
+# - `fetch_hourly(url, params)` — calls an Open-Meteo endpoint, then flattens the response's parallel hourly arrays into a row-per-hour pandas DataFrame. Open-Meteo returns `{"hourly": {"time": [...], "temperature_2m": [...], ...}}` — we zip the arrays column-wise. Returns an empty DataFrame if no `time` array is present (rare but defensive).
 
 # CELL ********************
 
@@ -117,7 +129,6 @@ session.mount("https://", HTTPAdapter(max_retries=Retry(
 
 
 def fetch_hourly(url: str, params: dict) -> pd.DataFrame:
-    """Call Open-Meteo, flatten hourly arrays into a row-per-hour DataFrame."""
     resp = session.get(url, params=params, timeout=REQUEST_TIMEOUT)
     resp.raise_for_status()
     payload = resp.json()
@@ -143,10 +154,12 @@ def fetch_hourly(url: str, params: dict) -> pd.DataFrame:
 # MARKDOWN ********************
 
 # ## Weather
-# Default mode (`force_refresh=False`): fetch the last `INCREMENTAL_PAST_DAYS` days from the forecast endpoint
-#   and MERGE into bronze on (latitude, longitude, datetime). Most efficient for scheduled runs.
-# `force_refresh=True`: fetch the full year range from the archive endpoint and replace year partitions.
-# First run (table doesn't exist): falls back to full mode regardless of `force_refresh`.
+# Mode logic decides which endpoint to hit and how to write.
+# ### Mode scenarios
+# - **`force_refresh=True`** — Archive endpoint for the full `year_start..year_end` range. Clamps `end_date` to `today - 2 days` if the requested end is in the future (Archive lags ~5 days). Partition overwrite via `replaceWhere` on `year`.<p>
+# - **`force_refresh=False` + Bronze has data** — Forecast endpoint with `past_days=2` (the last 48 hours). MERGE on `(latitude, longitude, datetime)` with **both** `whenMatchedUpdateAll` AND `whenNotMatchedInsertAll`. The update half is critical — Open-Meteo retroactively refines recent hours (a 13:00 temperature published at 14:00 can be revised at 16:00 and finalized at 18:00), so matched rows must be **updated** with newer values, not skipped.<p>
+# - **`force_refresh=False` + first run** — falls back to Archive endpoint for the full year range.<p>
+# `ingestion_timestamp` is added as an audit-trail column — when this row was written to Bronze.
 
 # CELL ********************
 
