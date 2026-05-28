@@ -24,7 +24,7 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 | `silver_etl` | Notebook | Silver | ✅ Active |
 | `gold_etl` | Notebook | Gold | ✅ Active |
 | `nyc_analytics_model` | Semantic Model | Reporting | ✅ Active |
-| `Mobility Dashboard` | Report | Reporting | ✅ Active |
+| `NYC Analytics` | Report | Reporting | ✅ Active |
 
 ---
 
@@ -83,14 +83,14 @@ Star schema in `gold_warehouse` (T-SQL / SQL analytics endpoint). Written via `s
 - Storage mode: Direct Lake on SQL (`gold_warehouse`)
 - Relationships: FactTaxiDaily → DimDate, DimZone, DimFX · FactAirQualityDaily → DimDate
 - DAX measures:
-  - **FactTaxiDaily:** Total Trips, Total Revenue USD/EUR, Avg Fare USD, Avg Fare EUR, Avg Trip Duration (min), Revenue as % of US GDP, 3 Pearson correlation coefficients (Trips vs PM2.5/NO2/O3), 8 YoY measures (`<X> YoY %` + `<X> YoY Label` for Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD)
+  - **FactTaxiDaily:** Total Trips, Total Revenue USD/EUR, Avg Fare USD, Avg Fare EUR, Revenue as % of US GDP, 3 Pearson correlation coefficients (Trips vs PM2.5/NO2/O3), 8 YoY measures (`<X> YoY %` + `<X> YoY Label` for Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD)
   - **FactAirQualityDaily:** Avg PM2.5, Avg NO2, Avg O3
   - **DimGDP:** USA GDP (USD) — year-aware via `COALESCE(SELECTEDVALUE(DimGDP[year]), SELECTEDVALUE(DimDate[year]))`
   - **DimFX:** Avg FX Rate
 - All surrogate FK keys hidden (`date_key`, `zone_key`, `fx_key`, `location_id`, `gdp_key`); `FactAirQualityDaily.country` and raw `gdp_usd` also hidden
 - RLS: 5 roles on `DimZone[service_zone]` — `Admin` (no filter), `Yellow Cab Dispatcher` (Yellow Zone), `Green Cab Dispatcher` (Boro Zone), `Airports Operator` (Airports), `EWR Operator` (EWR). Filter propagates to FactTaxiDaily via zone_key. See `docs/architecture.md`.
 
-### Report — `Mobility Dashboard`
+### Report — `NYC Analytics`
 Screenshots in `docs/img/powerbi_{mobility,air_quality,correlation,economic_impact}.png`.
 
 | Page | Key visuals |
