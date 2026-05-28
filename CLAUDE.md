@@ -8,36 +8,19 @@
 > - **External stack** — local Docker (InfluxDB + Grafana + Telegram DQ bot)
 >   on top of the Fabric SQL endpoint
 
-## Current Status
+## Remaining work
 
-**Deadline:** May 21, 2026. Defense on May 26 but all artefacts must be ready by 21.
+One spec task from the external-integrations set is still open. Parts 1 (InfluxDB +
+Grafana dashboards) and 2 (Telegram bot + Great Expectations report) are done; this is part 3.
 
-### Phase completion
-
-| Phase | Status |
-|-------|--------|
-| Phase 0 — Terraform IaC | ✅ Done |
-| Phase 1 — Bronze ingestion | ✅ Done |
-| Phase 2 — Silver ETL | ✅ Done |
-| Phase 3 — Gold / star schema | ✅ Done |
-| Phase 4 — Visualizations | ✅ Done |
-| Phase 5 — Master Orchestrator | ✅ Done |
-| Phase 6 — Governance & Monitoring | ✅ Done |
-| Phase 7 — External Integrations | ✅ Done |
-| Phase 8 — Polish & Finalisation | ✅ Done |
-| Phase 9 — Defense preparation | ⬜ Not started |
-
-## Phase 9 — Defense preparation
-
-Talking points and insights for the May 26 defense. Markdown-only, no code changes.
-
-- [ ] **Answer the 4 key analytical questions** from `spec/Microsoft Fabric Data Engineering Project.pdf` with concrete numbers from the dashboards:
-  1. How does traffic intensity (trips/day) relate to air quality (PM2.5/NO2)? → cite Pearson r values from Correlation page
-  2. Which zones / times show the strongest link between taxi demand and pollution peaks? → cite Top Pickup Zones + combo chart
-  3. What is average revenue per trip USD vs EUR, and how does FX fluctuation affect it? → cite Total Revenue cards + FX chart on Economic Impact
-  4. Over multiple years, do we see mobility/economic growth at the expense of environmental quality? → cite YoY indicators + multi-year trends
-- [ ] **Per-page insight notes** — 2–3 sentences per dashboard page with specific numbers (Mobility post-COVID growth, Air Quality PM2.5 seasonality + 2022 coverage gap caveat, Correlation r interpretation, Economic Impact revenue growth + % of GDP).
-- [ ] **Defense slide structure** — outline of demo flow, architecture diagram references, screenshots already in `docs/img/`.
+- [ ] **Power Automate cloud flow — export data to JSON + notify admins**
+  - Generate a JSON file from the project data for some period and upload it via API to OneDrive or Dropbox.
+  - Build a cloud flow in Power Automate that:
+    1. Triggers when a new file is uploaded to OneDrive/Dropbox
+    2. Reads the file content as JSON
+    3. Generates an e-mail (Gmail is easiest) — subject contains a date, body has the first few rows nicely formatted
+    4. Sends a mobile push notification to the Power Automate phone app (one fixed "super-admin" account is fine)
+  - Demo for the video: file uploaded → flow runs → e-mail generated → notification received (record the phone screen).
 
 ## Known data limitations
 
