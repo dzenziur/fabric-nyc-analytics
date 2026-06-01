@@ -124,7 +124,7 @@ All notebooks live in `fabric/` as Fabric Notebook items synced via Git integrat
 
 ### External Integrations
 
-Two integrations layered on top of the medallion: (1) weather data flowing out of Fabric into a time-series database with a Grafana dashboard; (2) Great Expectations data-quality validation triggered on demand via a Telegram bot. Fabric remains the single source of truth — the external app reads from it, never the other way around.
+Three integrations layered on top of the medallion: (1) weather data flowing out of Fabric into a time-series database with a Grafana dashboard; (2) Great Expectations data-quality validation triggered on demand via a Telegram bot; (3) a monthly JSON export to Dropbox that a Power Automate cloud flow turns into an e-mail + a mobile push notification. Fabric remains the single source of truth — the external app reads from it, never the other way around.
 
 **Implemented**
 - **Weather flow inside Fabric** — `bronze_ingest_weather` Notebook (Open-Meteo Archive + Forecast → `bronze_weather`, NYC single point, hourly), `silver_etl` `## Weather` section (datetime cast, enriched column renames with explicit unit suffixes, derived `is_rainy` flag, partitioned by year/month, MERGE on watermark), `pl_master_orchestrator` runs weather as parallel ingestion and `silver_etl` depends on its success.
@@ -133,9 +133,11 @@ Two integrations layered on top of the medallion: (1) weather data flowing out o
 - **`app/weather_sync.py`** — watermark from InfluxDB `last(_time)` of `weather` measurement, T-SQL incremental `WHERE datetime > watermark` against `silver_weather`, single batched write of Points (tag `location=nyc`, fields temperature_c / feels_like_c / precipitation_mm / wind_speed_kmh / humidity_pct / weather_code / is_rainy). Verified end-to-end: 47,112 historical hourly Points written to bucket `weather_nyc`.
 - **`app/ge/`** — Great Expectations runner for 12 Silver + Gold tables, 57 expectations total. Hybrid execution: small tables (~hundreds–tens of thousands of rows) use GE PandasDataset with an ephemeral context; large tables (`silver_taxi_trips` ~201M rows, `silver_openaq_measurements` ~2M, `FactTaxiDaily`, `FactAirQualityDaily`) use SQL-aggregate checks wrapped in the same `CheckResult` shape. `format_report()` produces a monospace text report suitable for Telegram. Per-suite try/except keeps a single failure from breaking the whole report.
 - **`app/bot.py`** — Telegram bot via `python-telegram-bot` v21 in long-polling mode (`Application.run_polling()`). Commands: `/start` (welcome), `/report` (placeholder reply → `asyncio.to_thread(run_report)` so the blocking pyodbc/pandas/GE call doesn't freeze the event loop → final report HTML-escaped in `<pre>` block via `edit_text`). Optional `TELEGRAM_ALLOWED_CHAT_IDS` allowlist; empty = open access.
-- **`docker-compose.yml`** — services `influxdb` (OSS 2.7, persistent volume, `DOCKER_INFLUXDB_INIT_*` bootstrap, unlimited retention, `influx ping` healthcheck), `grafana` (OSS 11.2, waits on influxdb healthy, mounts `grafana/provisioning/` read-only), `app-weather-sync` (builds local Dockerfile, env_file `.env`, `WEATHER_SYNC_INTERVAL_SECONDS=3600` for hourly loop), `app-bot` (reuses the image, `python -m app bot`, `restart: unless-stopped`).
+- **`app/export_json.py`** — one-shot job for the Power Automate integration: aggregates `FactTaxiDaily` over the last full calendar month available in the data (anchored on the latest day above a trip-count threshold, so sparse future-dated tails and coverage gaps never define the window), builds a JSON document (period, KPI summary, top pickup zones), and uploads it to Dropbox via the HTTP content API (`DROPBOX_ACCESS_TOKEN`). Runnable via `make export-json`.
+- **Power Automate cloud flow** — triggers on the new Dropbox file → Get file content → Parse JSON → Select (number/currency formatting) → Create HTML table → Gmail *Send email (V2)* (subject carries the month; body is a styled KPI header + table) → *Send me a mobile notification* (push to the Power Automate phone app). Standard connectors only (free tier); Gmail authenticates through a bring-your-own Google OAuth app so it can sit in the same flow as the Dropbox connector.
+- **`docker-compose.yml`** — services `influxdb` (OSS 2.7, persistent volume, `DOCKER_INFLUXDB_INIT_*` bootstrap, unlimited retention, `influx ping` healthcheck), `grafana` (OSS 11.2, waits on influxdb healthy, mounts `grafana/provisioning/` read-only), `app` (builds local Dockerfile, env_file `.env`, `WEATHER_SYNC_INTERVAL_SECONDS=3600` for hourly weather-sync loop; same image is reused for one-shot `ge-report` / `export-json` runs), `app-bot` (reuses the image, `python -m app bot`, `restart: unless-stopped`).
 - **`grafana/provisioning/`** — `datasources/influxdb.yml` (uid=`influxdb`, Flux mode, secure token from env) + `dashboards/dashboards.yml` (file provider) + `dashboards/weather.json` (4-panel NYC Weather: temperature, precipitation, wind, humidity). Auto-loaded at Grafana start.
-- **`Makefile`** — compose lifecycle (up / up-data / down / restart / stop / clean), build / rebuild, ps + per-service logs, `weather-sync-once` and `ge-report` for ad-hoc runs.
+- **`Makefile`** — compose lifecycle (up / up-data / down / restart / stop / clean), build / rebuild, ps + per-service logs, `weather-sync-once`, `ge-report`, and `export-json` for ad-hoc runs.
 - **`docs/how_to_run.md` § Step 7** — end-to-end Phase 7 setup walkthrough: Service Principal registration, BotFather token, `.env` fill, `make build` + `make up`, Grafana on `localhost:3000`, `/report` in Telegram.
 
 ---
@@ -198,6 +200,11 @@ For high-frequency scheduled runs (twice daily), full year rebuild of silver and
 - Demonstrates event-driven / interactive data quality monitoring
 - Low-latency: report arrives within seconds of command
 - More engaging for a defense demo than "it sends an email"
+
+### Why Dropbox + a bring-your-own Google app for the Power Automate flow
+- **Dropbox over OneDrive** — Dropbox's HTTP content API takes a single access token, so the export job uploads in a few lines; personal OneDrive would require a delegated Microsoft Graph OAuth flow.
+- **Bring-your-own Google OAuth app for Gmail** — Power Automate's default shared Gmail connector may only be combined with a Google-approved set of connectors, which excludes Dropbox; a self-registered OAuth client lifts that restriction (and is free, no billing account needed).
+- **Last full month, anchored on real volume** — the report aggregates the last complete calendar month, anchored on the latest day exceeding a trip-count threshold, so stray future-dated tail rows and coverage gaps never define the window.
 
 ### Zone-level air quality correlation — known limitation
 

@@ -8,20 +8,6 @@
 > - **External stack** — local Docker (InfluxDB + Grafana + Telegram DQ bot)
 >   on top of the Fabric SQL endpoint
 
-## Remaining work
-
-One spec task from the external-integrations set is still open. Parts 1 (InfluxDB +
-Grafana dashboards) and 2 (Telegram bot + Great Expectations report) are done; this is part 3.
-
-- [ ] **Power Automate cloud flow — export data to JSON + notify admins**
-  - Generate a JSON file from the project data for some period and upload it via API to OneDrive or Dropbox.
-  - Build a cloud flow in Power Automate that:
-    1. Triggers when a new file is uploaded to OneDrive/Dropbox
-    2. Reads the file content as JSON
-    3. Generates an e-mail (Gmail is easiest) — subject contains a date, body has the first few rows nicely formatted
-    4. Sends a mobile push notification to the Power Automate phone app (one fixed "super-admin" account is fine)
-  - Demo for the video: file uploaded → flow runs → e-mail generated → notification received (record the phone screen).
-
 ## Known data limitations
 
 Upstream quirks we accept and work around — not bugs to fix on our side.
@@ -86,12 +72,13 @@ Two surfaces — Fabric workspace and the local Docker stack.
 
 ```bash
 make build        # build the app image
-make up           # start influxdb + grafana + app-weather-sync + app-bot
+make up           # start influxdb + grafana + app (weather-sync loop) + app-bot
 make ps           # status
 make logs         # tail logs from all services
 
 make weather-sync-once   # one-shot Fabric → InfluxDB sync
 make ge-report           # run Great Expectations, print report to stdout
+make export-json         # one-shot Gold monthly slice → Dropbox (Power Automate trigger)
 
 make down         # stop containers (keep volumes)
 make clean        # stop + DELETE volumes (wipes InfluxDB + Grafana data)
@@ -113,7 +100,8 @@ The `app/` container reads `.env` at the repo root (template in `.env.example`):
 | `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` | Grafana admin login |
 | `FABRIC_SQL_SERVER` / `FABRIC_SP_CLIENT_ID` / `FABRIC_SP_CLIENT_SECRET` / `SILVER_LAKEHOUSE_DB` / `GOLD_WAREHOUSE_DB` | Fabric SQL endpoint via Entra ID Service Principal — `weather_sync` reads `silver_weather`; GE runner reads Silver + Gold tables |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS` | Telegram long-polling bot — token from BotFather; optional comma-separated chat-id allowlist |
-| `WEATHER_SYNC_INTERVAL_SECONDS` | Scheduler tick for `app-weather-sync` (3600 in compose; `0` = one-shot) |
+| `DROPBOX_ACCESS_TOKEN` / `DROPBOX_UPLOAD_DIR` | `export-json` upload target — short-lived OAuth token from the Dropbox App Console; folder the Power Automate flow watches |
+| `WEATHER_SYNC_INTERVAL_SECONDS` | Scheduler tick for the `app` weather-sync loop (3600 in compose; `0` = one-shot) |
 
 ## Key principles
 

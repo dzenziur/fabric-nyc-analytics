@@ -19,7 +19,7 @@ The platform answers **four cross-domain analytical questions**:
 3. What is average revenue per trip in USD vs EUR, and how does FX fluctuation affect it?
 4. Over multiple years, do we see mobility / economic growth at the expense of environmental quality?
 
-All five data sources land in a single Fabric workspace, are cleaned through PySpark notebooks, and surface in a 4-page Power BI report. Two external integrations sit on top: a Grafana weather dashboard backed by InfluxDB, and a Telegram Great Expectations report bot.
+All five data sources land in a single Fabric workspace, are cleaned through PySpark notebooks, and surface in a 4-page Power BI report. Three external integrations sit on top: a Grafana weather dashboard backed by InfluxDB, a Telegram Great Expectations report bot, and a Power Automate flow that exports a monthly Gold slice to Dropbox and fans it out to e-mail + a mobile push.
 
 ---
 
@@ -56,6 +56,7 @@ Full visual breakdown: see [`docs/architecture.md`](docs/architecture.md#power-b
                   |                                                          |
                   |  silver_weather -> InfluxDB -> Grafana dashboard         |
                   |  Silver + Gold  -> Great Expectations -> Telegram bot    |
+                  |  Gold monthly   -> Dropbox -> Power Automate -> mail/push|
                   |                                                          |
                   +----------------------------------------------------------+
 ```
@@ -111,14 +112,16 @@ pl_master_orchestrator → Run
 
 ```bash
 make build           # build app image
-make up              # start influxdb + grafana + weather-sync + telegram bot
+make up              # start influxdb + grafana + app + telegram bot
 make weather-sync-once   # one-shot Fabric → InfluxDB sync
 make ge-report           # run Great Expectations, print report
+make export-json         # export a Gold monthly slice → Dropbox (Power Automate trigger)
 ```
 
 - Grafana: <http://localhost:3000>
 - InfluxDB: <http://localhost:8086>
 - Telegram bot: send `/report` to your configured bot
+- Power Automate: `make export-json` → e-mail + mobile push for the latest month
 
 Full setup (Service Principal, BotFather, `.env`): [`docs/how_to_run.md`](docs/how_to_run.md).
 

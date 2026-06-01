@@ -251,12 +251,13 @@ Wall-clock end-to-end for the 6-year backfill: first bronze activity starts 18:3
 
 ## Step 7 — Phase 7 External Stack (Docker Compose)
 
-Phase 7 ships a local Docker Compose stack with three responsibilities:
+Phase 7 ships a local Docker Compose stack with four responsibilities:
 - **`weather_sync`** — periodically copies `silver_weather` from Fabric SQL endpoint to InfluxDB
 - **InfluxDB + Grafana** — time-series storage + dashboard for weather data
 - **Telegram bot** — on-demand `/report` runs Great Expectations on Silver + Gold and replies with a summary
+- **`export-json`** — on-demand `make export-json` exports a monthly Gold slice to Dropbox, which a Power Automate cloud flow turns into an e-mail + mobile push (see § 7g)
 
-All four containers (`influxdb`, `grafana`, `app-weather-sync`, `app-bot`) are orchestrated by `docker-compose.yml` at the repo root. The same Python image (`Dockerfile`) is reused by both app containers via a multi-entry CLI (`python -m app {weather-sync,bot,ge-report}`).
+All four containers (`influxdb`, `grafana`, `app`, `app-bot`) are orchestrated by `docker-compose.yml` at the repo root. The same Python image (`Dockerfile`) is reused by both app containers via a multi-entry CLI (`python -m app {weather-sync,bot,ge-report,export-json}`).
 
 ### Prerequisites
 - **Docker Desktop** (or any compose-compatible runtime)
@@ -338,6 +339,23 @@ Bot smoke test:
 
 The bot keeps running as long as the `app-bot` container is up (`restart: unless-stopped`). Logs: `make logs-bot`.
 
+### 7g. Power Automate export flow (e-mail + mobile push)
+
+The third external integration exports a monthly Gold slice to Dropbox; a Power Automate cloud flow turns it into a styled e-mail + a phone push notification.
+
+1. **Dropbox app** — [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps) → Create app → *Scoped access* → *App folder* → enable `files.content.write` + `files.content.read` → Settings → generate an access token → put it in `.env` as `DROPBOX_ACCESS_TOKEN` (token is short-lived ~4h; regenerate before a demo).
+2. **Run the export** — `make export-json` queries the last full month from `gold_warehouse`, writes a JSON document (period, KPI summary, top pickup zones) and uploads it to `/Apps/<app>/nyc-analytics/` in Dropbox.
+3. **Build the cloud flow** ([make.powerautomate.com](https://make.powerautomate.com) → Automated cloud flow):
+   - **Dropbox — When a file is created** → folder `/Apps/<app>/nyc-analytics`
+   - **Dropbox — Get file content** → File = the trigger's *File identifier*
+   - **Parse JSON** → Content from the file (`base64ToString(...['$content'])` if it arrives as `octet-stream`); schema from a sample export
+   - **Select** → format `trips` / `revenue_usd` via `formatNumber`
+   - **Create HTML table** → from the Select output
+   - **Compose** → assemble the HTML body (title, KPI cards, table with inline styles injected via `replace()`)
+   - **Gmail — Send email (V2)** → subject carries the month; body = Compose output. Gmail must use a **bring-your-own Google OAuth client** (the default shared app can't be combined with the Dropbox connector); register one for free at [console.cloud.google.com](https://console.cloud.google.com) with redirect URI `https://global.consent.azure-apim.net/redirect/gmail`.
+   - **Notifications — Send me a mobile notification** → install the Power Automate phone app, signed in with the same account.
+4. **Demo** — `make export-json` → file lands in Dropbox → flow runs → e-mail in Gmail → push on the phone.
+
 ### Useful Make targets
 
 ```
@@ -350,6 +368,7 @@ make logs-bot        # tail bot logs
 make logs-sync       # tail weather-sync logs
 make weather-sync-once   # one-shot weather sync (exits on completion)
 make ge-report       # one-shot DQ report to stdout
+make export-json     # one-shot Gold monthly slice → Dropbox (Power Automate trigger)
 ```
 
 ---
