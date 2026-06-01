@@ -249,9 +249,9 @@ Wall-clock end-to-end for the 6-year backfill: first bronze activity starts 18:3
 
 ---
 
-## Step 7 — Phase 7 External Stack (Docker Compose)
+## Step 7 — External Stack (Docker Compose)
 
-Phase 7 ships a local Docker Compose stack with four responsibilities:
+The external stack is a local Docker Compose deployment with four responsibilities:
 - **`weather_sync`** — periodically copies `silver_weather` from Fabric SQL endpoint to InfluxDB
 - **InfluxDB + Grafana** — time-series storage + dashboard for weather data
 - **Telegram bot** — on-demand `/report` runs Great Expectations on Silver + Gold and replies with a summary
@@ -335,7 +335,7 @@ Bot smoke test:
 2. Send `/start` → bot replies with welcome text
 3. Send `/report` → bot replies "Running DQ checks, please wait..." → ~30-60 sec later edits that message to show the full report wrapped in a `<pre>` block
 
-![Telegram `/report` output — 56/56 expectations passing across 12 Silver + Gold tables (2026-05-20)](img/telegram_report.png)
+![Telegram `/report` output — 57/57 expectations passing across 12 Silver + Gold tables](img/telegram_report.png)
 
 The bot keeps running as long as the `app-bot` container is up (`restart: unless-stopped`). Logs: `make logs-bot`.
 
@@ -354,7 +354,12 @@ The third external integration exports a monthly Gold slice to Dropbox; a Power 
    - **Compose** → assemble the HTML body (title, KPI cards, table with inline styles injected via `replace()`)
    - **Gmail — Send email (V2)** → subject carries the month; body = Compose output. Gmail must use a **bring-your-own Google OAuth client** (the default shared app can't be combined with the Dropbox connector); register one for free at [console.cloud.google.com](https://console.cloud.google.com) with redirect URI `https://global.consent.azure-apim.net/redirect/gmail`.
    - **Notifications — Send me a mobile notification** → install the Power Automate phone app, signed in with the same account.
+
+   ![Power Automate flow — Dropbox trigger → Get content → Parse JSON → Select → Create HTML table → Compose → Gmail → mobile push](img/power_automate_flow.png)
+
 4. **Demo** — `make export-json` → file lands in Dropbox → flow runs → e-mail in Gmail → push on the phone.
+
+![Generated monthly report e-mail — KPI header (trips / revenue / active zones) + top-10 pickup-zones table](img/power_automate_email.png)
 
 ### Useful Make targets
 
@@ -373,7 +378,7 @@ make export-json     # one-shot Gold monthly slice → Dropbox (Power Automate t
 
 ---
 
-## Step 8 — Schedule Automation (Phase 6)
+## Step 8 — Schedule Automation
 
 `pl_master_orchestrator` runs on a twice-daily schedule configured directly in Fabric UI.
 
