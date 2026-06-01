@@ -1,4 +1,4 @@
-name: nyc-analytics-phase7
+name: nyc-analytics
 
 services:
   influxdb:
@@ -46,18 +46,18 @@ services:
       influxdb:
         condition: service_healthy
 
-  app-weather-sync:
+  app:
     build:
       context: .
       dockerfile: Dockerfile
     image: nyc-analytics-app:latest
-    container_name: nyc-app-weather-sync
+    container_name: nyc-app
     restart: unless-stopped
     env_file:
       - .env
     environment:
       # Container runs an internal sleep loop with this interval (seconds).
-      # Unset / 0 means one-shot (useful for `docker compose run --rm app-weather-sync`).
+      # Unset / 0 means one-shot (useful for `docker compose run --rm app`).
       WEATHER_SYNC_INTERVAL_SECONDS: "3600"
     command: ["python", "-m", "app", "weather-sync"]
     depends_on:
@@ -71,10 +71,10 @@ services:
     env_file:
       - .env
     command: ["python", "-m", "app", "bot"]
-    # Reuses the image built by app-weather-sync; depends_on ensures the build
+    # Reuses the image built by app; depends_on ensures the build
     # has happened (`docker compose up` builds before starting the bot).
     depends_on:
-      app-weather-sync:
+      app:
         condition: service_started
 
 volumes:
