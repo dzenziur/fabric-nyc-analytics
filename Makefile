@@ -1,4 +1,4 @@
-# Makefile for Phase 7 external app (docker-compose).
+# Makefile for the external app stack (docker-compose).
 # Run from repo root. Requires Docker Desktop + `make` (Git Bash on Windows).
 
 COMPOSE ?= docker compose

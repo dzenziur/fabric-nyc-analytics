@@ -138,7 +138,7 @@ Three integrations layered on top of the medallion: (1) weather data flowing out
 - **`docker-compose.yml`** — services `influxdb` (OSS 2.7, persistent volume, `DOCKER_INFLUXDB_INIT_*` bootstrap, unlimited retention, `influx ping` healthcheck), `grafana` (OSS 11.2, waits on influxdb healthy, mounts `grafana/provisioning/` read-only), `app` (builds local Dockerfile, env_file `.env`, `WEATHER_SYNC_INTERVAL_SECONDS=3600` for hourly weather-sync loop; same image is reused for one-shot `ge-report` / `export-json` runs), `app-bot` (reuses the image, `python -m app bot`, `restart: unless-stopped`).
 - **`grafana/provisioning/`** — `datasources/influxdb.yml` (uid=`influxdb`, Flux mode, secure token from env) + `dashboards/dashboards.yml` (file provider) + `dashboards/weather.json` (4-panel NYC Weather: temperature, precipitation, wind, humidity). Auto-loaded at Grafana start.
 - **`Makefile`** — compose lifecycle (up / up-data / down / restart / stop / clean), build / rebuild, ps + per-service logs, `weather-sync-once`, `ge-report`, and `export-json` for ad-hoc runs.
-- **`docs/how_to_run.md` § Step 7** — end-to-end Phase 7 setup walkthrough: Service Principal registration, BotFather token, `.env` fill, `make build` + `make up`, Grafana on `localhost:3000`, `/report` in Telegram.
+- **`docs/how_to_run.md` § Step 7** — end-to-end external-stack setup walkthrough: Service Principal registration, BotFather token, `.env` fill, `make build` + `make up`, Grafana on `localhost:3000`, `/report` in Telegram.
 
 ---
 
