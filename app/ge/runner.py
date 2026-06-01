@@ -12,7 +12,6 @@ def _run_layer(database: str, suites: list) -> list[CheckResult]:
             try:
                 results.extend(suite(conn))
             except Exception as exc:
-                # Don't kill the whole report if a single suite blows up — surface it as a failure row.
                 results.append(CheckResult(
                     table=suite.__name__,
                     name="suite execution",

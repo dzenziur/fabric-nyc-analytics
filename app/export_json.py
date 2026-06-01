@@ -19,7 +19,7 @@ from app.fabric_client import get_connection
 
 DROPBOX_UPLOAD_URL = "https://content.dropboxapi.com/2/files/upload"
 MAX_ROWS = 500
-MIN_DAILY_TRIPS = 1000  # ignore sparse tail days when anchoring the export window
+MIN_DAILY_TRIPS = 1000
 
 
 def _json_default(value: object) -> object:

@@ -6,9 +6,6 @@ import pandas as pd
 from app.ge.result import CheckResult
 
 
-# ---------------- SQL-aggregate checks (for large tables) ----------------
-
-
 def _scalar(conn, sql: str, params: tuple = ()) -> Any:
     cur = conn.cursor()
     cur.execute(sql, params) if params else cur.execute(sql)
@@ -90,9 +87,6 @@ def sql_fk_integrity(conn, table: str, child_fq: str, child_col: str,
     )
 
 
-# ---------------- Pandas + Great Expectations (for small tables) ----------------
-
-
 def _load_df(conn, sql: str) -> pd.DataFrame:
     return pd.read_sql(sql, conn)
 
@@ -133,7 +127,6 @@ def _summarise_ge_result(result: dict, success: bool) -> str:
     return "failed"
 
 
-# Convenience re-exports — readers reach for these from suites.py
 __all__ = [
     "_load_df",
     "sql_not_null",
