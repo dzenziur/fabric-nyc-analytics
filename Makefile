@@ -1,4 +1,4 @@
-# Makefile for Phase 7 external app (docker-compose).
+# Makefile for the external app stack (docker-compose).
 # Run from repo root. Requires Docker Desktop + `make` (Git Bash on Windows).
 
 COMPOSE ?= docker compose
@@ -26,10 +26,10 @@ clean:  ## Stop everything and DELETE volumes (destroys InfluxDB + Grafana data!
 # ---------------- Build ----------------
 
 build:  ## Build the app image (uses Docker layer cache)
-	$(COMPOSE) build app-weather-sync
+	$(COMPOSE) build app
 
 rebuild:  ## Force-rebuild the app image without cache (use after dep changes)
-	$(COMPOSE) build --no-cache app-weather-sync
+	$(COMPOSE) build --no-cache app
 
 # ---------------- Inspection ----------------
 
@@ -39,8 +39,8 @@ ps:  ## List service status
 logs:  ## Tail logs from all services (Ctrl+C to exit)
 	$(COMPOSE) logs -f --tail=100
 
-logs-sync:  ## Tail logs from app-weather-sync only
-	$(COMPOSE) logs -f --tail=200 app-weather-sync
+logs-sync:  ## Tail logs from app only
+	$(COMPOSE) logs -f --tail=200 app
 
 logs-bot:  ## Tail logs from app-bot only
 	$(COMPOSE) logs -f --tail=200 app-bot
@@ -54,7 +54,10 @@ logs-grafana:  ## Tail logs from Grafana only
 # ---------------- Ad-hoc runs (one-shot, exit when done) ----------------
 
 weather-sync-once:  ## Run one weather sync now (overrides scheduler, exits on completion)
-	$(COMPOSE) run --rm -e WEATHER_SYNC_INTERVAL_SECONDS=0 app-weather-sync python -m app weather-sync
+	$(COMPOSE) run --rm -e WEATHER_SYNC_INTERVAL_SECONDS=0 app python -m app weather-sync
 
 ge-report:  ## Run Great Expectations checks and print the DQ report to stdout
-	$(COMPOSE) run --rm app-weather-sync python -m app ge-report
+	$(COMPOSE) run --rm app python -m app ge-report
+
+export-json:  ## Export a Gold JSON slice and upload it to Dropbox (Power Automate trigger)
+	$(COMPOSE) run --rm app python -m app export-json

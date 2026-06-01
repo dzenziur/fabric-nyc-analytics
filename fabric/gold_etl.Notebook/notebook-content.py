@@ -34,15 +34,21 @@
 
 # MARKDOWN ********************
 
-# # Gold ETL — Silver → Fabric Warehouse (star schema)
-# Builds star schema from Silver tables and writes to `gold_warehouse` via synapsesql.
-# **Input:** silver_taxi_trips, silver_openaq_measurements, silver_openaq_locations, silver_taxi_zones, silver_fx_rates, silver_gdp
-# **Output:** gold_warehouse.dbo — DimDate, DimZone, DimFX, DimGDP, FactTaxiDaily, FactAirQualityDaily
-# **`year_start`/`year_end`:** semantics vary by output:
-# - `FactTaxiDaily`, `FactAirQualityDaily` — **ignored when `force_refresh=False`** (incremental
-#   re-aggregates `MAX(gold.date_key) - 7 days` forward). **Used only when `force_refresh=True`**.
-# - `DimDate` — **always used** as a floor/ceiling, expanded outward by actual data min/max.
-# - `DimZone`, `DimFX`, `DimGDP` — **never used** (full overwrite of small dimensions every run).
+# # Gold ETL — Silver → Fabric Warehouse
+# Builds the star schema in `gold_warehouse` from Silver tables. Two fact tables and four dimensions, all written via `df.write.synapsesql`. Idempotent through the **read-filter-union-overwrite** pattern in the `write_gold` helper.
+# ### Input
+# - `silver_taxi_trips`, `silver_taxi_zones`.<p>
+# - `silver_openaq_measurements`, `silver_openaq_locations`.<p>
+# - `silver_fx_rates`, `silver_gdp`.
+# ### Output
+# All written to `gold_warehouse.dbo.*`:
+# - Dimensions — `DimDate`, `DimZone`, `DimFX`, `DimGDP`.<p>
+# - Facts — `FactTaxiDaily`, `FactAirQualityDaily`.
+# ### Parameters
+# - `year_start` (int) — lower bound of year range.<p>
+# - `year_end` (int) — upper bound of year range.<p>
+# - `force_refresh` (bool) — controls incremental vs full rebuild.<p>
+# Parameter behavior varies per output table — see each table's section below for the specifics.
 
 # PARAMETERS CELL ********************
 
@@ -60,6 +66,10 @@ force_refresh = False
 # MARKDOWN ********************
 
 # ## Imports
+# - `com.microsoft.spark.fabric` — Fabric-specific Scala module that makes `df.write.synapsesql` available in PySpark. Without this import the call raises `AttributeError`, and Fabric documentation doesn't surface this requirement.<p>
+# - `pyspark.sql.functions` — column functions for casts, derived columns, date keys, aggregations.<p>
+# - `pyspark.sql.Window` + `row_number()` — sequential surrogate keys for `DimFX`, `DimGDP`.<p>
+# - `py4j.protocol.Py4JJavaError` — caught by `write_gold` and read paths when a Warehouse table doesn't exist yet (first-run fallback).
 
 # CELL ********************
 
@@ -85,6 +95,7 @@ from pyspark.sql.window import Window
 # MARKDOWN ********************
 
 # ## Config
+# Short uppercase aliases for the lakehouse/warehouse names, full Silver table identifiers, and `LATE_ARRIVING_LOOKBACK_DAYS = 7` — the incremental re-aggregation window for both fact tables. Seven days handles late-arriving Silver data plus any short missed-run gap on the schedule.
 
 # CELL ********************
 
@@ -112,6 +123,14 @@ print(f"Year range: {year_start} - {year_end}")
 # MARKDOWN ********************
 
 # ## Helper
+# `write_gold(df_new, table, exclude_filter)` — universal Warehouse writer implementing the **read-filter-union-overwrite** pattern that gives idempotent writes on top of `synapsesql` (which only supports `mode("overwrite")` / `mode("append")`).
+# Used with `exclude_filter` for facts:
+# 1. Read existing Warehouse table.<p>
+# 2. Filter to rows matching `exclude_filter` (rows NOT being refreshed in this run).<p>
+# 3. Union the filtered set with `df_new`.<p>
+# 4. Overwrite the whole table with the result.<p>
+# Without `exclude_filter` (dims): plain full overwrite. First-run is handled by catching the specific `Py4JJavaError` raised when the Warehouse table doesn't exist yet.<p>
+# Why not just append or overwrite directly: `append` is non-idempotent (re-run duplicates rows), full `overwrite` erases history outside the refresh range. Delta `replaceWhere` isn't available through `synapsesql`. This pattern is the workaround.
 
 # CELL ********************
 
@@ -142,8 +161,10 @@ def write_gold(df_new, table: str, exclude_filter: str = None) -> None:
 # MARKDOWN ********************
 
 # ## DimDate
-# Full date spine covering the accumulated range across all runs. day_of_week: 1=Monday … 7=Sunday.
-# Range extends to include existing DimDate years so previous years are never lost on a partial run.
+# Full date spine — one row per day across the accumulated range. `date_key` is an integer `YYYYMMDD` (e.g. `20240315` for 2024-03-15) — same formula used by all facts and `DimFX`, so keys match by construction and no DimDate join is needed during ETL.<p>
+# `day_of_week`: 1 = Monday … 7 = Sunday.
+# ### Range logic
+# `year_start` / `year_end` are **always used** as a floor/ceiling. Then the range is **extended outward** by reading the existing DimDate min/max from the Warehouse and taking the union — so a partial re-run for one year doesn't erase the others. DimDate never shrinks.
 
 # CELL ********************
 
@@ -202,8 +223,8 @@ display(df_dim_date.limit(10))
 # MARKDOWN ********************
 
 # ## DimZone
-# Reads from `silver_taxi_zones` (cleaned + cast in `silver_etl`).
-# 265 rows. zone_key = location_id (natural PK, 1–265).
+# 265 rows of TLC zone lookup, read from `silver_taxi_zones` (cleaned + cast in `silver_etl`).<p>
+# `zone_key = location_id` — natural PK (1–265). TLC's IDs are stable and dense, so no surrogate is needed. Used as the FK target for `FactTaxiDaily[zone_key]` and as the RLS filter column (`service_zone`) in the semantic model — five roles map service zones to taxi-operations teams.
 
 # CELL ********************
 
@@ -233,7 +254,8 @@ display(df_dim_zone.limit(10))
 # MARKDOWN ********************
 
 # ## DimFX
-# One row per trading date. fx_key is a sequential surrogate key ordered by date.
+# One row per ECB trading date with the USD/EUR rate. Weekends and ECB holidays are **absent** — no rate published. `FactTaxiDaily` joins via LEFT JOIN so weekend trips survive with a null `fx_key` and null `total_fare_eur`.<p>
+# `fx_key` is a sequential surrogate via `row_number().over(Window.orderBy("date"))` — compact FK instead of using the date itself.
 
 # CELL ********************
 
@@ -263,7 +285,9 @@ display(df_dim_fx.limit(10))
 # MARKDOWN ********************
 
 # ## DimGDP
-# One row per (country, year). gdp_trillion_usd is a display-friendly derived column.
+# One row per (country, year). Source: World Bank annual GDP, ~6k rows covering all countries from 2000 to ~2024 (World Bank lags ~1 year).<p>
+# `gdp_key` is a sequential surrogate. `gdp_trillion_usd` is a display-friendly derived column (`gdp_usd / 1e12`, rounded to 4 decimals) for Power BI cards.<p>
+# **DimGDP has no relationship in the semantic model.** GDP is yearly + country-level, so joining to daily zone-level facts would create grain mismatch and unwanted cross-filter side effects. The `USA GDP (USD)` DAX measure uses a year-aware `SELECTEDVALUE` virtual relationship instead.
 
 # CELL ********************
 
@@ -287,10 +311,19 @@ display(df_dim_gdp.limit(10))
 # MARKDOWN ********************
 
 # ## FactTaxiDaily
-# Grain: one row per day × pickup zone. FX join is left — weekend/holiday dates have no ECB rate (null fx_key).
-# Default mode (force_refresh=False): re-aggregate only dates from MAX(gold.date_key) - 7 days forward.
-#   Same 7-day lookback as FactAirQualityDaily — handles late-arriving silver data and short missed-run gaps.
-# force_refresh=True: full rebuild for year_start..year_end range (existing behavior).
+# Daily aggregate of NYC taxi trips. **Grain:** one row per (day × pickup zone).
+# ### Aggregations
+# `trip_count`, `total_fare_usd`, `avg_fare_usd`, `avg_trip_duration_min`, `avg_trip_distance_mi`, `total_passengers`. `total_fare_eur` is derived via LEFT JOIN to `DimFX` (`total_fare_usd × usd_eur_rate`) — weekends and holidays have null FX → null EUR (acceptable).
+# ### Dimension joins
+# - `DimFX` (LEFT) — gives `fx_key` + `usd_eur_rate` for EUR conversion.<p>
+# - `DimZone` (LEFT) — translates `pu_location_id` → `zone_key`.<p>
+# - `DimDate` — **not joined**; `date_key` is computed directly from `trip_date` (YYYYMMDD formula).<p>
+# - `DimGDP` — **not joined**; no fact-level relationship.
+# ### Mode scenarios
+# - **`force_refresh=True`** — full rebuild for `year_start..year_end`. `exclude_filter` keeps rows OUTSIDE that range (`date_key < YYYY0101 OR date_key > YYYY1231`).<p>
+# - **`force_refresh=False` + table has data** — incremental. Re-aggregate Silver from `MAX(gold.date_key) - LATE_ARRIVING_LOOKBACK_DAYS (=7)` forward; `exclude_filter = "date_key < cutoff"` keeps everything older than the lookback window. The 7-day lookback covers late-arriving Silver data and short missed-run gaps.<p>
+# - **`force_refresh=False` + table empty/missing** — fallback to full rebuild for the year range.
+
 
 # CELL ********************
 
@@ -380,10 +413,17 @@ display(df_fact_taxi.limit(10))
 # MARKDOWN ********************
 
 # ## FactAirQualityDaily
-# Grain: one row per day × location × parameter. city/country joined from silver_openaq_locations.
-# Default mode (force_refresh=False): re-aggregate only dates from MAX(gold.date_key) - 7 days forward.
-#   The 7-day lookback handles late-arriving measurements AND short missed-run gaps.
-# force_refresh=True: full rebuild for year_start..year_end range (existing behavior).
+# Daily aggregate of OpenAQ pollutant measurements. **Grain:** one row per (day × location × parameter). Three keys because one station measures multiple pollutants — each parameter (PM2.5, NO2, O3, …) is a separate row.
+# ### Aggregations
+# `avg_value`, `max_value`, `min_value`, `measurement_count`. Both max and min matter — short peaks can exceed WHO thresholds even when daily averages look safe. `measurement_count` is a quality indicator (typically 24 hourly readings per day).
+# ### Dimension joins
+# Locations are **denormalized into the fact** (`city`, `country`, `latitude`, `longitude`) instead of a separate `DimLocation`. Only one fact uses these columns, and the Power BI Azure Map needs lat/lon directly on the fact. `DimDate` is implicit via the computed `date_key`. In the semantic model the `city` column is exposed as `station_name` (sourceColumn alias), since OpenAQ stations aren't cities.
+# ### Mode scenarios
+# Same as `FactTaxiDaily`:
+# - **`force_refresh=True`** — full rebuild for `year_start..year_end`.<p>
+# - **`force_refresh=False` + table has data** — incremental with 7-day lookback from `MAX(gold.date_key)`.<p>
+# - **`force_refresh=False` + table empty/missing** — fallback to full rebuild.
+
 
 # CELL ********************
 

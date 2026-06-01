@@ -11,11 +11,11 @@
   "tags": ["nyc", "weather"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "weekStart": "",
   "refresh": "5m",
   "time": {
-    "from": "now-7d",
+    "from": "now-30d",
     "to": "now"
   },
   "timepicker": {},
@@ -55,21 +55,23 @@
     },
     {
       "id": 2,
-      "type": "barchart",
+      "type": "timeseries",
       "title": "Precipitation (mm)",
       "datasource": { "type": "influxdb", "uid": "influxdb" },
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 0 },
       "options": {
-        "orientation": "auto",
-        "barWidth": 0.8,
-        "showValue": "never",
-        "legend": { "displayMode": "hidden", "placement": "bottom", "showLegend": false },
-        "tooltip": { "mode": "single", "sort": "none" }
+        "tooltip": { "mode": "single", "sort": "none" },
+        "legend": { "displayMode": "hidden", "placement": "bottom", "showLegend": false }
       },
       "fieldConfig": {
         "defaults": {
           "unit": "lengthmm",
-          "color": { "mode": "fixed", "fixedColor": "blue" }
+          "color": { "mode": "fixed", "fixedColor": "blue" },
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 1,
+            "fillOpacity": 80
+          }
         },
         "overrides": []
       },

@@ -54,8 +54,6 @@ async def report_command(update: Update, _ctx: ContextTypes.DEFAULT_TYPE) -> Non
         await placeholder.edit_text(f"Error while running DQ checks:\n{type(exc).__name__}: {exc}")
         return
 
-    # Telegram message limit is 4096 chars. Our reports run ~1.5kB — safe.
-    # Wrap in a fenced code block so the monospaced table layout survives.
     body = f"<pre>{_escape_html(report)}</pre>"
     await placeholder.edit_text(body, parse_mode=ParseMode.HTML)
 

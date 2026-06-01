@@ -5,10 +5,10 @@ from datetime import datetime, timezone
 
 @dataclass
 class CheckResult:
-    table: str        # e.g. "silver_weather"
-    name: str         # short human-readable expectation, e.g. "temperature_c in [-30, 50]"
+    table: str
+    name: str
     passed: bool
-    observed: str     # short description, e.g. "47112/47112 OK" or "12 rows outside range"
+    observed: str
 
 
 def format_report(results: list[CheckResult]) -> str:

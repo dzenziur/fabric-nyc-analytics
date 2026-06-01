@@ -12,21 +12,22 @@ def _required(name: str) -> str:
     return value
 
 
-# Fabric SQL endpoint (shared workspace server, one DB per Lakehouse/Warehouse)
 FABRIC_SQL_SERVER       = os.getenv("FABRIC_SQL_SERVER", "")
 FABRIC_SP_CLIENT_ID     = os.getenv("FABRIC_SP_CLIENT_ID", "")
 FABRIC_SP_CLIENT_SECRET = os.getenv("FABRIC_SP_CLIENT_SECRET", "")
 SILVER_LAKEHOUSE_DB     = os.getenv("SILVER_LAKEHOUSE_DB", "silver_lakehouse")
 GOLD_WAREHOUSE_DB       = os.getenv("GOLD_WAREHOUSE_DB", "gold_warehouse")
 
-# InfluxDB
 INFLUXDB_URL    = os.getenv("INFLUXDB_URL", "")
 INFLUXDB_TOKEN  = os.getenv("INFLUXDB_TOKEN", "")
 INFLUXDB_ORG    = os.getenv("INFLUXDB_ORG", "")
 INFLUXDB_BUCKET = os.getenv("INFLUXDB_BUCKET", "weather_nyc")
 
 
-# Telegram bot (long-polling mode — no webhook)
+DROPBOX_ACCESS_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN", "")
+DROPBOX_UPLOAD_DIR   = os.getenv("DROPBOX_UPLOAD_DIR", "/nyc-analytics")
+
+
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 

@@ -20,8 +20,6 @@ from app.influx_client import get_client
 MEASUREMENT  = "weather"
 LOCATION_TAG = "nyc"
 
-# Columns pulled from silver_weather, in select order. `datetime` is the
-# time index; the rest become InfluxDB fields.
 SILVER_COLUMNS = [
     "datetime",
     "temperature_c",

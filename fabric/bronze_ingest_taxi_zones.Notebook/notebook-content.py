@@ -32,11 +32,13 @@
 # MARKDOWN ********************
 
 # # Bronze — TLC Taxi Zones Ingestion
-# # Static CSV from TLC CloudFront (~265 rows, rarely changes).
-# # **Input:** TLC `taxi_zone_lookup.csv`
-# # **Output:** `bronze_taxi_zones`
-# # Default (force_refresh=False) skips the download entirely when the table already
-# # has rows — zones are essentially static. Pass force_refresh=True to force a re-fetch.
+# Downloads the TLC taxi zone lookup — ~265 rows of static reference data mapping `location_id` to zone name, borough, and service zone. Used downstream as `DimZone` in the Gold layer.
+# ### Input
+# - TLC CloudFront — `https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv`.
+# ### Output
+# - `bronze_taxi_zones` — Delta table, ~265 rows.
+# ### Parameters
+# - `force_refresh` (bool) — controls the skip-when-populated behavior; details in the **Up-to-Date Check** section below.
 
 # PARAMETERS CELL ********************
 
@@ -48,6 +50,12 @@ force_refresh = False
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark"
 # META }
+
+# MARKDOWN ********************
+
+# ## Imports
+# - `requests` — HTTP GET (handles redirects + cookies better than `urllib` for TLC's strict `/misc/` path).<p>
+# - `pyspark.sql.functions.col` — for the `location_id` int cast.
 
 # CELL ********************
 
@@ -61,6 +69,13 @@ from pyspark.sql.functions import col
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# ## Config
+# - `ZONE_CSV_URL` — TLC's static CSV endpoint.<p>
+# - `ZONE_CSV_TMP` — local temp path on the driver (Spark `read.csv` can't read directly from HTTP).<p>
+# - `BROWSER_HEADERS` — full browser-like header set. TLC's `/misc/` rejects a bare User-Agent with HTTP 403; we send `User-Agent`, `Accept`, `Accept-Language`, and `Referer: nyc.gov` — that's what `nyc.gov` actually sends.
+
 # CELL ********************
 
 BRONZE = "bronze_lakehouse"
@@ -69,6 +84,17 @@ BRONZE_TAXI_ZONES = f"{BRONZE}.bronze_taxi_zones"
 ZONE_CSV_URL = "https://d37ci6vzurychx.cloudfront.net/misc/taxi_zone_lookup.csv"
 ZONE_CSV_TMP = "/tmp/taxi_zone_lookup.csv"
 
+BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/csv,application/csv,application/octet-stream,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page",
+}
+
 # METADATA ********************
 
 # META {
@@ -76,9 +102,14 @@ ZONE_CSV_TMP = "/tmp/taxi_zone_lookup.csv"
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# ## Up-to-Date Check
+# - **When `force_refresh=False`** (default) — if the Bronze table already has rows, skip the download entirely via `notebookutils.notebook.exit`. Zone data is essentially static, so re-running daily would be wasteful.<p>
+# - **When `force_refresh=True`** — bypass the skip; always re-download and overwrite.
+
 # CELL ********************
 
-# Skip download when bronze already has rows and force_refresh is False.
 if not force_refresh:
     try:
         existing_count = spark.read.table(BRONZE_TAXI_ZONES).count()
@@ -95,21 +126,13 @@ if not force_refresh:
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# ## TLC Taxi Zones
+# Download the CSV to a temp file (Spark can't read HTTP directly), then read it with the header option, rename columns to snake_case, cast `location_id` to int, and write as a Delta overwrite. Cast is done here in Bronze rather than Silver because `DimZone` downstream expects an integer key and there's no point delaying.
+
 # CELL ********************
 
-# TLC CloudFront `/misc/` path is stricter than `/trip-data/` — UA alone is not enough.
-# Send a full browser-like header set via `requests` (which also handles redirects/cookies
-# more like a real browser than `urllib`).
-BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0.0.0 Safari/537.36"
-    ),
-    "Accept": "text/csv,application/csv,application/octet-stream,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page",
-}
 resp = requests.get(ZONE_CSV_URL, headers=BROWSER_HEADERS, timeout=30)
 resp.raise_for_status()
 with open(ZONE_CSV_TMP, "wb") as fh:
@@ -133,6 +156,10 @@ print(f"[{BRONZE_TAXI_ZONES}] write done")
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark"
 # META }
+
+# MARKDOWN ********************
+
+# ## Verification
 
 # CELL ********************
 

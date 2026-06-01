@@ -378,5 +378,5 @@ Source: `silver_taxi_zones` (cleaned in `silver_etl`; originally from TLC zone l
 
 ## External stores
 
-- **InfluxDB** (`nyc_analytics` bucket) — `app/weather_sync.py` mirrors `silver_weather` (most recent observations) into a single `weather_hourly` measurement for Grafana dashboards. See `app/weather_sync.py` for the exact field projection.
+- **InfluxDB** (`weather_nyc` bucket, set via `INFLUXDB_BUCKET`) — `app/weather_sync.py` mirrors `silver_weather` (most recent observations) into a single `weather` measurement for Grafana dashboards. See `app/weather_sync.py` for the exact field projection.
 - **Great Expectations** — Suites are defined in code at `app/ge/suites.py` (Silver + Gold). The Telegram bot's `/report` command exposes the latest run. See that file for the authoritative check list per table.

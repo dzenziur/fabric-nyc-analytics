@@ -69,14 +69,14 @@ Resources created:
 3. Run with parameter `openaq_api_key` = your API key
 4. Expected: ~24k+ global station records → `bronze_lakehouse.bronze_openaq_locations`
 
-### 2e. OpenAQ Measurements Notebook
+### 2c. OpenAQ Measurements Notebook
 
 1. Sync repo via Fabric Git integration — `bronze_ingest_openaq_measurements` notebook appears in workspace
 2. Ensure `bronze_lakehouse` is the default attached lakehouse
 3. Run all cells — reads OpenAQ public S3 archive for all NYC stations (last 5 years) → `bronze_openaq_measurements`
 4. Expected: ~1.1M rows across ~22 NYC stations
 
-### 2c. World Bank GDP Dataflow Gen2
+### 2d. World Bank GDP Dataflow Gen2
 
 1. New → **Dataflow Gen2** → name: `df_worldbank_gdp`
 2. Source: Web API → `https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.CD?format=json&per_page=20000&date=2000:YYYY` where end year is dynamic (`DateTime.LocalNow() - 1` in M-code)
@@ -85,7 +85,7 @@ Resources created:
 5. Rename: `country_code`, `country_name`, `year`, `gdp_usd`
 6. Destination: `bronze_lakehouse` → Table: `bronze_gdp`
 
-### 2d. ECB FX Dataflow Gen2
+### 2e. ECB FX Dataflow Gen2
 
 1. New → **Dataflow Gen2** → name: `df_ecb_fx`
 2. Source: Web → `https://data-api.ecb.europa.eu/service/data/EXR/D.USD.EUR.SP00.A?format=csvdata`
@@ -103,26 +103,28 @@ Resources created:
 
 ## Step 3 — Run Silver ETL Notebook
 
-1. Sync `feature/data-orchestration` branch via Fabric Git integration — `silver_etl` notebook appears in workspace automatically
+1. Sync the repo via Fabric Git integration — `silver_etl` notebook appears in workspace automatically
 2. Open `silver_etl` notebook → attach `bronze_lakehouse` as additional data item (read source)
 3. Default attached lakehouse must be **silver_lakehouse** (write target)
 4. Run all cells top to bottom
 5. Verify tables exist: `spark.sql("SHOW TABLES IN silver_lakehouse").show()`
 
 ```
-Expected output tables:
-  silver_lakehouse/Tables/silver_taxi_trips            (~2.87M rows, partitioned by year/month)
-  silver_lakehouse/Tables/silver_openaq_locations      (~5k rows)
-  silver_lakehouse/Tables/silver_openaq_measurements   (~1.1M rows, partitioned by year/month)
-  silver_lakehouse/Tables/silver_gdp                   (~6.2k rows)
+Expected output tables (row counts from a full 2021–2026 backfill):
+  silver_lakehouse/Tables/silver_taxi_trips            (~201M rows, partitioned by year/month)
+  silver_lakehouse/Tables/silver_taxi_zones            (265 rows, static)
+  silver_lakehouse/Tables/silver_openaq_locations      (~24.5k rows)
+  silver_lakehouse/Tables/silver_openaq_measurements   (~1.66M rows, partitioned by year/month)
+  silver_lakehouse/Tables/silver_gdp                   (~6.4k rows)
   silver_lakehouse/Tables/silver_fx_rates              (~7k rows)
+  silver_lakehouse/Tables/silver_weather               (~47k rows, partitioned by year/month)
 ```
 
 ---
 
 ## Step 4 — Run Gold ETL Notebook
 
-1. Sync branch → `gold_etl` notebook appears in workspace automatically
+1. Sync the repo → `gold_etl` notebook appears in workspace automatically
 2. Attach **silver_lakehouse** as data item (read source) and **gold_warehouse** as default (write target)
 3. Run all cells — creates Fact and Dim tables in Warehouse
 
@@ -149,23 +151,23 @@ Expected tables in gold_warehouse:
    - `FactTaxiDaily[fx_key]` → `DimFX[fx_key]` (Many:1)
    - `FactTaxiDaily[zone_key]` → `DimZone[zone_key]` (Many:1)
    - `FactAirQualityDaily[date_key]` → `DimDate[date_key]` (Many:1)
-4. Add DAX measures to **FactTaxiDaily**: `Total Trips`, `Total Revenue USD`, `Total Revenue EUR`, `Avg Fare USD`, `Avg Trip Distance (mi)`, `Avg Trip Duration (min)`
-5. Add DAX measures to **FactAirQualityDaily**: `Avg PM2.5`, `Avg NO2`, `Avg O3`
+4. Add DAX measures to **FactTaxiDaily**: `Total Trips`, `Total Revenue USD`, `Total Revenue EUR`, `Avg Fare USD`, `Avg Fare EUR`, `Revenue as % of US GDP`, the 3 Pearson correlation measures (`Correlation Trips vs PM2.5/NO2/O3`), and 8 year-over-year measures (`<X> YoY %` + `<X> YoY Label` for Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD)
+5. Add DAX measures to **FactAirQualityDaily**: `Avg PM2.5`, `Avg NO2`, `Avg O3`; to **DimFX**: `Avg FX Rate`; to **DimGDP**: `USA GDP (USD)` (year-aware)
 6. Sync back to Git: workspace → Source control → Commit
 
 ### 5b. Power BI Reports
 
 1. In workspace → New → **Report** → pick `nyc_analytics_model` → **Create blank report** → save as `NYC Analytics`
-2. Build **Mobility** page: KPI cards (Total Trips, Total Revenue USD, Avg Fare USD, Avg Trip Distance (mi)), year tile slicer, trips/day line chart, top 10 pickup zones bar chart
+2. Build **Mobility** page: KPI cards (Total Trips, Total Revenue USD, Avg Fare USD — each with YoY indicator), year tile slicer, trips/day line chart, top 10 pickup zones bar chart
 3. Build **Air Quality** page: KPI cards (Avg NO2, Avg O3, Avg PM2.5) with conditional fill color based on WHO 24h limits (Rules-based: green < safe / yellow = approaching / red > limit), year tile slicer, **Azure Maps** bubble visual (latitude/longitude from `FactAirQualityDaily`, Size & gradient color by Avg PM2.5, click filters trend chart and KPI cards), combined PM2.5+NO2+O3 daily line chart with WHO threshold Constant Lines (PM2.5=15 µg/m³, NO2=25, O3=100) and zoom slider, top 10 stations by Avg PM2.5 bar chart (does not respond to map clicks)
-4. Build **Correlation** page: KPI cards (Total Trips, Avg PM2.5, Avg NO2) — PM2.5/NO2 cards share conditional fill rules with Air Quality page (use Format Painter to copy formatting), bar+line combo chart (Total Trips bars + Avg PM2.5 + Avg NO2 lines by month), year tile slicer (multi-select via Ctrl+click)
-5. Build **Economic Impact** page: KPI cards (Total Revenue USD, Total Revenue EUR, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year from DimGDP), line chart (USD/EUR exchange rate from DimFX)
+4. Build **Mobility & Air Quality Correlation** page: KPI cards (Total Trips + 3 Pearson correlation coefficient cards — `r vs PM2.5`, `r vs NO2`, `r vs O3`, computed via DAX `SUMMARIZE` + `SUMX` over `DimDate[date_key]`), bar+line combo chart (Total Trips bars + PM2.5 + NO2 + O3 lines by month), year tile slicer (multi-select via Ctrl+click)
+5. Build **Economic Impact** page: KPI cards (Total Revenue USD, Total Revenue EUR, Avg Fare USD, Avg Fare EUR, Revenue as % of US GDP, USA GDP), clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year from DimGDP), bar chart (Revenue as % of US GDP by year), line chart (USD/EUR exchange rate from DimFX)
 
 ---
 
 ## Step 6 — Master Orchestrator
 
-1. Sync `feature/data-orchestration` branch — `pl_master_orchestrator` pipeline appears in workspace
+1. Sync the repo — `pl_master_orchestrator` pipeline appears in workspace
 2. Pipeline parameters: `year_start` (Int), `year_end` (Int), `force_refresh` (Bool, default false)
 3. Activity structure:
    ```
@@ -247,14 +249,15 @@ Wall-clock end-to-end for the 6-year backfill: first bronze activity starts 18:3
 
 ---
 
-## Step 7 — Phase 7 External Stack (Docker Compose)
+## Step 7 — External Stack (Docker Compose)
 
-Phase 7 ships a local Docker Compose stack with three responsibilities:
+The external stack is a local Docker Compose deployment with four responsibilities:
 - **`weather_sync`** — periodically copies `silver_weather` from Fabric SQL endpoint to InfluxDB
 - **InfluxDB + Grafana** — time-series storage + dashboard for weather data
 - **Telegram bot** — on-demand `/report` runs Great Expectations on Silver + Gold and replies with a summary
+- **`export-json`** — on-demand `make export-json` exports a monthly Gold slice to Dropbox, which a Power Automate cloud flow turns into an e-mail + mobile push (see § 7g)
 
-All four containers (`influxdb`, `grafana`, `app-weather-sync`, `app-bot`) are orchestrated by `docker-compose.yml` at the repo root. The same Python image (`Dockerfile`) is reused by both app containers via a multi-entry CLI (`python -m app {weather-sync,bot,ge-report}`).
+All four containers (`influxdb`, `grafana`, `app`, `app-bot`) are orchestrated by `docker-compose.yml` at the repo root. The same Python image (`Dockerfile`) is reused by both app containers via a multi-entry CLI (`python -m app {weather-sync,bot,ge-report,export-json}`).
 
 ### Prerequisites
 - **Docker Desktop** (or any compose-compatible runtime)
@@ -332,9 +335,31 @@ Bot smoke test:
 2. Send `/start` → bot replies with welcome text
 3. Send `/report` → bot replies "Running DQ checks, please wait..." → ~30-60 sec later edits that message to show the full report wrapped in a `<pre>` block
 
-![Telegram `/report` output — 56/56 expectations passing across 12 Silver + Gold tables (2026-05-20)](img/telegram_report.png)
+![Telegram `/report` output — 57/57 expectations passing across 12 Silver + Gold tables](img/telegram_report.png)
 
 The bot keeps running as long as the `app-bot` container is up (`restart: unless-stopped`). Logs: `make logs-bot`.
+
+### 7g. Power Automate export flow (e-mail + mobile push)
+
+The third external integration exports a monthly Gold slice to Dropbox; a Power Automate cloud flow turns it into a styled e-mail + a phone push notification.
+
+1. **Dropbox app** — [dropbox.com/developers/apps](https://www.dropbox.com/developers/apps) → Create app → *Scoped access* → *App folder* → enable `files.content.write` + `files.content.read` → Settings → generate an access token → put it in `.env` as `DROPBOX_ACCESS_TOKEN` (token is short-lived ~4h; regenerate before a demo).
+2. **Run the export** — `make export-json` queries the last full month from `gold_warehouse`, writes a JSON document (period, KPI summary, top pickup zones) and uploads it to `/Apps/<app>/nyc-analytics/` in Dropbox.
+3. **Build the cloud flow** ([make.powerautomate.com](https://make.powerautomate.com) → Automated cloud flow):
+   - **Dropbox — When a file is created** → folder `/Apps/<app>/nyc-analytics`
+   - **Dropbox — Get file content** → File = the trigger's *File identifier*
+   - **Parse JSON** → Content from the file (`base64ToString(...['$content'])` if it arrives as `octet-stream`); schema from a sample export
+   - **Select** → format `trips` / `revenue_usd` via `formatNumber`
+   - **Create HTML table** → from the Select output
+   - **Compose** → assemble the HTML body (title, KPI cards, table with inline styles injected via `replace()`)
+   - **Gmail — Send email (V2)** → subject carries the month; body = Compose output. Gmail must use a **bring-your-own Google OAuth client** (the default shared app can't be combined with the Dropbox connector); register one for free at [console.cloud.google.com](https://console.cloud.google.com) with redirect URI `https://global.consent.azure-apim.net/redirect/gmail`.
+   - **Notifications — Send me a mobile notification** → install the Power Automate phone app, signed in with the same account.
+
+   ![Power Automate flow — Dropbox trigger → Get content → Parse JSON → Select → Create HTML table → Compose → Gmail → mobile push](img/power_automate_flow.png)
+
+4. **Demo** — `make export-json` → file lands in Dropbox → flow runs → e-mail in Gmail → push on the phone.
+
+![Generated monthly report e-mail — KPI header (trips / revenue / active zones) + top-10 pickup-zones table](img/power_automate_email.png)
 
 ### Useful Make targets
 
@@ -348,11 +373,12 @@ make logs-bot        # tail bot logs
 make logs-sync       # tail weather-sync logs
 make weather-sync-once   # one-shot weather sync (exits on completion)
 make ge-report       # one-shot DQ report to stdout
+make export-json     # one-shot Gold monthly slice → Dropbox (Power Automate trigger)
 ```
 
 ---
 
-## Step 8 — Schedule Automation (Phase 6)
+## Step 8 — Schedule Automation
 
 `pl_master_orchestrator` runs on a twice-daily schedule configured directly in Fabric UI.
 

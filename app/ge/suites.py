@@ -15,12 +15,7 @@ SILVER = config.SILVER_LAKEHOUSE_DB
 GOLD   = config.GOLD_WAREHOUSE_DB
 
 
-# ---------------- Silver Layer ----------------
-
-
 def silver_taxi_trips(conn) -> list[CheckResult]:
-    # pickup_datetime / dropoff_datetime are cast to TIMESTAMP in silver_etl so they
-    # are visible to the Lakehouse SQL endpoint and can be checked here.
     t  = "silver_taxi_trips"
     fq = f"{SILVER}.dbo.{t}"
     return [
@@ -36,10 +31,6 @@ def silver_taxi_trips(conn) -> list[CheckResult]:
 
 
 def silver_openaq_measurements(conn) -> list[CheckResult]:
-    # Units vary by parameter (µg/m³ for PM family, ppm normalised to µg/m³ for gases),
-    # so we can't impose a global upper bound on `value` — silver_etl already enforces
-    # value > 0 and restricts `parameter` to the pollutant set, which is the meaningful
-    # invariant.
     t  = "silver_openaq_measurements"
     fq = f"{SILVER}.dbo.{t}"
     return [
@@ -129,9 +120,6 @@ SILVER_SUITES = [
 ]
 
 
-# ---------------- Gold Layer ----------------
-
-
 def dim_date(conn) -> list[CheckResult]:
     import great_expectations as gx
     t  = "DimDate"
@@ -207,8 +195,6 @@ def fact_taxi_daily(conn) -> list[CheckResult]:
 
 
 def fact_air_quality_daily(conn) -> list[CheckResult]:
-    # Same unit-heterogeneity caveat as silver_openaq_measurements — avg_value
-    # is meaningful per parameter, not globally bounded.
     t  = "FactAirQualityDaily"
     fq = f"{GOLD}.dbo.{t}"
     return [

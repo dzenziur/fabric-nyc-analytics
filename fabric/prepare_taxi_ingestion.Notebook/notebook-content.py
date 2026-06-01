@@ -23,13 +23,17 @@
 # MARKDOWN ********************
 
 # # Bronze — TLC Taxi Files Pre-flight & Ingestion Plan
-# Pre-flight check (HEAD on latest expected TLC file) + list missing files in bronze.
-# Outputs JSON list of {year, month} pairs to download via ForEach in master orchestrator.
-# **Input:** TLC CloudFront (HEAD) + `Files/raw/taxi/` (list existing)
-# **Output:** notebook exitValue — JSON array of months to download
-# **`year_start`/`year_end`:** always used — defines which months to probe on TLC and which
-# already-downloaded files to exclude. Critical for schedule correctness (update `year_end`
-# each January to pick up the new calendar year).
+# Pre-flight notebook that decides which TLC taxi monthly Parquet files to actually download in this run. Does two jobs: probe TLC CloudFront with HTTP HEAD per `(year, month)` to find which months are published, then list existing Bronze files and exclude already-downloaded months. The final list of `{year, month}` pairs is returned as a JSON string via `notebookutils.notebook.exit`, which `pl_master_orchestrator`'s ForEach reads as its `items` source.
+# ### Input
+# - TLC CloudFront — HEAD requests against each month's URL in `year_start..year_end`.<p>
+# - `Files/raw/taxi/` — list of files already downloaded to Bronze.
+# ### Output
+# - Notebook exit value — JSON array, e.g. `[{"year": 2024, "month": 3}, {"year": 2024, "month": 4}]`.
+# ### Parameters
+# - `year_start` (int) — lower bound; **always used** to scope the HEAD probe and existing-file diff.<p>
+# - `year_end` (int) — upper bound; **always used** (update each January for the new calendar year).<p>
+# - `force_refresh` (bool) — controls the "already downloaded" filter; details in the **Ingestion Plan** section below.
+
 
 # PARAMETERS CELL ********************
 
@@ -47,6 +51,8 @@ force_refresh = False
 # MARKDOWN ********************
 
 # ## Imports
+# - `urllib.request` + `urllib.error.HTTPError` — HTTP HEAD probes. TLC's `/trip-data/` accepts a Chrome UA, unlike the stricter `/misc/` path that needs the full `requests` setup from `bronze_ingest_taxi_zones`.<p>
+# - `json` — serializing the exit value.
 
 # CELL ********************
 
@@ -64,6 +70,10 @@ from urllib.error import HTTPError
 # MARKDOWN ********************
 
 # ## Config
+# - `FILENAME_TEMPLATE` / `URL_TEMPLATE` — TLC's monthly Parquet naming convention. Files at `yellow_tripdata_YYYY-MM.parquet` under the CloudFront `/trip-data/` path.<p>
+# - `REQUEST_TIMEOUT = 15` — per-HEAD timeout, kept short because we're hitting it 60+ times.<p>
+# - `TAXI_FILES_PATH` — Bronze landing folder for downloaded Parquets.<p>
+# - `BROWSER_UA` — full Chrome UA string. TLC CloudFront rejects the default `Python-urllib/*` UA with HTTP 403, and a short `Mozilla/5.0` is sometimes still blocked, so we send a complete realistic UA. The `/trip-data/` path is permissive enough that this UA alone is sufficient — unlike the stricter `/misc/` path in `bronze_ingest_taxi_zones` which needs full browser headers.
 
 # CELL ********************
 
@@ -71,8 +81,6 @@ FILENAME_TEMPLATE = "yellow_tripdata_{:04d}-{:02d}.parquet"
 URL_TEMPLATE = "https://d37ci6vzurychx.cloudfront.net/trip-data/" + FILENAME_TEMPLATE
 REQUEST_TIMEOUT = 15
 TAXI_FILES_PATH = "Files/raw/taxi/"
-# TLC CloudFront rejects the default `Python-urllib/*` User-Agent with HTTP 403.
-# A short `Mozilla/5.0` is sometimes still blocked, so send a full realistic Chrome UA.
 BROWSER_UA = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -93,16 +101,12 @@ print(f"Year range: {year_start} - {year_end}, force_refresh: {force_refresh}")
 # MARKDOWN ********************
 
 # ## Pre-flight Check
-# HEAD request on each month in the requested range. Months that return HTTP 403/404 (not yet published by TLC)
-# are skipped — we proceed with whatever is available. Only fails if NO months in range are available.
+# Two parts:<p>
+# 1. **Reachability probe** — HEAD against a known-published reference month (`2024-01`) that must return 200. CloudFront returns HTTP **403** (not 404) for missing keys, so a per-month 403 is ambiguous: it could mean "file not yet published" OR "anti-bot block". The probe disambiguates — if the known-good URL also 403s, we abort loudly (anti-bot, update UA); otherwise per-month 403/404 is silently treated as "month not yet available".<p>
+# 2. **Per-month probe loop** — HEAD against every `(year, month)` in the requested range. Months that return 200 are added to `months_available_at_source`. 403/404 are skipped (publishing lag — TLC lags ~2 months). The notebook fails loudly only if **no** months in the range come back available — that means the year range is wrong (e.g. 2027-2028 in 2026).
 
 # CELL ********************
 
-# Reachability probe — a known-published month must return 200.
-# CloudFront origin policy returns 403 (not 404) for missing keys, so a per-month 403 is
-# ambiguous: it could mean "file not yet published" OR "anti-bot block". The probe
-# disambiguates: if a known-good URL also 403s, abort loudly; otherwise treat per-month
-# 403/404 as "month not available".
 REFERENCE_URL = URL_TEMPLATE.format(2024, 1)
 try:
     urllib.request.urlopen(
@@ -150,7 +154,10 @@ if not months_available_at_source:
 # MARKDOWN ********************
 
 # ## Ingestion Plan
-# From available months, exclude ones already in bronze. Result is the list of files to actually download.
+# Combine the "available on TLC" list with what's already in Bronze.
+# - **When `force_refresh=False`** (default) — list `Files/raw/taxi/` for existing `.parquet` filenames and keep only months whose filename is NOT in the existing set. Default incremental behavior — avoids re-downloading the 60+ files we already have on every run.<p>
+# - **When `force_refresh=True`** — `existing_files = set()` (treat Bronze as empty); re-download every month that's currently available on TLC. Used for manual backfill or recovery.<p>
+# Result: `months_to_download` is the actual ForEach iteration list — months published AND not yet downloaded.
 
 # CELL ********************
 
@@ -184,7 +191,16 @@ print(f"Files to download: {len(months_to_download)} / {len(months_available_at_
 # MARKDOWN ********************
 
 # ## Output
-# Pass list of months to ForEach in pl_master_orchestrator via notebook exit value.
+# Return the list as a JSON-serialized string via `notebookutils.notebook.exit`. The orchestrator's ForEach reads it with `@json(activity('prepare_taxi_ingestion').output.result.exitValue)` and iterates one `(year, month)` per parallel branch.<p>
+# **Example exit value:**
+# ```json
+# [
+#   {"year": 2024, "month": 3},
+#   {"year": 2024, "month": 4},
+#   {"year": 2024, "month": 5}
+# ]
+# ```
+# Empty list `[]` is also valid — means everything is already downloaded; ForEach iterates zero times.
 
 # CELL ********************
 

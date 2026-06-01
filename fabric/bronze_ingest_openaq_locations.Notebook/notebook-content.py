@@ -23,11 +23,14 @@
 # MARKDOWN ********************
 
 # # Bronze — OpenAQ Locations Ingestion
-# Fetches location metadata from OpenAQ API v3, writes to `bronze_lakehouse`.
-# **Input:** OpenAQ API `/v3/locations` (paginated)
-# **Output:** `bronze_openaq_locations` (includes `datetime_first`/`datetime_last` activity window per station)
-# Default (force_refresh=False) does a lightweight `limit=1` probe of `meta.found` and
-# skips the full paginated fetch when it matches the existing bronze row count.
+# Fetches location metadata for every OpenAQ station worldwide (~24,500 records) and writes them to `bronze_lakehouse`. Includes activity-window columns (`datetime_first` / `datetime_last`) that downstream `bronze_ingest_openaq_measurements` uses to pre-filter inactive stations.
+# ### Input
+# - OpenAQ API v3 `/v3/locations` — paginated, requires API key in `X-API-Key` header.
+# ### Output
+# - `bronze_openaq_locations` — full station snapshot, written as Delta overwrite.
+# ### Parameters
+# - `openaq_api_key` (string) — SecureString from the orchestrator trigger.<p>
+# - `force_refresh` (bool) — controls the up-to-date check; details in the **Fetch** section below.
 
 # PARAMETERS CELL ********************
 
@@ -44,6 +47,8 @@ force_refresh = False
 # MARKDOWN ********************
 
 # ## Imports
+# - `requests` + `urllib3.util.retry.Retry` mounted on `HTTPAdapter` — transient-error retries with exponential backoff.<p>
+# - `pandas` — accumulating per-page results before one bulk `spark.createDataFrame`.
 
 # CELL ********************
 
@@ -62,6 +67,10 @@ from urllib3.util.retry import Retry
 # MARKDOWN ********************
 
 # ## Config
+# - `BASE_URL` — OpenAQ v3 paginated locations endpoint.<p>
+# - `PAGE_LIMIT = 1000` — number of station records per HTTP request (OpenAQ max).<p>
+# - `PAGE_CAP = 500` — hard safety cap on number of pages (500 × 1000 = 500k records max). If the loop hits this with a full last page, a WARNING is logged about possible data truncation.<p>
+# - `REQUEST_TIMEOUT = 30` — per-request timeout in seconds.
 
 # CELL ********************
 
@@ -84,8 +93,11 @@ REQUEST_TIMEOUT = 30
 
 # ## OpenAQ Locations
 # ### Fetch
-# Paginated fetch with retries on transient errors (5xx, 429, network).
-# Hard page cap prevents runaway loops; WARNING logged if cap is hit with a full last page.
+# Two stages: an optional up-to-date check, then the paginated fetch loop.<p>
+# **When `force_refresh=False`** (default) — do a one-row `limit=1` probe call first. The response's `meta.found` is OpenAQ's total record count across all pages. If it equals the existing row count in Bronze, exit early via `notebookutils.notebook.exit("skipped: up to date")`. A single GET decides the run — daily scheduled execution is essentially free when nothing changed.<p>
+# **When `force_refresh=True`** — skip the probe; always proceed to the paginated fetch.<p>
+# **Paginated fetch loop:** request pages 1..`PAGE_CAP` with `limit=PAGE_LIMIT=1000`. Each response's `results` array holds up to 1000 station dicts; accumulate them. Exit when a page returns empty OR a partial page (fewer than `PAGE_LIMIT` rows = last page). Defensive double-condition because different APIs end pagination differently. The HTTPS session retries 3× with exponential backoff on HTTP 429 / 5xx. If the loop hits `PAGE_CAP` with a full last page, a WARNING is logged.
+
 
 # CELL ********************
 
@@ -99,8 +111,6 @@ session.mount("https://", HTTPAdapter(max_retries=Retry(
 
 headers = {"X-API-Key": openaq_api_key}
 
-# Lightweight up-to-date check: one limit=1 call returns meta.found.
-# If bronze already has the same count and force_refresh is False, skip the full paginated fetch.
 if not force_refresh:
     try:
         existing_count = spark.read.table(BRONZE_OPENAQ_LOCATIONS).count()
@@ -148,6 +158,7 @@ print(f"Total locations fetched: {len(records)}")
 # MARKDOWN ********************
 
 # ### Flatten
+# OpenAQ returns deeply nested JSON per station — `country.code`, `coordinates.latitude`, etc. Build a flat row-per-station dict, then convert to pandas once. Defensive `or {}` on each nested object handles edge cases where a record might be missing fields.
 
 # CELL ********************
 
@@ -182,6 +193,7 @@ print(f"Rows to write: {len(df_pd)}")
 # MARKDOWN ********************
 
 # ### Write
+# Convert pandas → Spark once, then full Delta overwrite with `overwriteSchema=True` (lets new upstream columns from OpenAQ land without manual schema migration).
 
 # CELL ********************
 

@@ -8,37 +8,6 @@
 > - **External stack** — local Docker (InfluxDB + Grafana + Telegram DQ bot)
 >   on top of the Fabric SQL endpoint
 
-## Current Status
-
-**Deadline:** May 21, 2026. Defense on May 26 but all artefacts must be ready by 21.
-
-### Phase completion
-
-| Phase | Status |
-|-------|--------|
-| Phase 0 — Terraform IaC | ✅ Done |
-| Phase 1 — Bronze ingestion | ✅ Done |
-| Phase 2 — Silver ETL | ✅ Done |
-| Phase 3 — Gold / star schema | ✅ Done |
-| Phase 4 — Visualizations | ✅ Done |
-| Phase 5 — Master Orchestrator | ✅ Done |
-| Phase 6 — Governance & Monitoring | ✅ Done |
-| Phase 7 — External Integrations | ✅ Done |
-| Phase 8 — Polish & Finalisation | ✅ Done |
-| Phase 9 — Defense preparation | ⬜ Not started |
-
-## Phase 9 — Defense preparation
-
-Talking points and insights for the May 26 defense. Markdown-only, no code changes.
-
-- [ ] **Answer the 4 key analytical questions** from `spec/Microsoft Fabric Data Engineering Project.pdf` with concrete numbers from the dashboards:
-  1. How does traffic intensity (trips/day) relate to air quality (PM2.5/NO2)? → cite Pearson r values from Correlation page
-  2. Which zones / times show the strongest link between taxi demand and pollution peaks? → cite Top Pickup Zones + combo chart
-  3. What is average revenue per trip USD vs EUR, and how does FX fluctuation affect it? → cite Total Revenue cards + FX chart on Economic Impact
-  4. Over multiple years, do we see mobility/economic growth at the expense of environmental quality? → cite YoY indicators + multi-year trends
-- [ ] **Per-page insight notes** — 2–3 sentences per dashboard page with specific numbers (Mobility post-COVID growth, Air Quality PM2.5 seasonality + 2022 coverage gap caveat, Correlation r interpretation, Economic Impact revenue growth + % of GDP).
-- [ ] **Defense slide structure** — outline of demo flow, architecture diagram references, screenshots already in `docs/img/`.
-
 ## Known data limitations
 
 Upstream quirks we accept and work around — not bugs to fix on our side.
@@ -103,12 +72,13 @@ Two surfaces — Fabric workspace and the local Docker stack.
 
 ```bash
 make build        # build the app image
-make up           # start influxdb + grafana + app-weather-sync + app-bot
+make up           # start influxdb + grafana + app (weather-sync loop) + app-bot
 make ps           # status
 make logs         # tail logs from all services
 
 make weather-sync-once   # one-shot Fabric → InfluxDB sync
 make ge-report           # run Great Expectations, print report to stdout
+make export-json         # one-shot Gold monthly slice → Dropbox (Power Automate trigger)
 
 make down         # stop containers (keep volumes)
 make clean        # stop + DELETE volumes (wipes InfluxDB + Grafana data)
@@ -130,7 +100,8 @@ The `app/` container reads `.env` at the repo root (template in `.env.example`):
 | `GRAFANA_ADMIN_USER` / `GRAFANA_ADMIN_PASSWORD` | Grafana admin login |
 | `FABRIC_SQL_SERVER` / `FABRIC_SP_CLIENT_ID` / `FABRIC_SP_CLIENT_SECRET` / `SILVER_LAKEHOUSE_DB` / `GOLD_WAREHOUSE_DB` | Fabric SQL endpoint via Entra ID Service Principal — `weather_sync` reads `silver_weather`; GE runner reads Silver + Gold tables |
 | `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS` | Telegram long-polling bot — token from BotFather; optional comma-separated chat-id allowlist |
-| `WEATHER_SYNC_INTERVAL_SECONDS` | Scheduler tick for `app-weather-sync` (3600 in compose; `0` = one-shot) |
+| `DROPBOX_ACCESS_TOKEN` / `DROPBOX_UPLOAD_DIR` | `export-json` upload target — short-lived OAuth token from the Dropbox App Console; folder the Power Automate flow watches |
+| `WEATHER_SYNC_INTERVAL_SECONDS` | Scheduler tick for the `app` weather-sync loop (3600 in compose; `0` = one-shot) |
 
 ## Key principles
 
