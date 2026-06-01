@@ -4,6 +4,7 @@ Usage:
     python -m app weather-sync   # Pull silver_weather from Fabric -> push to InfluxDB
     python -m app ge-report      # Run DQ checks on Silver + Gold, print report to stdout
     python -m app bot            # Start Telegram bot in long-polling mode
+    python -m app export-json    # Export a Gold JSON slice to Dropbox (Power Automate trigger)
 
 Environment knobs:
     WEATHER_SYNC_INTERVAL_SECONDS   If set and > 0, weather-sync loops with this delay
@@ -44,6 +45,9 @@ def main() -> None:
         print(run_report())
     elif cmd == "bot":
         from app.bot import run
+        run()
+    elif cmd == "export-json":
+        from app.export_json import run
         run()
     else:
         print(f"Unknown command: {cmd}")

@@ -26,6 +26,11 @@ INFLUXDB_ORG    = os.getenv("INFLUXDB_ORG", "")
 INFLUXDB_BUCKET = os.getenv("INFLUXDB_BUCKET", "weather_nyc")
 
 
+# Dropbox — Power Automate export job uploads the Gold JSON slice here
+DROPBOX_ACCESS_TOKEN = os.getenv("DROPBOX_ACCESS_TOKEN", "")
+DROPBOX_UPLOAD_DIR   = os.getenv("DROPBOX_UPLOAD_DIR", "/nyc-analytics")
+
+
 # Telegram bot (long-polling mode — no webhook)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
