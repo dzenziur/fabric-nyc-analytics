@@ -101,24 +101,31 @@ flowchart LR
 
   ![Star-schema semantic model](img/semantic_model.png)
 
-- **DAX measures in FactTaxiDaily:** Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD, Avg Fare EUR, Revenue as % of US GDP, 3 Pearson correlation coefficients (Trips vs PM2.5/NO2/O3), and 8 year-over-year measures (`<X> YoY %` + `<X> YoY Label` for Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD)
-- **DAX measures in FactAirQualityDaily:** Avg PM2.5, Avg NO2, Avg O3
-- **DAX measures in DimFX:** Avg FX Rate
-- **DAX measures in DimGDP:** USA GDP (USD) — year-aware via `COALESCE(SELECTEDVALUE(DimGDP[year]), SELECTEDVALUE(DimDate[year]))`
-- **Row-Level Security (RLS):** 5 static roles filtering `DimZone[service_zone]`, mapped to real NYC TLC licensing zones. Filter propagates to `FactTaxiDaily` via the existing `zone_key` relationship (single-direction). `FactAirQualityDaily` is not filtered (no zone relationship — air quality is station-based). All roles use `modelPermission: read`; workspace permissions (Admin/Member/Contributor bypass RLS — only Viewer respects it). Role-to-user assignment is done in Power BI Service after deployment.
+**DAX measures:**
 
-  ![Manage security roles — RLS on DimZone](img/rls_security_roles.png)
+| Table | Measures |
+|-------|----------|
+| FactTaxiDaily | Total Trips · Total Revenue USD / EUR · Avg Fare USD / EUR · Revenue as % of US GDP · 3 Pearson correlations (Trips vs PM2.5 / NO2 / O3) · 8 YoY measures (`<X> YoY %` + `<X> YoY Label` for Total Trips, Total Revenue USD / EUR, Avg Fare USD) |
+| FactAirQualityDaily | Avg PM2.5 · Avg NO2 · Avg O3 |
+| DimFX | Avg FX Rate |
+| DimGDP | USA GDP (USD) — year-aware via `COALESCE(SELECTEDVALUE(DimGDP[year]), SELECTEDVALUE(DimDate[year]))` |
 
-  | Role | DAX filter on DimZone | Business context |
-  |------|------------------------|------------------|
-  | `Admin` | — (no filter) | Data team, leadership — full visibility |
-  | `Yellow Cab Dispatcher` | `[service_zone] = "Yellow Zone"` | Manhattan medallion taxi operations |
-  | `Green Cab Dispatcher` | `[service_zone] = "Boro Zone"` | Outer-borough green-cab operations |
-  | `Airports Operator` | `[service_zone] = "Airports"` | JFK + LaGuardia airport team |
-  | `EWR Operator` | `[service_zone] = "EWR"` | Newark (NJ) airport team |
+### Row-Level Security (RLS)
+
+5 static roles filtering `DimZone[service_zone]`, mapped to real NYC TLC licensing zones. The filter propagates to `FactTaxiDaily` via the existing `zone_key` relationship (single-direction); `FactAirQualityDaily` is not filtered (no zone relationship — air quality is station-based). All roles use `modelPermission: read`; workspace permissions bypass RLS for Admin/Member/Contributor — only Viewer respects it. Role-to-user assignment is done in Power BI Service after deployment.
+
+![Manage security roles — RLS on DimZone](img/rls_security_roles.png)
+
+| Role | DAX filter on DimZone | Business context |
+|------|------------------------|------------------|
+| `Admin` | — (no filter) | Data team, leadership — full visibility |
+| `Yellow Cab Dispatcher` | `[service_zone] = "Yellow Zone"` | Manhattan medallion taxi operations |
+| `Green Cab Dispatcher` | `[service_zone] = "Boro Zone"` | Outer-borough green-cab operations |
+| `Airports Operator` | `[service_zone] = "Airports"` | JFK + LaGuardia airport team |
+| `EWR Operator` | `[service_zone] = "EWR"` | Newark (NJ) airport team |
 
 ### Power BI Report: NYC Analytics
-- **Item:** `fabric/Mobility Dashboard.Report/`
+- **Item:** `fabric/NYC Analytics.Report/`
 - **Semantic model:** `nyc_analytics_model`
 - **Pages:**
   - **Mobility** ([screenshot](img/powerbi_mobility.png)) — KPI cards with YoY change indicators (`▲ +X.X% vs prev year`, green/red conditional font color): Total Trips, Total Revenue USD, Avg Fare USD; year tile slicer, daily trips trend (line chart with range slider), top 10 pickup zones by trip count
@@ -196,7 +203,7 @@ For high-frequency scheduled runs (twice daily), full year rebuild of silver and
 ### Why InfluxDB for Weather Data?
 - Native time-series storage: data is indexed by timestamp — queries like "avg temp per hour" are 10–100× faster than on a relational DB
 - First-class Grafana integration (official data source plugin)
-- Free cloud tier sufficient for this project's data volume
+- Free, self-hostable OSS — sufficient for this project's data volume
 - Alternative considered: TimescaleDB (PostgreSQL extension) — more setup, less Grafana-native
 
 ### Why Grafana (not Power BI) for Weather?
@@ -210,7 +217,7 @@ For high-frequency scheduled runs (twice daily), full year rebuild of silver and
 - Supports both pandas and Spark backends
 - Alternative: dbt tests — but dbt is harder to integrate with Fabric Notebooks
 
-### Why Telegram / Discord Bot (not email)?
+### Why a Telegram Bot (not email)?
 - Demonstrates event-driven / interactive data quality monitoring
 - Low-latency: report arrives within seconds of command
 - More engaging for a defense demo than "it sends an email"
@@ -322,7 +329,7 @@ Snapshot of table sizes after a full 2021–2026 backfill (`pl_master_orchestrat
 ## Security & Governance
 
 - **Access control:** Workspace-level roles (Admin / Member / Contributor / Viewer). Only `Viewer` respects RLS — Admin/Member/Contributor bypass RLS by design.
-- **Row-Level Security:** 5 static roles on `nyc_analytics_model` filtering `DimZone[service_zone]`. See [Power BI Semantic Model](#power-bi-semantic-model) section above for the full role table and rationale.
+- **Row-Level Security:** 5 static roles on `nyc_analytics_model` filtering `DimZone[service_zone]`. See [Row-Level Security (RLS)](#row-level-security-rls) section above for the full role table and rationale.
 - **Lineage:** end-to-end data flow visualised via Fabric workspace built-in lineage view (`Workspace → Lineage view`). The graph covers external sources (TLC CloudFront, ECB FX, World Bank, OpenAQ) → Bronze ingestion (Dataflows + Notebooks + Pipelines) → Silver ETL → Gold Warehouse → Semantic Model → Report. See screenshot: `docs/img/workspace-lineage.png`.
 
   ![Workspace lineage](img/workspace-lineage.png)
