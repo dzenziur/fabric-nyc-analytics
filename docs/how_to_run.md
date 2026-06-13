@@ -221,7 +221,7 @@ Notes:
 
 Wall-clock end-to-end for the 6-year backfill: first bronze activity starts 18:35:45 → gold_etl finishes ~18:54:50 = **~19 minutes** (down from ~31 min before the parallelisation + dependency fixes). Bronze layer completes in ~7m, then silver (~8m), then gold (~4m).
 
-![pl_master_orchestrator — full 2021–2026 backfill, 73/73 activities green on 2026-05-20](img/pl_master_orchestrator_full_run.png)
+![pl_master_orchestrator — full 2021–2026 backfill, 73/73 activities green on 2026-05-20](img/pl_master_orchestrator_full_run_timings.png)
 
 ### Fabric Lineage View
 

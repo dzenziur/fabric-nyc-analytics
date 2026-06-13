@@ -31,7 +31,7 @@ All five data sources land in a single Fabric workspace, are cleaned through PyS
 | **Correlation** | **Economic Impact** |
 | ![Correlation](docs/img/powerbi_correlation.png) | ![Economic Impact](docs/img/powerbi_economic_impact.png) |
 
-Full visual breakdown: see [`docs/architecture.md`](docs/architecture.md#power-bi-report-nyc-analytics).
+Full report as PDF: [`docs/NYC_Analytics_Report.pdf`](docs/NYC_Analytics_Report.pdf) · visual breakdown in [`docs/architecture.md`](docs/architecture.md#power-bi-report-nyc-analytics).
 
 ---
 
@@ -61,7 +61,51 @@ Full visual breakdown: see [`docs/architecture.md`](docs/architecture.md#power-b
                   +----------------------------------------------------------+
 ```
 
+**The Fabric workspace — all platform items:**
+
+![Workspace](docs/img/workspace_overview.png)
+
 Architectural decisions (Why X over Y) documented in [`docs/architecture.md`](docs/architecture.md).
+
+---
+
+## Orchestration
+
+A single Data Factory pipeline (`pl_master_orchestrator`) drives the whole platform — parallel Bronze ingestion + Dataflows, then Silver, then Gold — parameterised by year range and `force_refresh`. It runs both as a one-off **6-year backfill (2021–2026)** and as **twice-daily incremental loads** (MERGE on watermarks).
+
+![Master orchestrator pipeline](docs/img/pl_master_orchestrator_design.png)
+
+**Run timings** — a full 6-year backfill completes end-to-end in ~10 minutes; incremental runs are much faster.
+
+_Full backfill (2021–2026):_
+
+![Backfill timings](docs/img/pl_master_orchestrator_full_run_timings.png)
+
+_Incremental run (twice daily):_
+
+![Incremental timings](docs/img/pl_master_orchestrator_incremental_run_timings.png)
+
+---
+
+## Data model & security
+
+A **star schema** in the Fabric Warehouse, served through a **Direct Lake** semantic model. Row-Level Security restricts each dispatcher role to its own service zone.
+
+| Star-schema semantic model | Row-Level Security roles |
+|---|---|
+| ![Semantic model](docs/img/semantic_model.png) | ![RLS roles](docs/img/rls_security_roles.png) |
+
+---
+
+## External integrations (local Docker stack)
+
+Three integrations read from the Fabric SQL endpoint and run locally via Docker Compose:
+
+| Grafana — weather dashboard (InfluxDB) | Telegram — Great Expectations data-quality bot |
+|---|---|
+| ![Grafana](docs/img/grafana_weather.png) | ![Telegram](docs/img/telegram_report.png) |
+| **Power Automate — cloud flow** | **Power Automate — generated e-mail** |
+| ![Power Automate flow](docs/img/power_automate_flow.png) | ![Power Automate email](docs/img/power_automate_email.png) |
 
 ---
 
@@ -136,8 +180,7 @@ app/          External Python CLI dispatcher (weather-sync, ge-report, Telegram 
               Single Docker image, three docker-compose services
 terraform/    IaC: workspace, lakehouses, warehouse
 grafana/      Provisioned datasource + dashboards
-docs/         Architecture, data dictionary, how-to-run, screenshots
-spec/         Original project specification (PDF)
+docs/         Architecture, data dictionary, how-to-run, screenshots, report PDF
 Makefile      Compose + IaC shortcuts (`make help`)
 ```
 

@@ -110,7 +110,7 @@
   - **Mobility** ([screenshot](img/powerbi_mobility.png)) — KPI cards with YoY change indicators (`▲ +X.X% vs prev year`, green/red conditional font color): Total Trips, Total Revenue USD, Avg Fare USD; year tile slicer, daily trips trend (line chart with range slider), top 10 pickup zones by trip count
   - **Air Quality** ([screenshot](img/powerbi_air_quality.png)) — KPI cards (Avg NO2, Avg O3, Avg PM2.5) with conditional fill color based on WHO 24h limits (green/yellow/red), year tile slicer, Azure Maps bubble visual (station coordinates, bubble size + gradient color by Avg PM2.5), combined PM2.5+NO2+O3 daily trend with WHO threshold reference lines (PM2.5=15, NO2=25, O3=100) and zoom slider, top 10 stations by Avg PM2.5
   - **Mobility & Air Quality Correlation** ([screenshot](img/powerbi_correlation.png)) — KPI cards: Total Trips, plus 3 Pearson correlation coefficient cards (`r vs PM2.5`, `r vs NO2`, `r vs O3`) computed via DAX `SUMMARIZE` + `SUMX` over `DimDate[date_key]`; year tile slicer; combo chart with Total Trips bars + PM2.5/NO2/O3 lines (monthly aggregation)
-  - **Economic Impact** ([screenshot](img/powerbi_economic_impact.png)) — KPI cards with YoY indicators (Total Revenue USD, Total Revenue EUR), `Avg Fare USD` and `Avg Fare EUR` cards (trip-weighted via `DIVIDE([Total Revenue], [Total Trips])` — directly answers spec Q3 "average revenue per trip in USD vs EUR"), plus `% of US GDP` card and `USA GDP (USD)` card (latter year-aware via `COALESCE(SELECTEDVALUE(DimGDP[year]), SELECTEDVALUE(DimDate[year]))`); year tile slicer; clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year, 2000–2024), `Revenue as % of US GDP` bar chart by year (2021–2024 — World Bank GDP ends 2024), USD/EUR exchange rate line chart (filtered to 2021–2026 to match taxi window)
+  - **Economic Impact** ([screenshot](img/powerbi_economic_impact.png)) — KPI cards with YoY indicators (Total Revenue USD, Total Revenue EUR), `Avg Fare USD` and `Avg Fare EUR` cards (trip-weighted via `DIVIDE([Total Revenue], [Total Trips])` — directly answers "average revenue per trip in USD vs EUR"), plus `% of US GDP` card and `USA GDP (USD)` card (latter year-aware via `COALESCE(SELECTEDVALUE(DimGDP[year]), SELECTEDVALUE(DimDate[year]))`); year tile slicer; clustered column chart (revenue USD vs EUR by year), line chart (USA GDP by year, 2000–2024), `Revenue as % of US GDP` bar chart by year (2021–2024 — World Bank GDP ends 2024), USD/EUR exchange rate line chart (filtered to 2021–2026 to match taxi window)
 
 ### Notebooks
 All notebooks live in `fabric/` as Fabric Notebook items synced via Git integration. There is no separate `notebooks/` directory.
@@ -170,7 +170,7 @@ For high-frequency scheduled runs (twice daily), full year rebuild of silver and
 
 **Alternatives considered:**
 - Separate `incremental_mode` parameter per notebook — rejected: harder for users to reason about; force_refresh cascading is intuitive
-- Two orchestrators (daily + monthly) — rejected per spec re-read: spec says "daily/hourly" not "daily AND monthly"; one orchestrator with idempotent prepare + incremental ETL works for any frequency
+- Two orchestrators (daily + monthly) — rejected because the requirement was "daily/hourly", not "daily AND monthly"; one orchestrator with idempotent prepare + incremental ETL works for any frequency
 - Delta Change Data Feed (CDF) for change tracking — rejected as over-engineered for our scale
 
 ### Why Open-Meteo for Weather?

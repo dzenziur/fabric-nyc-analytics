@@ -47,7 +47,6 @@ app/          External Python app — CLI dispatcher (weather-sync, ge-report, b
 terraform/    IaC: workspace, lakehouses, warehouse (own Makefile inside — `make -C terraform help`)
 grafana/      Provisioned datasource + dashboards (mounted into Grafana container)
 docs/         Architecture, data dictionary, how-to-run, screenshots (img/)
-spec/         Original project specification (PDF)
 README.md     Project overview, dashboard previews, architecture diagram, quick start
 Makefile      Docker Compose shortcuts for the external stack (`make help`)
 ```

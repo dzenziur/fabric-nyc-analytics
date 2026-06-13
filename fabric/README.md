@@ -98,7 +98,7 @@ Screenshots in `docs/img/powerbi_{mobility,air_quality,correlation,economic_impa
 | Mobility | KPI cards with YoY indicators (Total Trips, Revenue USD, Avg Fare), year tile slicer, trips/day trend, top 10 pickup zones |
 | Air Quality | KPI cards (Avg NO2/O3/PM2.5) with WHO-based conditional fill color, year tile slicer, Azure Maps bubble visual (Avg PM2.5 gradient), PM2.5+NO2+O3 daily trend with WHO threshold lines and zoom slider, top 10 stations by Avg PM2.5 |
 | Mobility & Air Quality Correlation | KPI cards: Total Trips + 3 Pearson r cards (`r vs PM2.5/NO2/O3`); combo chart (Trips bars + PM2.5/NO2/O3 lines, monthly) |
-| Economic Impact | KPI cards with YoY indicators (Revenue USD, Revenue EUR) + Avg Fare USD + Avg Fare EUR (trip-weighted, answer spec Q3) + `% of US GDP` + year-aware `USA GDP (USD)`; revenue by year (USD vs EUR bars), USA GDP line (2000–2024), Revenue as % of US GDP bars (2021–2024), USD/EUR exchange rate (2021–2026) |
+| Economic Impact | KPI cards with YoY indicators (Revenue USD, Revenue EUR) + Avg Fare USD + Avg Fare EUR (trip-weighted; revenue per trip in USD vs EUR) + `% of US GDP` + year-aware `USA GDP (USD)`; revenue by year (USD vs EUR bars), USA GDP line (2000–2024), Revenue as % of US GDP bars (2021–2024), USD/EUR exchange rate (2021–2026) |
 
 ---
 
