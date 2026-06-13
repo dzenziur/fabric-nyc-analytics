@@ -7,24 +7,24 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 
 ## Workspace Overview
 
-| Item | Type | Layer | Status |
-|------|------|-------|--------|
-| `bronze_lakehouse` | Lakehouse | Bronze | ✅ Active |
-| `silver_lakehouse` | Lakehouse | Silver | ✅ Active |
-| `gold_warehouse` | Warehouse | Gold | ✅ Active |
-| `df_ecb_fx` | Dataflow Gen2 | Bronze | ✅ Active |
-| `df_worldbank_gdp` | Dataflow Gen2 | Bronze | ✅ Active |
-| `pl_ingest_nyc_taxi` | Pipeline | Bronze | ✅ Active |
-| `pl_master_orchestrator` | Pipeline | Orchestration | ✅ Active |
-| `bronze_ingest_openaq_locations` | Notebook | Bronze | ✅ Active |
-| `bronze_ingest_openaq_measurements` | Notebook | Bronze | ✅ Active |
-| `bronze_ingest_taxi_zones` | Notebook | Bronze | ✅ Active |
-| `bronze_ingest_weather` | Notebook | Bronze | ✅ Active |
-| `prepare_taxi_ingestion` | Notebook | Bronze | ✅ Active |
-| `silver_etl` | Notebook | Silver | ✅ Active |
-| `gold_etl` | Notebook | Gold | ✅ Active |
-| `nyc_analytics_model` | Semantic Model | Reporting | ✅ Active |
-| `NYC Analytics` | Report | Reporting | ✅ Active |
+| Item | Type | Layer |
+|------|------|-------|
+| `bronze_lakehouse` | Lakehouse | Bronze |
+| `silver_lakehouse` | Lakehouse | Silver |
+| `gold_warehouse` | Warehouse | Gold |
+| `df_ecb_fx` | Dataflow Gen2 | Bronze |
+| `df_worldbank_gdp` | Dataflow Gen2 | Bronze |
+| `pl_ingest_nyc_taxi` | Pipeline | Bronze |
+| `pl_master_orchestrator` | Pipeline | Orchestration |
+| `bronze_ingest_openaq_locations` | Notebook | Bronze |
+| `bronze_ingest_openaq_measurements` | Notebook | Bronze |
+| `bronze_ingest_taxi_zones` | Notebook | Bronze |
+| `bronze_ingest_weather` | Notebook | Bronze |
+| `prepare_taxi_ingestion` | Notebook | Bronze |
+| `silver_etl` | Notebook | Silver |
+| `gold_etl` | Notebook | Gold |
+| `nyc_analytics_model` | Semantic Model | Reporting |
+| `NYC Analytics` | Report | Reporting |
 
 ---
 

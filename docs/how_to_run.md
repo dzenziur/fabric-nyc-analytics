@@ -74,7 +74,7 @@ Resources created:
 1. Sync repo via Fabric Git integration — `bronze_ingest_openaq_measurements` notebook appears in workspace
 2. Ensure `bronze_lakehouse` is the default attached lakehouse
 3. Run all cells — reads OpenAQ public S3 archive for all NYC stations (last 5 years) → `bronze_openaq_measurements`
-4. Expected: ~1.1M rows across ~22 NYC stations
+4. Expected: ~2.4M rows across ~22 NYC stations (full 2021–2026 backfill)
 
 ### 2d. World Bank GDP Dataflow Gen2
 
@@ -191,9 +191,9 @@ Expected tables in gold_warehouse:
      gold_etl                               (Notebook, pass year_start/year_end/force_refresh)
    ```
    Only `ForEach_taxi_months` depends on `prepare_taxi_ingestion` (consumes its `exitValue`); every other source runs independently so a TLC outage doesn't block OpenAQ/Weather/FX/GDP and vice-versa.
-4. Run with parameters `year_start=2023`, `year_end=2023` for single-year demo; `year_start=2022`, `year_end=2024` for full backfill. The `force_refresh` parameter cascades through the entire pipeline:
+4. Run with parameters `year_start=2023`, `year_end=2023` for single-year demo; `year_start=2021`, `year_end=2026` for full backfill. The `force_refresh` parameter cascades through the entire pipeline:
    - **`force_refresh=false` (default, used by scheduled runs)** — incremental processing throughout: `bronze_openaq_measurements` fetches only current + previous month from S3, `silver_openaq_measurements` MERGEs new rows past watermark, `silver_taxi_trips` appends only new `(year, month)` partitions, `FactAirQualityDaily`/`FactTaxiDaily` re-aggregate only last 7 days from `MAX(gold.date_key)`. Typical run: ~1-2 min total.
-   - **`force_refresh=true` (manual backfill or recovery)** — full year-range rebuild for all layers; respects `year_start`/`year_end`. Typical run: ~15-22 min for 2-year range.
+   - **`force_refresh=true` (manual backfill or recovery)** — full year-range rebuild for all layers; respects `year_start`/`year_end`. Typical run: ~19 min end-to-end for the full 2021–2026 backfill (see § Typical activity durations).
    - Partial years are supported — running for `year_end=2026` mid-year ingests only the months TLC has published (via `prepare_taxi_ingestion`).
 
 ### Typical activity durations

@@ -7,7 +7,7 @@
 ![Power BI](https://img.shields.io/badge/Power%20BI-Direct%20Lake-yellow)
 ![PySpark](https://img.shields.io/badge/PySpark-Notebooks-red)
 ![Status](https://img.shields.io/badge/Status-Feature%20Complete-success)
-[![Report PDF](https://img.shields.io/badge/Report-PDF-EC1C24)](docs/NYC_Analytics_Report.pdf)
+[![Report PDF](https://img.shields.io/badge/Report-PDF-EC1C24)](docs/NYC%20Analytics.pdf)
 
 ---
 
@@ -32,7 +32,7 @@ All five data sources land in a single Fabric workspace, are cleaned through PyS
 | **Correlation** | **Economic Impact** |
 | ![Correlation](docs/img/powerbi_correlation.png) | ![Economic Impact](docs/img/powerbi_economic_impact.png) |
 
-**Report (static PDF export): [`docs/NYC_Analytics_Report.pdf`](docs/NYC_Analytics_Report.pdf)** · visual breakdown in [`docs/architecture.md`](docs/architecture.md#power-bi-report-nyc-analytics).
+**Report (static PDF export): [`docs/NYC Analytics.pdf`](docs/NYC%20Analytics.pdf)** · visual breakdown in [`docs/architecture.md`](docs/architecture.md#power-bi-report-nyc-analytics).
 
 ---
 
@@ -145,7 +145,7 @@ Three integrations read from the Fabric SQL endpoint and run locally via Docker 
 | OpenAQ Air Quality | JSON API + S3 archive | PySpark Notebook (`bronze_ingest_openaq_*`) | Daily |
 | World Bank GDP | JSON API | Dataflow Gen2 (`df_worldbank_gdp`) | Yearly |
 | ECB FX rates | CSV API | Dataflow Gen2 (`df_ecb_fx`) | Daily |
-| Open-Meteo Weather | JSON API | Python job + Notebook (`bronze_ingest_weather`) | Hourly |
+| Open-Meteo Weather | JSON API | PySpark Notebook (`bronze_ingest_weather`) | Hourly |
 
 Full data dictionary: [`docs/data_dictionary.md`](docs/data_dictionary.md).
 
