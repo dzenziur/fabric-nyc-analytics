@@ -7,6 +7,7 @@
 ![Power BI](https://img.shields.io/badge/Power%20BI-Direct%20Lake-yellow)
 ![PySpark](https://img.shields.io/badge/PySpark-Notebooks-red)
 ![Status](https://img.shields.io/badge/Status-Feature%20Complete-success)
+[![Report PDF](https://img.shields.io/badge/Report-PDF-EC1C24)](docs/NYC_Analytics_Report.pdf)
 
 ---
 
@@ -31,34 +32,42 @@ All five data sources land in a single Fabric workspace, are cleaned through PyS
 | **Correlation** | **Economic Impact** |
 | ![Correlation](docs/img/powerbi_correlation.png) | ![Economic Impact](docs/img/powerbi_economic_impact.png) |
 
-Full report as PDF: [`docs/NYC_Analytics_Report.pdf`](docs/NYC_Analytics_Report.pdf) · visual breakdown in [`docs/architecture.md`](docs/architecture.md#power-bi-report-nyc-analytics).
+**Report (static PDF export): [`docs/NYC_Analytics_Report.pdf`](docs/NYC_Analytics_Report.pdf)** · visual breakdown in [`docs/architecture.md`](docs/architecture.md#power-bi-report-nyc-analytics).
 
 ---
 
 ## Architecture
 
-```
-+--------------------------- Microsoft Fabric Workspace ---------------------------+
-|                                                                                  |
-|  Sources         Bronze Lakehouse     Silver Lakehouse     Gold Warehouse        |
-|  -------         ----------------     ----------------     --------------        |
-|  NYC TLC      -> bronze_taxi_trips -> silver_taxi_trips -> FactTaxiDaily         |
-|  OpenAQ API   -> bronze_openaq_*   -> silver_openaq_*   -> FactAirQualityDaily   |
-|  World Bank   -> bronze_gdp        -> silver_gdp        -> DimGDP, DimDate       |
-|  ECB CSV      -> bronze_fx_rates   -> silver_fx_rates   -> DimFX, DimZone        |
-|  Open-Meteo   -> bronze_weather    -> silver_weather    --+                      |
-|                                                           |                      |
-|  Orchestration: pl_master_orchestrator (Data Factory)     |                      |
-|  Star schema -> Power BI semantic model (Direct Lake)     |                      |
-+-----------------------------------------------------------+----------------------+
-                                                            v
-                  +---------------- External Stack (Docker) -----------------+
-                  |                                                          |
-                  |  silver_weather -> InfluxDB -> Grafana dashboard         |
-                  |  Silver + Gold  -> Great Expectations -> Telegram bot    |
-                  |  Gold monthly   -> Dropbox -> Power Automate -> mail/push|
-                  |                                                          |
-                  +----------------------------------------------------------+
+```mermaid
+flowchart LR
+    subgraph SRC[Sources]
+        direction TB
+        S1[NYC TLC taxi]
+        S2[OpenAQ air quality]
+        S3[World Bank GDP]
+        S4[ECB FX rates]
+        S5[Open-Meteo weather]
+    end
+    subgraph FAB[Microsoft Fabric]
+        direction LR
+        BRZ[(Bronze<br/>Lakehouse)]
+        SLV[(Silver<br/>Lakehouse)]
+        GLD[(Gold Warehouse<br/>star schema)]
+        SM[Semantic model<br/>Direct Lake]
+        PBI[Power BI<br/>4-page report]
+        BRZ --> SLV --> GLD --> SM --> PBI
+    end
+    subgraph EXT[External stack - Docker]
+        direction TB
+        GRAF[Grafana weather]
+        TG[Telegram DQ bot]
+        PA[Power Automate<br/>email + push]
+    end
+    SRC ==> BRZ
+    SLV -. weather .-> GRAF
+    SLV -. DQ .-> TG
+    GLD -. DQ .-> TG
+    GLD -. monthly .-> PA
 ```
 
 **The Fabric workspace — all platform items:**
@@ -71,19 +80,11 @@ Architectural decisions (Why X over Y) documented in [`docs/architecture.md`](do
 
 ## Orchestration
 
-A single Data Factory pipeline (`pl_master_orchestrator`) drives the whole platform — parallel Bronze ingestion + Dataflows, then Silver, then Gold — parameterised by year range and `force_refresh`. It runs both as a one-off **6-year backfill (2021–2026)** and as **twice-daily incremental loads** (MERGE on watermarks).
+A single Data Factory pipeline (`pl_master_orchestrator`) drives the whole platform — parallel Bronze ingestion + Dataflows, then Silver, then Gold — parameterised by year range and `force_refresh`. It runs both as a one-off **6-year backfill (2021–2026)** and as **twice-daily incremental loads** (MERGE on watermarks) — incremental mode reprocesses only recent partitions, so scheduled runs stay fast and light.
 
 ![Master orchestrator pipeline](docs/img/pl_master_orchestrator_design.png)
 
-**Run timings** — a full 6-year backfill completes end-to-end in ~10 minutes; incremental runs are much faster.
-
-_Full backfill (2021–2026):_
-
-![Backfill timings](docs/img/pl_master_orchestrator_full_run_timings.png)
-
-_Incremental run (twice daily):_
-
-![Incremental timings](docs/img/pl_master_orchestrator_incremental_run_timings.png)
+Run timings and incremental-mode behaviour: see [`docs/how_to_run.md`](docs/how_to_run.md).
 
 ---
 
@@ -118,7 +119,7 @@ Three integrations read from the Fabric SQL endpoint and run locally via Docker 
 | Modeling | Star schema in Fabric Warehouse, Direct Lake semantic model |
 | BI | Power BI (4 pages, DAX measures, RLS, Azure Maps) |
 | IaC | Terraform (workspace, lakehouses, warehouse) |
-| External stack | Docker Compose (InfluxDB, Grafana, Python app) |
+| External stack | Docker Compose (InfluxDB + Grafana + Python app); Dropbox + Power Automate (e-mail + mobile push) |
 | Data quality | Great Expectations + Telegram bot |
 | CI | Fabric Git integration (notebook + report sync) |
 

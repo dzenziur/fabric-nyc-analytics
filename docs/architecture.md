@@ -2,27 +2,36 @@
 
 ## High-Level Diagram
 
-```
-+--------------------------- Microsoft Fabric Workspace ---------------------------+
-|                                                                                  |
-|  Sources         Bronze Lakehouse     Silver Lakehouse     Gold Warehouse        |
-|  -------         ----------------     ----------------     --------------        |
-|  NYC TLC      -> bronze_taxi_trips -> silver_taxi_trips -> FactTaxiDaily         |
-|  OpenAQ API   -> bronze_openaq_*   -> silver_openaq_*   -> FactAirQualityDaily   |
-|  World Bank   -> bronze_gdp        -> silver_gdp        -> DimGDP, DimDate       |
-|  ECB CSV      -> bronze_fx_rates   -> silver_fx_rates   -> DimFX, DimZone        |
-|  Open-Meteo   -> bronze_weather    -> silver_weather    --+                      |
-|                                                           |                      |
-|  Orchestration: pl_master_orchestrator (Data Factory)     |                      |
-|  Star schema -> Power BI semantic model (Direct Lake)     |                      |
-+-----------------------------------------------------------+----------------------+
-                                                            v
-                  +---------------- External Stack (Docker) -----------------+
-                  |                                                          |
-                  |  silver_weather -> InfluxDB -> Grafana dashboard         |
-                  |  Silver + Gold  -> Great Expectations -> Telegram bot    |
-                  |                                                          |
-                  +----------------------------------------------------------+
+```mermaid
+flowchart LR
+    subgraph SRC[Sources]
+        direction TB
+        S1[NYC TLC taxi]
+        S2[OpenAQ air quality]
+        S3[World Bank GDP]
+        S4[ECB FX rates]
+        S5[Open-Meteo weather]
+    end
+    subgraph FAB[Microsoft Fabric]
+        direction LR
+        BRZ[(Bronze<br/>Lakehouse)]
+        SLV[(Silver<br/>Lakehouse)]
+        GLD[(Gold Warehouse<br/>star schema)]
+        SM[Semantic model<br/>Direct Lake]
+        PBI[Power BI<br/>4-page report]
+        BRZ --> SLV --> GLD --> SM --> PBI
+    end
+    subgraph EXT[External stack - Docker]
+        direction TB
+        GRAF[Grafana weather]
+        TG[Telegram DQ bot]
+        PA[Power Automate<br/>email + push]
+    end
+    SRC ==> BRZ
+    SLV -. weather .-> GRAF
+    SLV -. DQ .-> TG
+    GLD -. DQ .-> TG
+    GLD -. monthly .-> PA
 ```
 
 ---
@@ -89,11 +98,16 @@
   - `FactTaxiDaily[zone_key]` → `DimZone[zone_key]` (Many:1, active)
   - `FactAirQualityDaily[date_key]` → `DimDate[date_key]` (Many:1, active)
   - `DimGDP` — no relationship (used as standalone context table)
+
+  ![Star-schema semantic model](img/semantic_model.png)
+
 - **DAX measures in FactTaxiDaily:** Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD, Avg Fare EUR, Revenue as % of US GDP, 3 Pearson correlation coefficients (Trips vs PM2.5/NO2/O3), and 8 year-over-year measures (`<X> YoY %` + `<X> YoY Label` for Total Trips, Total Revenue USD, Total Revenue EUR, Avg Fare USD)
 - **DAX measures in FactAirQualityDaily:** Avg PM2.5, Avg NO2, Avg O3
 - **DAX measures in DimFX:** Avg FX Rate
 - **DAX measures in DimGDP:** USA GDP (USD) — year-aware via `COALESCE(SELECTEDVALUE(DimGDP[year]), SELECTEDVALUE(DimDate[year]))`
 - **Row-Level Security (RLS):** 5 static roles filtering `DimZone[service_zone]`, mapped to real NYC TLC licensing zones. Filter propagates to `FactTaxiDaily` via the existing `zone_key` relationship (single-direction). `FactAirQualityDaily` is not filtered (no zone relationship — air quality is station-based). All roles use `modelPermission: read`; workspace permissions (Admin/Member/Contributor bypass RLS — only Viewer respects it). Role-to-user assignment is done in Power BI Service after deployment.
+
+  ![Manage security roles — RLS on DimZone](img/rls_security_roles.png)
 
   | Role | DAX filter on DimZone | Business context |
   |------|------------------------|------------------|

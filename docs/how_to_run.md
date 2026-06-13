@@ -223,6 +223,10 @@ Wall-clock end-to-end for the 6-year backfill: first bronze activity starts 18:3
 
 ![pl_master_orchestrator — full 2021–2026 backfill, 73/73 activities green on 2026-05-20](img/pl_master_orchestrator_full_run_timings.png)
 
+In default (incremental) mode a scheduled run reprocesses only the current/previous partitions, so it finishes far faster — e.g. `bronze_ingest_openaq_measurements` drops from ~17 min on the full backfill to under 2 min:
+
+![pl_master_orchestrator — incremental run timings](img/pl_master_orchestrator_incremental_run_timings.png)
+
 ### Fabric Lineage View
 
 `Workspace → Lineage view` renders the dependency graph between every item (Lakehouses, Warehouses, Notebooks, Dataflows, Pipelines, Semantic Model, Report). Use the per-item view (click an item → focused lineage) for a clean picture — the full workspace view contains orphan connection nodes (`HttpServer`, `FabricDataPipelines`) that aren't useful.
