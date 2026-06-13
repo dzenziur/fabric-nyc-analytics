@@ -1,6 +1,8 @@
 # NYC Analytics
 
 > Unified analytics platform on **Microsoft Fabric** integrating NYC Taxi mobility, OpenAQ air quality, World Bank GDP, ECB FX rates, and Open-Meteo weather data — built on a medallion architecture (Bronze → Silver → Gold) with Power BI dashboards on top.
+>
+> Built end-to-end — Terraform-provisioned workspace, parallelised PySpark ingestion of **~200M taxi trips** across **5 data sources**, a twice-daily orchestrator, a Direct Lake star-schema model with Row-Level Security, and an external Docker stack (Grafana + Telegram data-quality bot + Power Automate).
 
 ![Microsoft Fabric](https://img.shields.io/badge/Microsoft%20Fabric-Lakehouse%20%2B%20Warehouse-blue)
 ![Medallion](https://img.shields.io/badge/Architecture-Medallion-orange)
@@ -28,9 +30,9 @@ All five data sources land in a single Fabric workspace, are cleaned through PyS
 
 | Mobility | Air Quality |
 |:---:|:---:|
-| ![Mobility](docs/img/powerbi_mobility.png) | ![Air Quality](docs/img/powerbi_air_quality.png) |
+| ![Mobility](docs/img/powerbi_mobility.png)<br/><sub>Trips, revenue & average fare with year-over-year KPIs; daily trips trend and top pickup zones</sub> | ![Air Quality](docs/img/powerbi_air_quality.png)<br/><sub>PM2.5 / NO₂ / O₃ against WHO limits; Azure Maps station map and daily pollutant trends</sub> |
 | **Correlation** | **Economic Impact** |
-| ![Correlation](docs/img/powerbi_correlation.png) | ![Economic Impact](docs/img/powerbi_economic_impact.png) |
+| ![Correlation](docs/img/powerbi_correlation.png)<br/><sub>Pearson correlation between taxi demand and each pollutant; trips-vs-pollution combo chart</sub> | ![Economic Impact](docs/img/powerbi_economic_impact.png)<br/><sub>Revenue in USD vs EUR, average fare, share of US GDP, and USD/EUR FX over time</sub> |
 
 **Report (static PDF export): [`docs/NYC Analytics.pdf`](docs/NYC%20Analytics.pdf)** · visual breakdown in [`docs/architecture.md`](docs/architecture.md#power-bi-report-nyc-analytics).
 
