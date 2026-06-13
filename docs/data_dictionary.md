@@ -109,7 +109,7 @@ Note: static reference data (~265 rows), rarely changes; downloaded once per not
 | location_id | int | TLC zone ID (1–265) — renamed from `LocationID`; cast from CSV string to int at bronze write time (requires force_refresh re-run after notebook update to fully materialise) |
 | borough | string | Manhattan / Brooklyn / Queens / Bronx / Staten Island / EWR — renamed from `Borough` |
 | zone | string | Zone name (e.g., "JFK Airport") — renamed from `Zone` |
-| service_zone | string | Boro Zone / Yellow Zone / Airports |
+| service_zone | string | Boro Zone / Yellow Zone / Airports / EWR |
 
 ---
 
@@ -264,7 +264,7 @@ Added for medallion strictness — `gold_etl.DimZone` reads from silver instead 
 | location_id | int | TLC zone ID (1–265) | Cast to int (defensive); nulls dropped |
 | borough | string | Manhattan / Brooklyn / Queens / Bronx / Staten Island / EWR | Unchanged |
 | zone | string | Zone name (e.g., "JFK Airport") | Unchanged |
-| service_zone | string | Boro Zone / Yellow Zone / Airports | Unchanged |
+| service_zone | string | Boro Zone / Yellow Zone / Airports / EWR | Unchanged |
 
 ---
 
@@ -348,7 +348,7 @@ Source: `silver_taxi_zones` (cleaned in `silver_etl`; originally from TLC zone l
 | location_id | integer | TLC zone ID (1–265) |
 | zone_name | string | Zone name (e.g., "JFK Airport") |
 | borough | string | Manhattan / Brooklyn / Queens / Bronx / Staten Island / EWR |
-| service_zone | string | Boro Zone / Yellow Zone / Airports |
+| service_zone | string | Boro Zone / Yellow Zone / Airports / EWR |
 
 ---
 

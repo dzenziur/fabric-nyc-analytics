@@ -7,24 +7,24 @@ All items are auto-exported by Fabric and versioned here — do not edit JSON/TM
 
 ## Workspace Overview
 
-| Item | Type | Layer | Status |
-|------|------|-------|--------|
-| `bronze_lakehouse` | Lakehouse | Bronze | ✅ Active |
-| `silver_lakehouse` | Lakehouse | Silver | ✅ Active |
-| `gold_warehouse` | Warehouse | Gold | ✅ Active |
-| `df_ecb_fx` | Dataflow Gen2 | Bronze | ✅ Active |
-| `df_worldbank_gdp` | Dataflow Gen2 | Bronze | ✅ Active |
-| `pl_ingest_nyc_taxi` | Pipeline | Bronze | ✅ Active |
-| `pl_master_orchestrator` | Pipeline | Orchestration | ✅ Active |
-| `bronze_ingest_openaq_locations` | Notebook | Bronze | ✅ Active |
-| `bronze_ingest_openaq_measurements` | Notebook | Bronze | ✅ Active |
-| `bronze_ingest_taxi_zones` | Notebook | Bronze | ✅ Active |
-| `bronze_ingest_weather` | Notebook | Bronze | ✅ Active |
-| `prepare_taxi_ingestion` | Notebook | Bronze | ✅ Active |
-| `silver_etl` | Notebook | Silver | ✅ Active |
-| `gold_etl` | Notebook | Gold | ✅ Active |
-| `nyc_analytics_model` | Semantic Model | Reporting | ✅ Active |
-| `NYC Analytics` | Report | Reporting | ✅ Active |
+| Item | Type | Layer |
+|------|------|-------|
+| `bronze_lakehouse` | Lakehouse | Bronze |
+| `silver_lakehouse` | Lakehouse | Silver |
+| `gold_warehouse` | Warehouse | Gold |
+| `df_ecb_fx` | Dataflow Gen2 | Bronze |
+| `df_worldbank_gdp` | Dataflow Gen2 | Bronze |
+| `pl_ingest_nyc_taxi` | Pipeline | Bronze |
+| `pl_master_orchestrator` | Pipeline | Orchestration |
+| `bronze_ingest_openaq_locations` | Notebook | Bronze |
+| `bronze_ingest_openaq_measurements` | Notebook | Bronze |
+| `bronze_ingest_taxi_zones` | Notebook | Bronze |
+| `bronze_ingest_weather` | Notebook | Bronze |
+| `prepare_taxi_ingestion` | Notebook | Bronze |
+| `silver_etl` | Notebook | Silver |
+| `gold_etl` | Notebook | Gold |
+| `nyc_analytics_model` | Semantic Model | Reporting |
+| `NYC Analytics` | Report | Reporting |
 
 ---
 
@@ -98,7 +98,7 @@ Screenshots in `docs/img/powerbi_{mobility,air_quality,correlation,economic_impa
 | Mobility | KPI cards with YoY indicators (Total Trips, Revenue USD, Avg Fare), year tile slicer, trips/day trend, top 10 pickup zones |
 | Air Quality | KPI cards (Avg NO2/O3/PM2.5) with WHO-based conditional fill color, year tile slicer, Azure Maps bubble visual (Avg PM2.5 gradient), PM2.5+NO2+O3 daily trend with WHO threshold lines and zoom slider, top 10 stations by Avg PM2.5 |
 | Mobility & Air Quality Correlation | KPI cards: Total Trips + 3 Pearson r cards (`r vs PM2.5/NO2/O3`); combo chart (Trips bars + PM2.5/NO2/O3 lines, monthly) |
-| Economic Impact | KPI cards with YoY indicators (Revenue USD, Revenue EUR) + Avg Fare USD + Avg Fare EUR (trip-weighted, answer spec Q3) + `% of US GDP` + year-aware `USA GDP (USD)`; revenue by year (USD vs EUR bars), USA GDP line (2000–2024), Revenue as % of US GDP bars (2021–2024), USD/EUR exchange rate (2021–2026) |
+| Economic Impact | KPI cards with YoY indicators (Revenue USD, Revenue EUR) + Avg Fare USD + Avg Fare EUR (trip-weighted; revenue per trip in USD vs EUR) + `% of US GDP` + year-aware `USA GDP (USD)`; revenue by year (USD vs EUR bars), USA GDP line (2000–2024), Revenue as % of US GDP bars (2021–2024), USD/EUR exchange rate (2021–2026) |
 
 ---
 
