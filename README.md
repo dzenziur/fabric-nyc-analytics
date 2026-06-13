@@ -27,7 +27,7 @@ All five data sources land in a single Fabric workspace, are cleaned through PyS
 ## Dashboard previews
 
 | Mobility | Air Quality |
-|---|---|
+|:---:|:---:|
 | ![Mobility](docs/img/powerbi_mobility.png) | ![Air Quality](docs/img/powerbi_air_quality.png) |
 | **Correlation** | **Economic Impact** |
 | ![Correlation](docs/img/powerbi_correlation.png) | ![Economic Impact](docs/img/powerbi_economic_impact.png) |
@@ -92,21 +92,33 @@ Run timings and incremental-mode behaviour: see [`docs/how_to_run.md`](docs/how_
 
 A **star schema** in the Fabric Warehouse, served through a **Direct Lake** semantic model. Row-Level Security restricts each dispatcher role to its own service zone.
 
-| Star-schema semantic model | Row-Level Security roles |
-|---|---|
-| ![Semantic model](docs/img/semantic_model.png) | ![RLS roles](docs/img/rls_security_roles.png) |
+**Star-schema semantic model**
+
+![Semantic model](docs/img/semantic_model.png)
+
+**Row-Level Security**
+
+![RLS roles](docs/img/rls_security_roles.png)
 
 ---
 
 ## External integrations (local Docker stack)
 
-Three integrations read from the Fabric SQL endpoint and run locally via Docker Compose:
+Three integrations read from the Fabric SQL endpoint and run locally via Docker Compose.
 
-| Grafana — weather dashboard (InfluxDB) | Telegram — Great Expectations data-quality bot |
-|---|---|
-| ![Grafana](docs/img/grafana_weather.png) | ![Telegram](docs/img/telegram_report.png) |
-| **Power Automate — cloud flow** | **Power Automate — generated e-mail** |
-| ![Power Automate flow](docs/img/power_automate_flow.png) | ![Power Automate email](docs/img/power_automate_email.png) |
+**Grafana — weather dashboard (InfluxDB)**
+
+![Grafana](docs/img/grafana_weather.png)
+
+**Telegram — Great Expectations data-quality bot**
+
+![Telegram](docs/img/telegram_report.png)
+
+**Power Automate — monthly export (e-mail + mobile push)**
+
+![Power Automate flow](docs/img/power_automate_flow.png)
+
+![Power Automate email](docs/img/power_automate_email.png)
 
 ---
 
